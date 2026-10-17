@@ -244,6 +244,16 @@ function ModelsTab() {
             <button className="btn small" onClick={fetchModels}>
               Fetch models
             </button>
+            <button
+              className="btn small"
+              title="Cloud Code Private API is not in the public Library - use this direct link"
+              onClick={() => {
+                const base = 'https://console.developers.google.com/apis/api/cloudcode-pa.googleapis.com/overview';
+                window.nova.openExternal(st.project ? `${base}?project=${encodeURIComponent(st.project)}` : base);
+              }}
+            >
+              Enable Cloud Code API ↗
+            </button>
             <button className="btn small" onClick={signOut}>
               Sign out
             </button>
