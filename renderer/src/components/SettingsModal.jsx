@@ -103,7 +103,14 @@ const PRESETS = [
     label: 'Gemini 4',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     model: 'gemini-4-argon',
-    hint: 'Google Gemini 4 (Argon) via your AI Studio key. Note: Argon paid-tier only hai — free key pe 429 aayega. Free me gemini-3.8-flash use karo, ya billing on karo, ya "Google Account (Vertex)" section se sign-in karo (free trial credits chalenge).',
+    hint: 'Google Gemini 4 (Argon) via your AI Studio key. Argon paid-tier only hai. Free tier ke liye preset: Gemini 3.7 Flash (niche) — quota per-model hota hai, ek khatam ho to doosra chalta hai. Model field me "Fetch" dabao to live list aayegi.',
+  },
+  {
+    id: 'gemini-flash-free',
+    label: 'Gemini Flash (free)',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    model: 'gemini-3.7-flash',
+    hint: 'Free AI Studio key pe chalne wala fast Flash model — verified working. Quota khatam ho to gemini-3.1-flash-lite / gemini-3.5-flash try karo.',
   },
   {
     id: 'gemini-web',
@@ -124,8 +131,8 @@ const PRESETS = [
     id: 'opencode',
     label: 'OpenCode Zen',
     baseUrl: 'https://opencode.ai/zen/v1',
-    model: 'deepseek-v4-flash-free',
-    hint: 'OpenCode Zen models. Free: deepseek-v4-flash-free, qwen3.6-plus-free, minimax-m3-free, big-pickle…',
+    model: 'beam-free',
+    hint: 'Apni opencode.ai console ki paid API key daalo → "Test connection" dabao → Zen ke andar ke saare models list hoke pills me dikh jayenge, ek click me pick karo. Zen ka free tier sirf OpenCode app ke andar chalta hai, isliye Nova me key zaroori hai.',
   },
   {
     id: 'omniroute',
@@ -156,9 +163,13 @@ function ModelsTab() {
   const [active, setActive] = useState(activeModelId);
   const [custom, setCustom] = useState({ label: 'Custom', baseUrl: '', model: '', apiKey: '' });
   const [modelOpts, setModelOpts] = useState({}); // cardId -> [model ids] fetched from the endpoint
-  const [busyFetch, setBusyFetch] = useState(null);
+  const [tests, setTests] = useState({}); // cardId -> {state:'testing'|'ok'|'fail', msg, count}
+  const [showList, setShowList] = useState({}); // cardId -> bool (show all fetched versions)
   const [g, setG] = useState({ clientId: '', clientSecret: '', projectId: '', location: 'us-central1' });
   const [gSeed, setGSeed] = useState(false);
+  const [gBusy, setGBusy] = useState(false);
+  const [gMsg, setGMsg] = useState(null); // {type:'ok'|'err'|'info', text}
+  const [gUrl, setGUrl] = useState(null); // last sign-in URL (copy fallback)
 
   useEffect(() => {
     useStore.getState().loadGoogle();
@@ -185,7 +196,125 @@ function ModelsTab() {
     });
   }
 
+  async function testConn(id) {
+    const card = draft.find((m) => m.id === id);
+    const isCustom = !card;
+    const baseUrl = (card ? card.baseUrl : custom.baseUrl) || '';
+    const apiKey = (card ? card.apiKey : custom.apiKey) || '';
+    const auth = card ? card.auth : undefined;
+    const cardModel = card ? card.model : custom.model;
+    if (!baseUrl.trim()) {
+      setTests((t) => ({ ...t, [id]: { state: 'fail', msg: 'Base URL khali hai — pehle endpoint URL daalo.' } }));
+      return;
+    }
+    setTests((t) => ({ ...t, [id]: { state: 'testing' } }));
+    try {
+      const base = baseUrl.trim().replace(/\/+$/, '');
+      // Phase 1: model list (fast) — user turant pills dekh sakta hai
+      const r = await window.nova.listModels({ baseUrl: base, apiKey, auth });
+      if (r.error) {
+        setTests((t) => ({ ...t, [id]: { state: 'fail', msg: shortErr(r.error) } }));
+        return;
+      }
+      setModelOpts((m) => ({ ...m, [id]: r.models }));
+      setShowList((s) => ({ ...s, [id]: false }));
+      const pick = !cardModel?.trim() && r.models.length ? pickDefaultModel(r.models) : '';
+      if (pick) {
+        if (isCustom) setCustom((c) => ({ ...c, model: pick }));
+        else update(id, { model: pick });
+      }
+      const modelForPing = (cardModel && cardModel.trim()) || pick;
+      setTests((t) => ({ ...t, [id]: { state: 'list-ok', count: r.models.length } }));
+      if (!modelForPing) {
+        setTests((t) => ({
+          ...t,
+          [id]: {
+            state: 'warn',
+            count: r.models.length,
+            warn: 'List me chat model nahi mila (sirf embed/tts/image?) — khud ek model pick karke dobara test karo.',
+          },
+        }));
+        return;
+      }
+      // Phase 2: asli chat ping (proof of key; Gemini free tier par 20s+ lag sakta hai)
+      const p = await window.nova.testModel({ baseUrl: base, apiKey, auth, model: modelForPing });
+      if (p.error) {
+        setTests((t) => ({ ...t, [id]: { state: 'fail', msg: shortErr(p.error), count: r.models.length } }));
+        return;
+      }
+      setTests((t) => ({
+        ...t,
+        [id]: { state: p.chatOk ? 'ok' : 'warn', count: r.models.length, warn: p.chatOk ? '' : p.chatError },
+      }));
+    } catch (e) {
+      setTests((t) => ({ ...t, [id]: { state: 'fail', msg: String(e.message || e) } }));
+    }
+  }
+
+  const BAD_MODEL = /embed|tts|image|imagen|aqa|video|transcribe|vision|audio/i;
+  function pickDefaultModel(list) {
+    return list.find((id) => !BAD_MODEL.test(id)) || list[0];
+  }
+
+  function shortErr(e) {
+    const s = String(e || '');
+    if (/HTTP 401|403|hassi|invalid/i.test(s)) return 'Key galat ya unauthorized hai (HTTP error).';
+    if (/HTTP 429/i.test(s)) return 'Rate limit / quota hit ho gaya — thodi der baad try karo.';
+    if (/ENOTFOUND|ECONNREFUSED|fetch failed|timeout/i.test(s)) return 'Endpoint tak pahunch nahi paaye — internet/URL check karo.';
+    return s.length > 140 ? s.slice(0, 140) + '…' : s;
+  }
+
+  function TestLine({ id }) {
+    const t = tests[id] || { state: 'idle' };
+    const list = modelOpts[id] || [];
+    const cur = draft.find((m) => m.id === id);
+    const curModel = cur ? cur.model : custom.model;
+    const busy = t.state === 'testing' || t.state === 'list-ok';
+    const hasCount = (t.state === 'ok' || t.state === 'warn' || t.state === 'list-ok') && !!t.count;
+    return (
+      <div className="conn-test">
+        <div className="conn-test-row">
+          <button
+            className="btn small"
+            disabled={busy}
+            title="Endpoint ko check karo — models list turant, aur ek asli chat ping taaki pata chale key se chat sach me chalti hai"
+            onClick={() => testConn(id)}
+          >
+            {t.state === 'testing' ? '↻ Models aa rahe hain…' : t.state === 'list-ok' ? '↻ Chat verify…' : '⚡ Test connection'}
+          </button>
+          {hasCount && (
+            <span className={t.state === 'warn' ? 'conn-warn' : 'conn-ok'}>
+              {t.state === 'ok' ? '✓ Connected' : t.state === 'list-ok' ? '✓ Models listed' : '△ Models list mili'} — {t.count} models
+              {list.length > 0 && (
+                <button className="linklike" onClick={() => setShowList((s) => ({ ...s, [id]: !s[id] }))}>
+                  {showList[id] ? '(hide list)' : `(all ${t.count} versions dikhaao)`}
+                </button>
+              )}
+            </span>
+          )}
+          {t.state === 'list-ok' && <span className="conn-verify">ek asli chat ping se verify ho raha hai…</span>}
+          {t.state === 'fail' && <span className="conn-fail">✗ {t.msg}</span>}
+        </div>
+        {t.state === 'warn' && t.warn && <div className="conn-warnline">△ {t.warn}</div>}
+        {hasCount && list.length > 0 && showList[id] && (
+          <div className="model-list-panel">
+            {list.map((mid) => (
+              <button
+                key={mid}
+                className={'model-pill' + (mid === curModel ? ' active' : '')}
+                onClick={() => (cur ? update(id, { model: mid }) : setCustom((c) => ({ ...c, model: mid })))}
+              >
+                {mid}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   async function gSignIn() {
+    if (!g.clientId.trim()) return;
     // Persist the fields first so sign-in uses the entered client ID.
     await useStore.getState().saveGoogle({
       clientId: g.clientId,
@@ -193,7 +322,24 @@ function ModelsTab() {
       projectId: g.projectId,
       location: g.location,
     });
-    await useStore.getState().googleSignIn();
+    setGBusy(true);
+    setGMsg({ type: 'info', text: 'Browser me Google sign-in khulna chahiye… consent dene ke baad yahan status update hoga (5 min tak wait karta hai).' });
+    try {
+      const ok = await useStore.getState().googleSignIn();
+      if (ok) {
+        setGMsg({ type: 'ok', text: `Connected ✓ ${useStore.getState().google?.email || ''}` });
+      } else {
+        const r = await window.nova.googleLastUrl().catch(() => null);
+        setGUrl(r?.url || null);
+        setGMsg({
+          type: 'err',
+          text: 'Sign-in complete nahi hua. Browser na khula ho to "Copy sign-in URL" se manually kholo, ya Client ID/Secret dobara check karo.',
+        });
+      }
+    } finally {
+      setGBusy(false);
+      await useStore.getState().loadGoogle();
+    }
   }
 
   function update(id, patch) {
@@ -229,26 +375,6 @@ function ModelsTab() {
     setCustom({ label: 'Custom', baseUrl: '', model: '', apiKey: '' });
   }
 
-  async function fetchModels(id, baseUrl, apiKey, auth) {
-    if (!baseUrl || !baseUrl.trim()) {
-      useStore.getState().setStatus('Set the base URL first, then Fetch.');
-      return;
-    }
-    setBusyFetch(id);
-    try {
-      const r = await window.nova.listModels({ baseUrl: baseUrl.trim(), apiKey: apiKey || '', auth: auth || undefined });
-      if (r.error) {
-        useStore.getState().setStatus(`Could not list models: ${r.error}`);
-      } else {
-        setModelOpts((m) => ({ ...m, [id]: r.models }));
-        useStore.getState().setStatus(`Loaded ${r.models.length} models — click the Model box to pick one.`);
-      }
-    } catch (e) {
-      useStore.getState().setStatus(`Could not list models: ${e.message}`);
-    }
-    setBusyFetch(null);
-  }
-
   function modelInput(id, value, onChange, placeholder) {
     return (
       <div className="input-row">
@@ -258,17 +384,6 @@ function ModelsTab() {
             <option key={mid} value={mid} />
           ))}
         </datalist>
-        <button
-          className="btn small"
-          title="Fetch the model list from this endpoint"
-          disabled={busyFetch === id}
-          onClick={() => {
-            const card = draft.find((m) => m.id === id);
-            fetchModels(id, card ? card.baseUrl : custom.baseUrl, card ? card.apiKey : '', card ? card.auth : undefined);
-          }}
-        >
-          {busyFetch === id ? '…' : '\u21C5 Fetch'}
-        </button>
       </div>
     );
   }
@@ -291,7 +406,7 @@ function ModelsTab() {
     <div className="settings-body">
       <p className="muted small">
         Any OpenAI-compatible provider works. Keys are stored locally in Nova's user data and are only sent to the
-        provider you configure. Agent mode needs a model that supports tool calling (DeepSeek, GPT-4o, Llama 3.x…).
+        provider you configure. Agent mode needs a model that supports tool calling (Gemini 3.x, DeepSeek, GPT-4o, Llama 3.x…).
       </p>
 
       <Group title="Google Account (Vertex AI)">
@@ -300,7 +415,7 @@ function ModelsTab() {
           desc={
             google && google.connected
               ? `Connected: ${google.email || 'Google account'} · project ${google.projectId || '—'}`
-              : 'Google se sign in karke apne Cloud project (Vertex AI) ke through Gemini models chalao. Gemini 4 Argon ke liye project me billing (free trial chalega) honi chahiye.'
+              : 'Google se sign in karke apne Cloud project (Vertex AI) ke through Gemini models chalao. Gemini 4 Argon ke liye project me billing (free trial chalega) honi chahiye. Sirf free chahiye? Upar "Gemini Flash (free)" preset use karo — usme sirf AI Studio key lagti hai, Google Cloud project nahi.'
           }
           control={<span className={'cz-dot ' + (google && google.connected ? 'ok' : '')} />}
         />
@@ -355,7 +470,7 @@ function ModelsTab() {
         />
         <Row
           label="Connect & use"
-          desc="Sign-in browser me khulega; consent ke baad Nova khud token refresh karta rahega."
+          desc="Sign-in aapke system browser me khulega; consent ke baad Nova khud token refresh karta rahega. Browser na khule to niche 'Copy sign-in URL' button aayega."
           control={
             <div className="input-row">
               <button className="btn small" onClick={gSave}>
@@ -366,8 +481,18 @@ function ModelsTab() {
                   Sign out
                 </button>
               ) : (
-                <button className="btn small primary" disabled={!g.clientId.trim()} onClick={gSignIn}>
-                  Sign in with Google
+                <button
+                  className="btn small primary"
+                  disabled={!g.clientId.trim() || gBusy}
+                  title={g.clientId.trim() ? 'System browser me Google sign-in khulega' : 'Pehle OAuth Client ID paste karo'}
+                  onClick={gSignIn}
+                >
+                  {gBusy ? '↻ Browser khul raha hai…' : 'Sign in with Google'}
+                </button>
+              )}
+              {gUrl && (
+                <button className="btn small" onClick={() => navigator.clipboard.writeText(gUrl).then(() => useStore.getState().setStatus('Sign-in URL copied — browser me paste karke kholo.'))}>
+                  Copy sign-in URL
                 </button>
               )}
               <button
@@ -381,6 +506,7 @@ function ModelsTab() {
             </div>
           }
         />
+        {gMsg && <div className={'g-inline g-' + gMsg.type}>{gMsg.text}</div>}
       </Group>
 
       <div className="preset-row">
@@ -438,6 +564,7 @@ function ModelsTab() {
             </label>
           </div>
           )}
+          <TestLine id={m.id} />
         </div>
       ))}
 
@@ -467,6 +594,7 @@ function ModelsTab() {
           <button className="btn" onClick={addCustom}>
             Add
           </button>
+          <TestLine id="custom" />
         </div>
       </div>
 

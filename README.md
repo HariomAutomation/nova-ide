@@ -2,9 +2,10 @@
 
 A Cursor-like AI IDE built from scratch — **with your own API keys and full model choice**.
 
-The point: no plan gates. You bring any OpenAI-compatible endpoint — **Gemini 4**,
-OpenRouter, OpenCode Zen, OmniRoute, Sarvam AI, DeepSeek, Groq,
-Ollama, LM Studio, OpenAI, or anything custom — and pick the model yourself.
+The point: no plan gates. You bring any OpenAI-compatible endpoint — **Gemini free tier**,
+OpenCode Zen, OpenRouter, OmniRoute, Sarvam AI, DeepSeek, Groq, Ollama,
+LM Studio, OpenAI, or anything custom — and pick the model yourself. Nova ships a **lean,
+junk-free default list** (Gemini free family + OpenCode Zen); everything else is an opt-in preset.
 
 ## Features (v0.2)
 
@@ -38,7 +39,10 @@ The agent is an autonomous loop with real tools:
 - Approvals: Allow / Always / Deny directly in the card. "Always" persists to settings.
 - Files the agent edits reload live in the editor (if the tab is clean).
 - Recent chats are persisted; reopening one replays its transcript and keeps context.
-- Any model with OpenAI-style function calling works (DeepSeek, GPT-4o, Llama 3.x, …).
+- Any model with OpenAI-style function calling works (Gemini 3.x, DeepSeek, GPT-4o, Llama 3.x, …).
+- **Smart error cards** — if a request fails, the chat shows a diagnosis card (quota exhausted,
+  wrong key, "free tier is app-only", network) with the actual fix and, where possible,
+  one-click model switch + auto-retry.
 
 ### Free upgrades Cursor charges for (v0.3)
 - **MCP client + one-click Addons** — Customize → *Featured Addons*: **REA** (Reverse Engineer
@@ -66,21 +70,37 @@ The agent is an autonomous loop with real tools:
 - **Menu bar** (File/Edit/View/Help) + status bar with model, terminal and folder chips
 
 ### Models
-- One-click presets: **Gemini 4 (Argon)**, OpenRouter, **OpenCode Zen**, **OmniRoute
-  (self-host)**, **Sarvam AI**, DeepSeek, Groq, OpenAI, Ollama, LM Studio — plus custom endpoints
+- **Lean by default**: `gemini-3.7-flash` (free, verified), `gemini-3.1-flash-lite` (free),
+  `gemini-3.5-flash` (free), `gemini-web` (your Google account via the embedded Gemini tab),
+  and **OpenCode Zen** (your key). No clutter of half-working paid presets; use **+ presets**
+  in Settings only if you want them.
+- **⚡ Test connection (two-phase, honest)** — paste your key, hit Test:
+  1. the live `/models` list is fetched instantly (all versions show as clickable pills,
+     "(all N versions dikhaao)") and a sensible chat model is auto-picked;
+  2. a real **1-token chat ping** verifies the key can actually chat — badges are
+     trust-worthy: `✓ Connected — N models` (green), `△ Models list mili — N models` + the
+     endpoint's own error (amber, e.g. Zen free tier is built as app-only → `FreeTierError`
+     truth while the model list still shows), or `✗ <reason>` (red).
+- One-click presets: **Gemini Flash (free)**, **Gemini 4 (Argon)**, OpenRouter,
+  **OpenCode Zen**, **OmniRoute (self-host)**, **Sarvam AI**, DeepSeek, Groq, OpenAI,
+  Ollama, LM Studio — plus custom endpoints
 - **⇅ Fetch models** — paste your key, pull the live model list from the endpoint, pick from the
   dropdown (no need to memorize model IDs)
 - Multiple models, pick the active one in one click
-- Keys stored locally (`~/.config/Nova IDE/settings.json`), only sent to the provider you configured
+- Keys stored locally (`~/.config/Nova IDE/settings.json`, removed entries park their key in
+  `keyVault` so re-adding a preset restores it), only sent to the provider you configured
 
 ### Google Sign-In (Vertex AI)
 Sign in with your Google account instead of pasting a key, and run Gemini models through your own
 Google Cloud project's Vertex AI quota:
 
 - Settings → **Models** → **Google Account (Vertex AI)** → paste an OAuth **Client ID** (desktop
-  app type), **Project ID** + location → **Sign in with Google**
+  app type), **Project ID** + location → **Sign in with Google**. The sign-in button stays
+  disabled until a Client ID (+ secret) is saved.
 - OAuth 2.0 loopback + PKCE; refresh token stored in `~/.nova-ide/google.json`, access tokens
   refresh automatically before every request — nothing to copy around
+- If the system browser doesn't open automatically, a **Copy sign-in URL** button appears —
+  paste the URL manually to complete sign-in.
 - **+ Add Gemini 4 (Vertex)** drops in a ready model (`google/gemini-4-argon`) wired to
   `https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/endpoints/openapi`
 - Heads-up: the Gemini app **Pro subscription is not API quota** — Vertex usage bills to the Cloud
@@ -103,7 +123,9 @@ NOVA_DEV_SERVER=http://localhost:5173 npm run app   # terminal 2
 
 ## First steps
 
-1. `Ctrl+,` → **Models** → add a provider (e.g. **DeepSeek**) → paste your API key → Save
+1. `Ctrl+,` → **Models** → **Gemini Flash (free)** is already in the list — paste your free
+   AI Studio key → **⚡ Test connection** → "✓ Connected — N models" (sab versions pills me
+   dikh jayenge). Ya apni key ke saath koi bhi provider add karo → Same Test flow.
 2. `Ctrl+O` to open a folder
 3. Type a task in the center composer, e.g. *"Create a snake game in Python and run it to
    check for errors"* — the agent reads/writes files, runs commands, drives the browser
@@ -211,7 +233,7 @@ npm run test:agent        # End-to-end agent loop (tool execution, approvals, Pl
 | Feature | Cursor IDE (Paid $20-$40/mo) | Nova IDE (100% Free) |
 |---|---|---|
 | **Composer / Agent Loop** | Gated behind monthly quota & paid sub | **Free & unlimited** multi-step agent with bash, browser & files |
-| **Model Choice** | Locked to Cursor servers (`api2.cursor.sh`) | **Full freedom**: Gemini Web, Ollama, DeepSeek, Groq, OpenAI, etc. |
+| **Model Choice** | Locked to Cursor servers (`api2.cursor.sh`) | **Full freedom**: Gemini free tier, Gemini Web, OpenCode Zen (BYOK), Ollama, DeepSeek, Groq, OpenAI, etc. |
 | **Gemini 4 Access** | Requires paid credits | **Free** via embedded `gemini.google.com/app` session partition |
 | **Tab / Inline Autocomplete** | Paid Copilot++ feature | **Built-in** via Monaco `registerInlineCompletionsProvider` |
 | **`@` Context Mentions** | `@files`, `@git`, `@terminal`, `@web`, `@codebase` | **Built-in** in Composer (`@git`, `@terminal`, `@web`, `@codebase`, `@files`) |

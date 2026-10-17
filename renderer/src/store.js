@@ -30,6 +30,33 @@ const DEFAULT_AGENT_SETTINGS = {
 
 export const DEFAULT_INTEGRATED_MODELS = [
   {
+    id: 'gemini-3.7-flash',
+    label: 'Gemini 3.7 Flash',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    model: 'gemini-3.7-flash',
+    apiKey: '',
+    tag: 'FREE ✅',
+    category: 'Google Gemini',
+  },
+  {
+    id: 'gemini-3.1-flash-lite',
+    label: 'Gemini 3.1 Flash Lite',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    model: 'gemini-3.1-flash-lite',
+    apiKey: '',
+    tag: 'FREE FAST',
+    category: 'Google Gemini',
+  },
+  {
+    id: 'gemini-3.5-flash',
+    label: 'Gemini 3.5 Flash',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    model: 'gemini-3.5-flash',
+    apiKey: '',
+    tag: 'FREE TIER',
+    category: 'Google Gemini',
+  },
+  {
     id: 'gemini-web',
     label: 'Gemini Web (Google Account)',
     baseUrl: '',
@@ -40,121 +67,14 @@ export const DEFAULT_INTEGRATED_MODELS = [
     category: 'Google Gemini',
   },
   {
-    id: 'gemini-4-argon',
-    label: 'Gemini 4 (Argon)',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-4-argon',
-    apiKey: '',
-    tag: 'ADVANCED',
-    category: 'Google Gemini',
-  },
-  {
-    id: 'gemini-3.8-flash',
-    label: 'Gemini 3.8 Flash',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-3.8-flash',
-    apiKey: '',
-    tag: 'FREE TIER',
-    category: 'Google Gemini',
-  },
-  {
-    id: 'opencode-deepseek-v4-flash',
-    label: 'DeepSeek V4 Flash',
+    id: 'opencode-zen',
+    label: 'OpenCode Zen (your key)',
     baseUrl: 'https://opencode.ai/zen/v1',
-    model: 'deepseek-v4-flash-free',
-    apiKey: 'public',
-    tag: '100% FREE',
+    model: 'beam-free',
+    apiKey: '',
+    tag: 'BYOK',
     category: 'Free Models',
-  },
-  {
-    id: 'opencode-qwen3.6-plus',
-    label: 'Qwen 3.6 Plus',
-    baseUrl: 'https://opencode.ai/zen/v1',
-    model: 'qwen3.6-plus-free',
-    apiKey: 'public',
-    tag: '100% FREE',
-    category: 'Free Models',
-  },
-  {
-    id: 'opencode-minimax-m3',
-    label: 'MiniMax M3',
-    baseUrl: 'https://opencode.ai/zen/v1',
-    model: 'minimax-m3-free',
-    apiKey: 'public',
-    tag: '100% FREE',
-    category: 'Free Models',
-  },
-  {
-    id: 'deepseek-v3',
-    label: 'DeepSeek V3',
-    baseUrl: 'https://api.deepseek.com/v1',
-    model: 'deepseek-chat',
-    apiKey: '',
-    tag: 'DIRECT',
-    category: 'DeepSeek',
-  },
-  {
-    id: 'deepseek-r1',
-    label: 'DeepSeek R1 (Reasoner)',
-    baseUrl: 'https://api.deepseek.com/v1',
-    model: 'deepseek-reasoner',
-    apiKey: '',
-    tag: 'REASONING',
-    category: 'DeepSeek',
-  },
-  {
-    id: 'groq-llama-3.3-70b',
-    label: 'Llama 3.3 70B (Groq)',
-    baseUrl: 'https://api.groq.com/openai/v1',
-    model: 'llama-3.3-70b-versatile',
-    apiKey: '',
-    tag: 'ULTRA-FAST',
-    category: 'Groq',
-  },
-  {
-    id: 'openrouter-claude-3.7-sonnet',
-    label: 'Claude 3.7 Sonnet',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    model: 'anthropic/claude-3.7-sonnet',
-    apiKey: '',
-    tag: 'SMART',
-    category: 'Anthropic Claude',
-  },
-  {
-    id: 'openrouter-claude-3.5-sonnet',
-    label: 'Claude 3.5 Sonnet',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    model: 'anthropic/claude-3.5-sonnet',
-    apiKey: '',
-    tag: 'CODING',
-    category: 'Anthropic Claude',
-  },
-  {
-    id: 'openai-gpt-4o',
-    label: 'GPT-4o (Omni)',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o',
-    apiKey: '',
-    tag: 'SMART',
-    category: 'OpenAI',
-  },
-  {
-    id: 'openai-gpt-4o-mini',
-    label: 'GPT-4o Mini',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
-    apiKey: '',
-    tag: 'FAST',
-    category: 'OpenAI',
-  },
-  {
-    id: 'ollama-qwen-coder',
-    label: 'Qwen 2.5 Coder 7B (Ollama)',
-    baseUrl: 'http://localhost:11434/v1',
-    model: 'qwen2.5-coder:7b',
-    apiKey: 'ollama',
-    tag: 'LOCAL OFFLINE',
-    category: 'Local Models',
+    hint: 'Apni opencode.ai console key daalo, phir "Test connection" dabao — Zen ke andar ke saare models list hoke dikhenge, jitna chahe pick karo.',
   },
 ];
 
@@ -194,6 +114,7 @@ export const useStore = create((set, get) => ({
 
   /* -------------------------------- models -------------------------------- */
   models: [],
+  keyVault: {},
   activeModelId: null,
 
   /* ------------------------------- ask chat ------------------------------- */
@@ -610,12 +531,26 @@ export const useStore = create((set, get) => ({
     const deepseekKey = existing.find((m) => m.baseUrl?.includes('deepseek.com') && m.apiKey)?.apiKey || '';
     const groqKey = existing.find((m) => m.baseUrl?.includes('groq.com') && m.apiKey)?.apiKey || '';
 
+    const keyVault = { ...(s.keyVault || {}) };
+    const hostOf = (url) => {
+      try {
+        return new URL(url).host;
+      } catch {
+        return '';
+      }
+    };
+
     const models = DEFAULT_INTEGRATED_MODELS.map((dm) => {
       const found = existing.find((m) => m.id === dm.id || (m.model === dm.model && m.baseUrl === dm.baseUrl));
       if (found) {
-        return { ...dm, ...found, label: found.label || dm.label, tag: dm.tag };
+        // label migration: stale default labels (e.g. "OpenCode Zen (paid key)")
+        // get refreshed to the current default wording
+        const STALE_LABELS = { 'opencode-zen': ['OpenCode Zen (paid key)'] };
+        const stale = (STALE_LABELS[dm.id] || []).includes(found.label);
+        return { ...dm, ...found, label: stale ? dm.label : (found.label || dm.label), tag: dm.tag };
       }
       let k = dm.apiKey;
+      if (dm.baseUrl && keyVault[hostOf(dm.baseUrl)]) k = keyVault[hostOf(dm.baseUrl)];
       if (dm.baseUrl?.includes('googleapis.com')) k = googleKey || k;
       if (dm.baseUrl?.includes('openrouter.ai')) k = openrouterKey || k;
       if (dm.baseUrl?.includes('openai.com')) k = openaiKey || k;
@@ -630,12 +565,39 @@ export const useStore = create((set, get) => ({
       }
     }
 
-    const activeModelId = s.activeModelId && models.some((m) => m.id === s.activeModelId)
+    // Migration: drop models whose IDs no longer exist upstream (e.g. OpenCode Zen
+    // rotates its free-tier list) and the default "junk " paid crowd — Nova ships
+    // a lean list (Gemini free family + OpenCode Zen). Keys of removed entries are
+    // parked in keyVault so re-adding a preset restores them automatically.
+    const DEAD_MODELS = new Set([
+      'deepseek-v4-flash-free', 'qwen3.6-plus-free', 'minimax-m3-free',
+      'glm-4.6-fw-free', 'kimi-k2-free',
+    ]);
+    const JUNK_IDS = new Set([
+      'deepseek-v3', 'deepseek-r1', 'groq-llama-3.3-70b',
+      'openrouter-claude-3.7-sonnet', 'openrouter-claude-3.5-sonnet',
+      'openai-gpt-4o', 'openai-gpt-4o-mini',
+      'gemini-4-argon', 'gemini-3.8-flash', 'ollama-qwen-coder',
+    ]);
+    let migrated = false;
+    const filtered = [];
+    for (const m of models) {
+      if (DEAD_MODELS.has(m.model) || JUNK_IDS.has(m.id)) {
+        migrated = true;
+        const h = hostOf(m.baseUrl || '');
+        if (m.apiKey && h) keyVault[h] = m.apiKey;
+        continue;
+      }
+      filtered.push(m);
+    }
+
+    const activeModelId = s.activeModelId && filtered.some((m) => m.id === s.activeModelId)
       ? s.activeModelId
-      : models[0]?.id ?? null;
+      : (filtered.find((m) => m.apiKey && m.auth !== 'gemini-web')?.id ?? filtered[0]?.id ?? null);
 
     set({
-      models,
+      keyVault,
+      models: filtered,
       activeModelId,
       agentSettings: { ...DEFAULT_AGENT_SETTINGS, ...(s.agentSettings || {}) },
       browserSettings: { headless: true, ...(s.browserSettings || {}) },
@@ -650,13 +612,14 @@ export const useStore = create((set, get) => ({
       .catch(() => {});
     get().loadSkills().catch(() => {});
     get().loadMcpStatus().catch(() => {});
+    if (migrated) get().saveSettings(); // persist trimmed list + parked keys once
     if (s.lastFolder) {
       await get().openFolder(s.lastFolder, { silent: true });
     }
   },
 
   async saveSettings() {
-    const { models, activeModelId, rootFolder, agentSettings, browserSettings, theme, chats, automations, usedAgent } =
+    const { models, activeModelId, rootFolder, agentSettings, browserSettings, theme, chats, automations, usedAgent, keyVault } =
       get();
     try {
       await api().setSettings({
@@ -667,6 +630,7 @@ export const useStore = create((set, get) => ({
         browserSettings,
         theme,
         usedAgent,
+        keyVault,
         automations: (automations || []).slice(0, 50),
         chats: (chats || []).slice(0, MAX_CHATS),
       });

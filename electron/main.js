@@ -202,16 +202,67 @@ ipcMain.handle('models:list', async (_e, payload) => {
     }
     const j = await res.json();
     const arr = Array.isArray(j.data) ? j.data : Array.isArray(j.models) ? j.models : [];
-    const models = arr
+    const raw = arr
       .map((m) => (typeof m === 'string' ? m : m && (m.id || m.name) ? String(m.id || m.name) : ''))
-      .filter(Boolean);
-    return { models: models.slice(0, 400) };
+      .filter(Boolean)
+      .map((s) => s.replace(/^models\//, '')); // Gemini-style "models/x" -> "x" (chat endpoint ka format)
+    const models = [...new Set(raw)].slice(0, 400);
+    return { models };
   } catch (e) {
     return { error: String((e && e.message) || e) };
   }
 });
 
-/* ------------------------------ Google Sign-In (Vertex AI) ------------------------------ */
+// Chat-only ping used by the per-model connection test. The UI lists models via
+// models:list instantly; this separate call verifies the key can actually chat.
+// (Some endpoints list models without a usable key, e.g. Zen free tier; and
+// Gemini free tier pings can take 20s+ server-side, so one combined call made
+// the UI look stuck.)
+ipcMain.handle('models:ping', async (_e, payload) => {
+  const { baseUrl, apiKey, auth, model } = payload || {};
+  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//.test(base)) return { error: 'Sahi http(s) base URL daalo pehle.' };
+  const authHeaders = {};
+  let key = apiKey;
+  if (auth === 'google') {
+    try {
+      key = await googleAuth.getAccessToken();
+    } catch (e) {
+      return { error: String(e.message || e) };
+    }
+  }
+  if (key) authHeaders.Authorization = `Bearer ${key}`;
+
+  const chatModel = String(model || '').trim();
+  if (!chatModel) return { error: 'Pehle model id daalo (ya list se pick karo).' };
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 45000);
+    const res = await fetch(base + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({ model: chatModel, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) return { chatOk: true, chatModel };
+    const body = await res.text().catch(() => '');
+    let msg = `HTTP ${res.status}`;
+    try {
+      const j = JSON.parse(body);
+      msg += ` — ${j.error?.message || j.message || j.error || body.slice(0, 160)}`;
+    } catch {
+      msg += body ? ` — ${body.slice(0, 160)}` : '';
+    }
+    // OpenCode Zen FreeTierError ka friendly version
+    if (/FreeTierError|only be used from within/i.test(body)) {
+      msg = 'FreeTierError — Zen free tier sirf OpenCode app ke andar chalta hai. Nova me chalne ke liye opencode.ai se paid key lo.';
+    }
+    return { chatOk: false, chatError: msg };
+  } catch (e) {
+    return { models, chatOk: false, chatError: String(e.message || e) };
+  }
+});
 
 ipcMain.handle('google:status', async () => googleAuth.status());
 
@@ -226,6 +277,7 @@ ipcMain.handle('google:login', async () => {
 });
 
 ipcMain.handle('google:logout', async () => ({ ok: true, status: await googleAuth.logout() }));
+ipcMain.handle('google:last-url', () => ({ url: googleAuth.getLastAuthUrl() }));
 
 /* ------------------------------ Gemini Web (jugaad provider) ------------------------------ */
 

@@ -29,6 +29,11 @@ const USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
 const SCOPE = 'openid email https://www.googleapis.com/auth/cloud-platform';
 
 let accessCache = { token: null, exp: 0 };
+let lastAuthUrl = null;
+
+function getLastAuthUrl() {
+  return lastAuthUrl;
+}
 
 async function readConfig() {
   try {
@@ -193,7 +198,10 @@ async function login() {
         `&response_type=code&scope=${encodeURIComponent(SCOPE)}` +
         `&code_challenge=${challenge}&code_challenge_method=S256` +
         `&access_type=offline&prompt=consent&state=${state}`;
-      shell.openExternal(authUrl).catch((e) => finish(reject, e));
+      lastAuthUrl = authUrl;
+      shell
+        .openExternal(authUrl)
+        .catch((e) => finish(reject, new Error(`Browser nahi khula: ${e.message} — Settings me "Copy sign-in URL" button se URL copy karke browser me kholo.`)));
     });
   });
 }
@@ -225,4 +233,4 @@ async function getAccessToken() {
   return accessCache.token;
 }
 
-module.exports = { status, save, login, logout, getAccessToken, CONFIG_PATH };
+module.exports = { status, save, login, logout, getAccessToken, getLastAuthUrl, CONFIG_PATH };

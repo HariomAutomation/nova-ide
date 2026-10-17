@@ -80,6 +80,114 @@ const COMMANDS = [
   },
 ];
 
+function diagnoseError(text) {
+  const t = String(text || '');
+  const low = t.toLowerCase();
+  if (/freetiererror|only be used from within/i.test(t)) {
+    return {
+      headline: 'Ye free model sirf OpenCode app ke andar chalta hai',
+      detail: 'OpenCode ne apne free-tier models ko apne app tak limit kar diya hai — Nova se nahi chalenge. Niche kisi working model pe switch karo (Gemini free models aapki key se chalte hain), ya Settings me Zen ki apni paid key daalo.',
+      kind: 'switch',
+    };
+  }
+  if (/429|resource_exhausted|quota|rate.?limit/i.test(t)) {
+    const retryIn = /retry in ([\dhm.0-9]+)/i.exec(t);
+    return {
+      headline: 'Is model ka quota khatam ho gaya',
+      detail: `Free tier limits per-model hote hain${retryIn ? ` — ${retryIn[1]} me reset hoga` : ''}. Doosre model pe switch karke same message dobara bhejo.`,
+      kind: 'switch',
+    };
+  }
+  if (/401|403|invalid api key|unauthorized|api key not valid/i.test(t)) {
+    return {
+      headline: 'API key galat ya khali hai',
+      detail: 'Settings → Models me is provider ki sahi key daalo. Key hamesha aapke apne device pe rehti hai.',
+      kind: 'settings',
+    };
+  }
+  if (/not signed in|sign.?in|no webcontents|gemini.*(web|editor)/i.test(low) && /gemini/i.test(low)) {
+    return {
+      headline: 'Gemini Web me sign-in nahi hai',
+      detail: 'Sidebar me 🌐 Gemini tab kholo, Google account se sign in karo, phir dobara bhejo. Ya upar model picker se Gemini API model chuno.',
+      kind: 'settings',
+    };
+  }
+  if (/fetch failed|enotfound|econnrefused|etimedout|network/i.test(low)) {
+    return {
+      headline: 'Model endpoint tak pahunch nahi paaye',
+      detail: 'Internet/VPN/firewall check karo, ya Settings me baseUrl dekho. Offline local models (Ollama) bhi option hain.',
+      kind: 'settings',
+    };
+  }
+  if (/no base url/i.test(low)) {
+    return {
+      headline: 'Is model ka baseUrl set nahi hai',
+      detail: 'Settings → Models me is model ka API address bhara, ya doosra model chuno.',
+      kind: 'settings',
+    };
+  }
+  return null;
+}
+
+function ErrorCard({ item }) {
+  const models = useStore((s) => s.models);
+  const activeModelId = useStore((s) => s.activeModelId);
+  const agentItems = useStore((s) => s.agentItems);
+  const [showRaw, setShowRaw] = useState(false);
+  const d = diagnoseError(item.text);
+
+  const fallbacks = models
+    .filter((m) => m.apiKey && m.auth !== 'gemini-web' && m.id !== activeModelId && !m.baseUrl?.includes('localhost'))
+    .slice(0, 3);
+
+  const lastUserText = [...agentItems].reverse().find((it) => it.kind === 'user')?.text || '';
+
+  const switchAndRetry = (id) => {
+    const m = models.find((x) => x.id === id);
+    if (!m) return;
+    useStore.setState({ activeModelId: id });
+    useStore.getState().saveSettings();
+    useStore.getState().setStatus(`Model switched: ${m.label}`);
+    if (lastUserText) useStore.getState().agentSend(lastUserText);
+  };
+
+  return (
+    <div className="chat-msg error-card err-card">
+      <div className="err-head">
+        <span className="err-ico">⚠️</span>
+        <div className="err-body">
+          <div className="err-headline">{d ? d.headline : 'Agent ruk gaya'}</div>
+          {d && <div className="err-detail">{d.detail}</div>}
+        </div>
+      </div>
+      {d?.kind === 'switch' && fallbacks.length > 0 && (
+        <div className="err-actions">
+          <span className="err-try">Try:</span>
+          {fallbacks.map((m) => (
+            <button key={m.id} className="chip err-model-chip" onClick={() => switchAndRetry(m.id)}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="err-actions">
+        <button className="chip" onClick={() => useStore.getState().setSettingsOpen(true, 'models')}>
+          ⚙️ Models/Settings
+        </button>
+        {lastUserText && (
+          <button className="chip" onClick={() => useStore.getState().agentSend(lastUserText)}>
+            ↻ Retry
+          </button>
+        )}
+        <button className="chip subtle" onClick={() => setShowRaw(!showRaw)}>
+          {showRaw ? 'Hide detail' : 'Detail'}
+        </button>
+      </div>
+      {showRaw && <div className="err-raw">{item.text}</div>}
+    </div>
+  );
+}
+
 function MicIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -709,12 +817,7 @@ export default function AgentMain() {
                 if (item.kind === 'tool') {
                   return <ToolCard key={item.id} item={item} />;
                 }
-                return (
-                  <div key={item.id} className="chat-msg error-card">
-                    <div className="chat-role">Error</div>
-                    <div className="chat-plain">{item.text}</div>
-                  </div>
-                );
+                return <ErrorCard key={item.id} item={item} />;
               })}
               {queued.map((q) => (
                 <div key={q.id} className="chat-msg user queued-msg">
@@ -743,6 +846,13 @@ export default function AgentMain() {
         ) : (
           <div className="agent-home">
             <div className="agent-home-inner">
+              <h1 className="agent-greet">
+                {appInfo?.username ? `Hey ${appInfo.username}` : 'Welcome'} — what can I do for you?
+              </h1>
+              <p className="agent-sub">
+                I can read your code, run commands, browse the web and control this machine — every step needs your
+                approval.
+              </p>
               <div className="home-chips">
                 <button
                   className="repo-chip"
