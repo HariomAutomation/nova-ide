@@ -316,7 +316,13 @@ function ModelsTab() {
   }
 
   async function gSignIn() {
-    if (!g.clientId.trim()) return;
+    if (!g.clientId.trim()) {
+      setGMsg({
+        type: 'err',
+        text: 'Pehle OAuth Client ID daalo (Google Cloud Console -> APIs & Services -> Credentials -> OAuth client ID -> type: Desktop app), phir Sign in dabao.',
+      });
+      return;
+    }
     // Persist the fields first so sign-in uses the entered client ID.
     await useStore.getState().saveGoogle({
       clientId: g.clientId,
@@ -327,17 +333,20 @@ function ModelsTab() {
     setGBusy(true);
     setGMsg({ type: 'info', text: 'Browser me Google sign-in khulna chahiye… consent dene ke baad yahan status update hoga (5 min tak wait karta hai).' });
     try {
-      const ok = await useStore.getState().googleSignIn();
-      if (ok) {
-        setGMsg({ type: 'ok', text: `Connected ✓ ${useStore.getState().google?.email || ''}` });
+      // Call the flow directly so we can show Google's actual error text.
+      const r = await window.nova.googleLogin();
+      if (r && r.ok) {
+        setGMsg({ type: 'ok', text: `Connected ✓ ${(r.status && r.status.email) || ''}` });
       } else {
-        const r = await window.nova.googleLastUrl().catch(() => null);
-        setGUrl(r?.url || null);
+        const lu = await window.nova.googleLastUrl().catch(() => null);
+        setGUrl((lu && lu.url) || null);
         setGMsg({
           type: 'err',
-          text: 'Sign-in complete nahi hua. Browser na khula ho to "Copy sign-in URL" se manually kholo, ya Client ID/Secret dobara check karo.',
+          text: `Sign-in failed: ${(r && r.error) || 'unknown error'}. Browser na khula ho to "Copy sign-in URL" se manually kholo.`,
         });
       }
+    } catch (e) {
+      setGMsg({ type: 'err', text: `Sign-in failed: ${e.message}` });
     } finally {
       setGBusy(false);
       await useStore.getState().loadGoogle();
@@ -485,8 +494,12 @@ function ModelsTab() {
               ) : (
                 <button
                   className="btn small primary"
-                  disabled={!g.clientId.trim() || gBusy}
-                  title={g.clientId.trim() ? 'System browser me Google sign-in khulega' : 'Pehle OAuth Client ID paste karo'}
+                  disabled={gBusy}
+                  title={
+                    g.clientId.trim()
+                      ? 'System browser me Google sign-in khulega'
+                      : 'OAuth Client ID ke bina sign-in nahi hoga — pehle woh paste karo'
+                  }
                   onClick={gSignIn}
                 >
                   {gBusy ? '↻ Browser khul raha hai…' : 'Sign in with Google'}
