@@ -69,7 +69,34 @@ export default function GeminiView({ active }) {
     return unsub;
   }, []);
 
+  const [drv, setDrv] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const tick = () =>
+      window.nova
+        .geminiStatus()
+        .then((s) => {
+          if (alive) setDrv(s);
+        })
+        .catch(() => {});
+    tick();
+    const id = setInterval(tick, 4000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+
   const signedInHint = /accounts\.google\.com/.test(url);
+  const drvBadge = !drv
+    ? 'driver: …'
+    : drv.ok && drv.hasEditor
+      ? 'driver: ready'
+      : drv.error
+        ? `driver: ${String(drv.error).slice(0, 90)}`
+        : drv.hasEditor
+          ? 'driver: ready'
+          : 'driver: editor not found';
 
   return (
     <div className={'gemini-view' + (active ? '' : ' gw-offscreen')}>
@@ -81,6 +108,13 @@ export default function GeminiView({ active }) {
             : 'Connected with your Google Account. 💡 Tip: Upar model dropdown se Gemini 4 / Advanced select karo, Nova Agent wahi use karega!'}
         </span>
         <div className="spacer" />
+        <span
+          className="gemini-drv"
+          title={drv ? JSON.stringify(drv) : ''}
+          style={{ color: drv && drv.ok && drv.hasEditor ? '#4ade80' : '#f2a1a4' }}
+        >
+          {drvBadge}
+        </span>
         {!ready && <span className="muted small">loading…</span>}
         <button
           className="btn small"
@@ -132,6 +166,7 @@ export default function GeminiView({ active }) {
         useragent={window.nova.chromeUA || undefined}
         src="https://gemini.google.com/app"
         allowpopups="true"
+        webpreferences="backgroundThrottling=no"
       />
     </div>
   );

@@ -52,6 +52,14 @@ protocol.registerSchemesAsPrivileged([
 let win = null;
 const aiControllers = new Map();
 
+// The agent drives the Gemini webview from ANY view (the tab is only moved
+// offscreen, never unmounted), so stop Chromium from throttling a page it
+// considers hidden — otherwise it works while the tab is open and stalls when
+// the user is back in the main view.
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1480,
