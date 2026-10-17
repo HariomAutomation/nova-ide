@@ -105,14 +105,84 @@ function createWindow() {
 let webhookServer = null;
 let webhookPort = null;
 
+// Token + port for the Gemini Web MCP bridge. Written on every start so the
+// MCP server process can find and authenticate to us.
+let bridgeToken = '';
+
+async function writeBridgeFile(port) {
+  try {
+    const dir = path.join(os.homedir(), '.nova-ide');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, 'gemini-bridge.json'),
+      JSON.stringify({ port, token: bridgeToken, pid: process.pid }, null, 2),
+      'utf8'
+    );
+  } catch {}
+}
+
 function startWebhookServer() {
   return new Promise((resolve) => {
+    bridgeToken = require('node:crypto').randomBytes(24).toString('hex');
     const server = http.createServer((req, res) => {
       try {
         const url = new URL(req.url || '/', 'http://127.0.0.1');
         if (req.method === 'GET' && url.pathname === '/automations/health') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end('{"ok":true}');
+          return;
+        }
+
+        /* ---- Gemini Web bridge (used by the gemini-web MCP server) ---- */
+        if (url.pathname === '/gemini/health') {
+          geminiWeb
+            .status()
+            .then((st) => {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true, ready: !!(st && st.ok && st.hasEditor), status: st }));
+            })
+            .catch((e) => {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true, ready: false, error: String((e && e.message) || e) }));
+            });
+          return;
+        }
+        if (req.method === 'POST' && url.pathname === '/gemini/ask') {
+          if (req.headers['x-nova-token'] !== bridgeToken) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end('{"error":"bad token"}');
+            return;
+          }
+          let b = '';
+          req.on('data', (c) => {
+            b += c;
+            if (b.length > 200000) req.destroy();
+          });
+          req.on('end', async () => {
+            let payload = {};
+            try {
+              payload = JSON.parse(b || '{}');
+            } catch {}
+            const prompt = String((payload && payload.prompt) || '').slice(0, 30000);
+            if (!prompt.trim()) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end('{"error":"prompt required"}');
+              return;
+            }
+            try {
+              const text = await geminiWeb.prompt({
+                threadKey: String(payload.threadKey || 'mcp:gemini-web').slice(0, 120),
+                system: String(payload.system || '').slice(0, 8000),
+                messages: [{ role: 'user', content: prompt }],
+                tools: [],
+              });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ text: String(text || '') }));
+            } catch (e) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: String((e && e.message) || e) }));
+            }
+          });
           return;
         }
         const m = /^\/automations\/webhook\/([A-Za-z0-9_-]{6,64})$/.exec(url.pathname);
@@ -142,6 +212,7 @@ function startWebhookServer() {
     server.listen(4599, '127.0.0.1', () => {
       webhookServer = server;
       webhookPort = server.address().port;
+      writeBridgeFile(webhookPort);
       resolve(webhookPort);
     });
   });
@@ -649,6 +720,19 @@ const ADDONS = {
     server: {
       command: 'npx',
       args: ['-y', 'mcp-remote', 'https://app.eraser.io/api/mcp'],
+      exposeTools: 'auto',
+    },
+  },
+  geminiweb: {
+    name: 'Gemini Web (MCP)',
+    description:
+      'Exposes the Gemini web app (the account signed in to Nova\u2019s Gemini tab) as a tool the agent can call \u2014 ask_gemini. Runs inside Nova via a localhost bridge: no key, nothing to install. Keep the Gemini tab signed in.',
+    site: 'https://gemini.google.com/app',
+    server: {
+      // Electron can act as a plain Node runtime for the stdio MCP server.
+      command: process.execPath,
+      args: [path.join(__dirname, '..', 'scripts', 'mcp-gemini-web.mjs')],
+      env: { ELECTRON_RUN_AS_NODE: '1' },
       exposeTools: 'auto',
     },
   },

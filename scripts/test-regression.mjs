@@ -21,6 +21,7 @@ import cloudcode from '../electron/tools/cloudcode.js';
 import voice from '../electron/tools/voice.js';
 import { usableModels, isModelUsable } from '../renderer/src/model-filter.js';
 import { groupModels, latestOf, versionOf } from '../renderer/src/model-family.js';
+import { handle as mcpHandle, askGemini } from './mcp-gemini-web.mjs';
 import {
   isAutomationDue,
   dueAutomations,
@@ -876,6 +877,52 @@ suite.push(
       }
     }
     assert.deepEqual(missing, [], `undefined JSX components: ${missing.join(', ')}`);
+  })
+);
+
+/* ------------------------------ gemini-web MCP ------------------------------ */
+
+suite.push(
+  test('gemini-web MCP: protocol handshake and ask_gemini dispatch', async () => {
+    const init = await mcpHandle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+    assert.equal(init.result.protocolVersion, '2024-11-05');
+    assert.equal(init.result.serverInfo.name, 'nova-gemini-web');
+    assert.equal(await mcpHandle({ method: 'notifications/initialized' }), null);
+
+    const list = await mcpHandle({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
+    assert.equal(list.result.tools.length, 1);
+    assert.equal(list.result.tools[0].name, 'ask_gemini');
+    assert.deepEqual(list.result.tools[0].inputSchema.required, ['prompt']);
+
+    const ok = await mcpHandle(
+      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'ask_gemini', arguments: { prompt: 'hi' } } },
+      { askGemini: async () => ({ text: 'hello from gemini' }) }
+    );
+    assert.equal(ok.result.content[0].text, 'hello from gemini');
+
+    const unknown = await mcpHandle(
+      { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'nope' } },
+      { askGemini: async () => ({ text: 'x' }) }
+    );
+    assert.equal(unknown.error.code, -32602);
+
+    const failed = await mcpHandle(
+      { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'ask_gemini', arguments: {} } },
+      { askGemini: async () => ({ error: 'boom' }) }
+    );
+    assert.equal(failed.result.isError, true);
+    assert.match(failed.result.content[0].text, /boom/);
+
+    const missing = await mcpHandle({ jsonrpc: '2.0', id: 6, method: 'wat' });
+    assert.equal(missing.error.code, -32601);
+    assert.equal(await mcpHandle({ jsonrpc: '2.0', method: 'wat' }), null);
+
+    // with no bridge file, askGemini explains instead of fetching
+    process.env.NOVA_GEMINI_BRIDGE_FILE = path.join(TEST_DIR, 'no-such-bridge.json');
+    const noBridge = await askGemini({ prompt: 'hi' }, async () => {
+      throw new Error('must not fetch');
+    });
+    assert.match(noBridge.error, /bridge nahi mila/);
   })
 );
 
