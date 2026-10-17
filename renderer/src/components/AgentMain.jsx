@@ -303,14 +303,6 @@ function RepoChips() {
               </span>
               {runOn === 'local' && <span className="runon-check">{'\u2713'}</span>}
             </button>
-            <button className="plus-row" onClick={() => setMenu('remote')}>
-              <span className="plus-ico">{'\u{1F5A7}'}</span>
-              <span className="plus-text">
-                <span className="plus-title">Remote Machine</span>
-              </span>
-              <span className="plus-chev">{'\u203A'}</span>
-            </button>
-            {menu === 'remote' && <div className="runon-sub muted small">No remote machines configured yet.</div>}
             <div className="runon-sep" />
             <div className="runon-new">
               <input

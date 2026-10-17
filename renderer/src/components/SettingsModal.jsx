@@ -849,6 +849,7 @@ function CloudTab() {
   const [msg, setMsg] = useState(null);
   const [url, setUrl] = useState(null);
   const [seeded, setSeeded] = useState(false);
+  const [adv, setAdv] = useState(false);
 
   useEffect(() => {
     useStore.getState().loadDrive();
@@ -870,7 +871,7 @@ function CloudTab() {
     if (!clientId.trim()) {
       setMsg({
         type: 'err',
-        text: 'Pehle OAuth Client ID daalo (Google Cloud Console -> APIs & Services -> Credentials -> OAuth client ID -> type: Desktop app).',
+        text: 'Sign-in ke liye Google client ID chahiye — neeche "Advanced" khol ke paste karo.',
       });
       return;
     }
@@ -908,47 +909,23 @@ function CloudTab() {
           control={<span className={'cz-dot ' + (drive.connected ? 'ok' : '')} />}
         />
         <Row
-          label="OAuth Client ID"
-          desc="Google Cloud Console → APIs & Services → Credentials → Create credentials → OAuth client ID → type: Desktop app. (Drive API bhi enable karo.)"
-          control={
-            <input
-              className="input"
-              style={{ width: 320 }}
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              placeholder="1234-abc.apps.googleusercontent.com"
-            />
+          label="Sign in"
+          desc={
+            drive.connected
+              ? 'Signed in. Nova can list and open your cloud files, and sync your memory — read-only.'
+              : drive.builtin
+                ? 'One click — no setup needed.'
+                : 'Sign in with Google (read-only Drive). Nova can read cloud files, never change them.'
           }
-        />
-        <Row
-          label="Client secret"
-          desc="Optional for Desktop app clients — Nova PKCE use karta hai."
-          control={
-            <input
-              className="input"
-              style={{ width: 260 }}
-              type="password"
-              value={clientSecret}
-              onChange={(e) => setClientSecret(e.target.value)}
-              placeholder="GOCSPX-…"
-            />
-          }
-        />
-        <Row
-          label="Connect"
-          desc="Sign-in aapke system browser me khulega; ek baar hone ke baad Nova khud token refresh karega."
           control={
             <div className="input-row">
-              <button className="btn small" onClick={save}>
-                Save
-              </button>
               {drive.connected ? (
                 <button className="btn small danger" onClick={() => useStore.getState().driveSignOut()}>
                   Sign out
                 </button>
               ) : (
-                <button className="btn small primary" disabled={busy} onClick={signIn}>
-                  {busy ? '↻ Browser khul raha hai…' : 'Sign in with Google'}
+                <button className="btn primary" disabled={busy} onClick={signIn}>
+                  {busy ? '↻ Opening browser…' : 'Sign in with Google'}
                 </button>
               )}
               {url && (
@@ -966,6 +943,57 @@ function CloudTab() {
             </div>
           }
         />
+        {!drive.connected && !drive.builtin && (
+          <Row
+            label="Advanced"
+            desc="Only if this build has no built-in Google client. Google Cloud Console → Credentials → OAuth client ID → type: Desktop app."
+            control={
+              <button className="btn small" onClick={() => setAdv((v) => !v)}>
+                {adv ? 'Hide' : 'Set up'}
+              </button>
+            }
+          />
+        )}
+        {adv && !drive.builtin && (
+          <>
+            <Row
+              label="OAuth Client ID"
+              desc="Paste your own client ID (…apps.googleusercontent.com)."
+              control={
+                <input
+                  className="input"
+                  style={{ width: 320 }}
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  placeholder="1234-abc.apps.googleusercontent.com"
+                />
+              }
+            />
+            <Row
+              label="Client secret"
+              desc="Optional for Desktop app clients — Nova uses PKCE."
+              control={
+                <input
+                  className="input"
+                  style={{ width: 260 }}
+                  type="password"
+                  value={clientSecret}
+                  onChange={(e) => setClientSecret(e.target.value)}
+                  placeholder="GOCSPX-…"
+                />
+              }
+            />
+            <Row
+              label=""
+              desc=""
+              control={
+                <button className="btn small" onClick={save}>
+                  Save client ID
+                </button>
+              }
+            />
+          </>
+        )}
         {msg && <div className={'g-inline g-' + msg.type}>{msg.text}</div>}
       </Group>
 

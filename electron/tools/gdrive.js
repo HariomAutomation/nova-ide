@@ -38,6 +38,12 @@ const GOOGLE_DOC = 'application/vnd.google-apps.document';
 const GOOGLE_SHEET = 'application/vnd.google-apps.spreadsheet';
 const GOOGLE_SLIDES = 'application/vnd.google-apps.presentation';
 
+// A build can ship its own Google OAuth client so sign-in is one click and the
+// user never sees a Client ID field. If none is bundled, the user can still
+// paste their own under "Advanced".
+const DEFAULT_CLIENT_ID = process.env.NOVA_GOOGLE_CLIENT_ID || '';
+const DEFAULT_CLIENT_SECRET = process.env.NOVA_GOOGLE_CLIENT_SECRET || '';
+
 let accessCache = { token: null, exp: 0 };
 let lastAuthUrl = null;
 
@@ -64,11 +70,22 @@ function b64url(buf) {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-async function status() {
+async function effectiveConfig() {
   const cfg = await readConfig();
   return {
+    ...cfg,
+    clientId: cfg.clientId || DEFAULT_CLIENT_ID,
+    clientSecret: cfg.clientSecret || DEFAULT_CLIENT_SECRET,
+  };
+}
+
+async function status() {
+  const cfg = await readConfig();
+  const eff = await effectiveConfig();
+  return {
     configPath: CONFIG_PATH,
-    hasClient: !!cfg.clientId,
+    hasClient: !!eff.clientId,
+    builtin: !cfg.clientId && !!DEFAULT_CLIENT_ID,
     clientId: cfg.clientId || null,
     connected: !!cfg.refreshToken,
     email: cfg.email || null,
@@ -122,7 +139,7 @@ async function exchangeCode(cfg, code, redirectUri, verifier) {
 /** Valid access token, refreshed automatically from the stored refresh token. */
 async function getAccessToken() {
   if (accessCache.token && Date.now() < accessCache.exp) return accessCache.token;
-  const cfg = await readConfig();
+  const cfg = await effectiveConfig();
   if (!cfg.refreshToken) throw new Error('Cloud not connected — Settings -> Cloud -> Sign in with Google.');
   const body = new URLSearchParams({
     client_id: cfg.clientId,
@@ -145,11 +162,9 @@ async function getAccessToken() {
 
 /** Full loopback sign-in: opens the browser and waits for the redirect. */
 async function login() {
-  const cfg = await readConfig();
+  const cfg = await effectiveConfig();
   if (!cfg.clientId) {
-    throw new Error(
-      'Pehle OAuth Client ID daalo (Google Cloud Console -> APIs & Services -> Credentials -> OAuth client ID -> type: Desktop app).'
-    );
+    throw new Error('Sign-in ke liye Google client ID chahiye (Cloud settings me "Advanced" khol ke paste karo).');
   }
   const verifier = b64url(crypto.randomBytes(32));
   const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());

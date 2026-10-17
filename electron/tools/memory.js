@@ -17,9 +17,17 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const fsp = require('node:fs/promises');
 
-const CONFIG_DIR = process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
-const MEMORY_DIR = path.join(CONFIG_DIR, 'memory');
-const LEGACY_PATH = path.join(CONFIG_DIR, 'memory.json');
+// Resolved lazily so an env override (NOVA_CONFIG_DIR) is honoured even when
+// this module was loaded earlier (e.g. via agent.js).
+function configDir() {
+  return process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
+}
+function memoryDir() {
+  return path.join(configDir(), 'memory');
+}
+function legacyPath() {
+  return path.join(configDir(), 'memory.json');
+}
 const MAX_NOTES = 500;
 const MAX_TEXT = 4000;
 
@@ -35,7 +43,7 @@ function sanitizeAccount(key) {
 }
 
 function accountPath(account) {
-  return path.join(MEMORY_DIR, `${sanitizeAccount(account || currentAccount)}.json`);
+  return path.join(memoryDir(), `${sanitizeAccount(account || currentAccount)}.json`);
 }
 
 function getAccount() {
@@ -51,10 +59,10 @@ async function setAccount(key) {
       await fsp.access(accountPath('local'));
     } catch {
       try {
-        const legacy = await fsp.readFile(LEGACY_PATH, 'utf8');
-        await fsp.mkdir(MEMORY_DIR, { recursive: true });
+        const legacy = await fsp.readFile(legacyPath(), 'utf8');
+        await fsp.mkdir(memoryDir(), { recursive: true });
         await fsp.writeFile(accountPath('local'), legacy, 'utf8');
-        await fsp.rename(LEGACY_PATH, LEGACY_PATH + '.migrated').catch(() => {});
+        await fsp.rename(legacyPath(), legacyPath() + '.migrated').catch(() => {});
       } catch {}
     }
   }
@@ -80,7 +88,7 @@ async function readAll() {
 }
 
 async function writeAll(notes) {
-  await fsp.mkdir(MEMORY_DIR, { recursive: true });
+  await fsp.mkdir(memoryDir(), { recursive: true });
   await fsp.writeFile(accountPath(), JSON.stringify({ notes }, null, 2), 'utf8');
 }
 
@@ -152,4 +160,4 @@ async function memoryText(maxChars = 6000, maxNotes = 80) {
   return lines.join('\n').slice(0, maxChars);
 }
 
-module.exports = { list, add, update, remove, setNotes, clear, setAccount, getAccount, sanitizeAccount, memoryText, normalizeText, MEMORY_DIR, CONFIG_DIR };
+module.exports = { list, add, update, remove, setNotes, clear, setAccount, getAccount, sanitizeAccount, memoryText, normalizeText, configDir, memoryDir };
