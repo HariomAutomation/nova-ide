@@ -450,6 +450,33 @@ function ModelsTab() {
         provider you configure. Agent mode needs a model that supports tool calling (Gemini 3.x, DeepSeek, GPT-4o, Llama 3.x…).
       </p>
 
+      <Group title="Recommended \u2014 Gemini with an API key">
+        <Row
+          label="1. Get a free key"
+          desc="AI Studio se free API key milti hai. Ye rasta Google-supported hai aur asli tool-calling deta hai, isliye agent theek se files/terminal/browser chalata hai."
+          control={
+            <button className="btn small" onClick={() => window.nova.openExternal('https://aistudio.google.com/apikey')}>
+              Get AI Studio key ↗
+            </button>
+          }
+        />
+        <Row
+          label="2. Add the Gemini model"
+          desc="Base URL aur model pehle se bhare hue ek model card ban jayega — bas apni key paste karke Save karo, phir Test connection."
+          control={
+            <button
+              className="btn small primary"
+              onClick={() => {
+                const preset = PRESETS.find((x) => x.id === 'gemini-flash-free');
+                if (preset) addPreset(preset);
+              }}
+            >
+              Add Gemini model
+            </button>
+          }
+        />
+      </Group>
+
       <Group title="Google Gemini (free)">
         <Row
           label="Sign in with Google"
