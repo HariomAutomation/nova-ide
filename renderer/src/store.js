@@ -378,7 +378,7 @@ export const useStore = create((set, get) => ({
         get().setStatus('Nothing to restore — no agent edits recorded for this chat.');
       } else {
         get().setStatus(
-          `Restored ${r.restored.length} file${r.restored.length > 1 ? 's' : ''} from before the agent\u2019s edits.`
+          `Restored ${r.restored.length} file${r.restored.length > 1 ? 's' : ''} from before the agent’s edits.`
         );
       }
       return r;

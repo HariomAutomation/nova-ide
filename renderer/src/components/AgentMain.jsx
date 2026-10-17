@@ -924,7 +924,7 @@ export default function AgentMain() {
           <div className={'plus-menu dropdown ' + (docked ? 'up' : 'down')}>
             <input
               className="plus-search"
-              placeholder="Search skills, context, chats\u2026"
+              placeholder="Search skills, context, chats…"
               value={plusQuery}
               onChange={(e) => setPlusQuery(e.target.value)}
               autoFocus
@@ -990,7 +990,7 @@ export default function AgentMain() {
             onClick={() => setModelMenuOpen(!modelMenuOpen)}
           >
             <span style={{ fontSize: 13, marginRight: 2 }}>⚡</span>
-            {activeModel ? activeModel.label : 'Select Model\u2026'}
+            {activeModel ? activeModel.label : 'Select Model…'}
             <span className="chip-caret">▾</span>
           </button>
 
@@ -1180,7 +1180,7 @@ export default function AgentMain() {
         </button>
         <div className="menu-anchor" ref={menuRef}>
           <button className="btn-icon" title="More" onClick={() => setMenuOpen((v) => !v)}>
-            {'\u2026'}
+            {'…'}
           </button>
           {menuOpen && (
             <div className="dropdown">

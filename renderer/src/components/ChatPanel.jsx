@@ -159,7 +159,7 @@ export default function ChatPanel() {
           <div key={m.id} className={'chat-msg ' + m.role}>
             <div className="chat-role">{m.role === 'user' ? 'You' : 'Nova'}</div>
             {m.role === 'assistant' ? (
-              <Markdown text={m.content || (chatBusy ? '\u2026' : '')} />
+              <Markdown text={m.content || (chatBusy ? '…' : '')} />
             ) : (
               <div className="chat-plain">{m.content}</div>
             )}
@@ -179,7 +179,7 @@ export default function ChatPanel() {
         <textarea
           className="chat-input"
           rows={3}
-          placeholder={'Ask Nova\u2026 (Enter to send)'}
+          placeholder={'Ask Nova… (Enter to send)'}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {

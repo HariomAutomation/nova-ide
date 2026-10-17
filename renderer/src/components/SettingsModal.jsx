@@ -237,7 +237,7 @@ function ModelsTab() {
             ? st.connected
               ? `connected \u00B7 ${st.email || ''}${st.project ? ` \u00B7 ${st.project}` : ''}`
               : 'not connected'
-            : '\u2026'}
+            : '…'}
         </span>
         {st && st.connected ? (
           <>
@@ -261,7 +261,7 @@ function ModelsTab() {
           </>
         ) : (
           <button className="btn small primary" disabled={busy} onClick={signIn}>
-            {busy ? 'Opening browser\u2026' : 'Sign in with Google'}
+            {busy ? 'Opening browser…' : 'Sign in with Google'}
           </button>
         )}
         {msg && <span className={msg.type === 'ok' ? 'testline-ok' : 'search-error small'}>{msg.text}</span>}
@@ -334,7 +334,7 @@ function ModelsTab() {
     return (
       <div className="testline">
         <button className="btn small" disabled={busy} onClick={run}>
-          {busy ? 'Testing\u2026' : 'Test connection'}
+          {busy ? 'Testing…' : 'Test connection'}
         </button>
         <button className="btn small" onClick={fetchList} title="Fetch the model ids this endpoint offers">
           Fetch models
@@ -450,7 +450,7 @@ function ModelsTab() {
         provider you configure. Agent mode needs a model that supports tool calling (Gemini 3.x, DeepSeek, GPT-4o, Llama 3.x…).
       </p>
 
-      <Group title="Recommended \u2014 Gemini with an API key">
+      <Group title="Recommended — Gemini with an API key">
         <Row
           label="1. Get a free key"
           desc="AI Studio se free API key milti hai. Ye rasta Google-supported hai aur asli tool-calling deta hai, isliye agent theek se files/terminal/browser chalata hai."
@@ -495,7 +495,7 @@ function ModelsTab() {
         />
       </Group>
 
-      <Group title="Gemini \u2014 Cloud Code (experimental)">
+      <Group title="Gemini — Cloud Code (experimental)">
         <Row
           label="Sign in with Google"
           desc="Antigravity jo backend use karta hai (cloudcode-pa) — aapke Google account / AI Pro se Gemini, bina API key, asli tool calling ke saath. Undocumented API hai: kabhi bhi badal sakta hai."

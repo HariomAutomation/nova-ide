@@ -22,10 +22,10 @@ export default function StatusBar() {
         title="Change model / add API keys"
         onClick={() => setSettingsOpen(true, 'models')}
       >
-        {activeModel ? `\u26A1 ${activeModel.label} · ${activeModel.model}` : '\u26A1 Add a model\u2026'}
+        {activeModel ? `\u26A1 ${activeModel.label} · ${activeModel.model}` : '\u26A1 Add a model…'}
       </button>
-      {agentBusy && <span className="status-msg accent">agent running (step {agentStep})\u2026</span>}
-      {chatBusy && <span className="status-msg accent">generating\u2026</span>}
+      {agentBusy && <span className="status-msg accent">agent running (step {agentStep})…</span>}
+      {chatBusy && <span className="status-msg accent">generating…</span>}
       <span className="status-msg">{status}</span>
       <div className="spacer" />
       {dirty && <span className="status-msg">\u25CF unsaved</span>}

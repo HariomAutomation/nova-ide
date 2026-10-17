@@ -6,7 +6,7 @@ export default function InlineEditOverlay({ inline, onPromptChange, onSubmit, on
           <input
             autoFocus
             className="inline-input"
-            placeholder="Edit with AI\u2026 (e.g. \u201crefactor this\u201d, \u201cfix the bug\u201d, \u201cadd error handling\u201d)"
+            placeholder="Edit with AI… (e.g. “refactor this”, “fix the bug”, “add error handling”)"
             value={inline.prompt}
             onChange={(e) => onPromptChange(e.target.value)}
             onKeyDown={(e) => {
@@ -20,7 +20,7 @@ export default function InlineEditOverlay({ inline, onPromptChange, onSubmit, on
               Generate
             </button>
           )}
-          {inline.streaming && <span className="inline-status">generating\u2026</span>}
+          {inline.streaming && <span className="inline-status">generating…</span>}
         </div>
 
         {inline.error && <div className="inline-error">{inline.error}</div>}
