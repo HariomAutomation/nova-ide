@@ -43,9 +43,11 @@ function Row({ label, desc, control }) {
 }
 
 function Group({ title, children }) {
+  // Cursor allows a card with no section label (e.g. the first group); only
+  // render the label when there is one.
   return (
     <div className="sgroup">
-      <div className="sgroup-title">{title}</div>
+      {title ? <div className="sgroup-title">{title}</div> : null}
       <div className="sgroup-body">{children}</div>
     </div>
   );
@@ -905,6 +907,20 @@ function BrowserTab() {
             />
           }
         />
+        <Row
+          label="Diagnostics"
+          desc="Launch Playwright, load a test page and capture a screenshot."
+          control={
+            <div className="input-row">
+              <button className="btn small" disabled={testing} onClick={runTest}>
+                {testing ? 'Testing…' : 'Test browser'}
+              </button>
+              <button className="btn small" onClick={reset}>
+                Reset
+              </button>
+            </div>
+          }
+        />
       </Group>
 
       {status && (
@@ -922,15 +938,6 @@ function BrowserTab() {
           )}
         </div>
       )}
-
-      <div className="preset-row">
-        <button className="btn" disabled={testing} onClick={runTest}>
-          {testing ? 'Testing…' : 'Test browser'}
-        </button>
-        <button className="btn" onClick={reset}>
-          Reset browser
-        </button>
-      </div>
 
       {test && !test.ok && <p className="search-error">{test.error}</p>}
       {test && test.ok && (
