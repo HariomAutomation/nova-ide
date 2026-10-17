@@ -114,9 +114,9 @@ export default function App() {
           {mainView === 'cloud' && <CloudPage />}
           {mainView === 'memory' && <MemoryPage />}
           {mainView === 'customize' && <CustomizePage />}
-          {/* Always mounted (hidden when inactive) so the sign-in session and
-              the agent's driver keep working across views. */}
-          <GeminiView active={mainView === 'gemini'} />
+          {/* Always mounted but never shown: the Gemini web app is the driver's
+              session, not a place the user works. Sign-in lives in Settings. */}
+          <GeminiView active={false} />
           </ErrorBoundary>
         </div>
         {chatVisible && <ChatPanel />}

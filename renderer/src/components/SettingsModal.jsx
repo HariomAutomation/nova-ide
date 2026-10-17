@@ -183,6 +183,51 @@ function ModelsTab() {
   const [tests, setTests] = useState({}); // cardId -> {state:'testing'|'ok'|'fail', msg, count}
   const [showList, setShowList] = useState({}); // cardId -> bool (show all fetched versions)
 
+  /** Sign-in / status row for the background Gemini Web session. */
+  function GeminiAccountLine() {
+    const [st, setSt] = useState(null);
+    const [busy, setBusy] = useState(false);
+
+    useEffect(() => {
+      const tick = () =>
+        window.nova
+          .geminiStatus()
+          .then(setSt)
+          .catch(() => {});
+      tick();
+      const id = setInterval(tick, 5000);
+      return () => clearInterval(id);
+    }, []);
+
+    const ready = !!(st && st.ok && st.hasEditor);
+    return (
+      <div className="cc-line">
+        <span className={ready ? 'testline-ok' : 'muted small'}>
+          {st
+            ? ready
+              ? 'connected \u2014 Gemini background me chalta hai'
+              : st.error
+                ? String(st.error).slice(0, 90)
+                : 'not signed in'
+            : '\u2026'}
+        </span>
+        <button
+          className={'btn small' + (ready ? '' : ' primary')}
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await window.nova.openGeminiLoginWindow();
+            } catch {}
+            setBusy(false);
+          }}
+        >
+          {busy ? 'Opening\u2026' : ready ? 'Reconnect' : 'Sign in with Google'}
+        </button>
+      </div>
+    );
+  }
+
   /** Sign-in / status row for the experimental Cloud Code provider. */
   function CloudCodeLine() {
     const [st, setSt] = useState(null);
@@ -477,21 +522,11 @@ function ModelsTab() {
         />
       </Group>
 
-      <Group title="Google Gemini (free)">
+      <Group title="Google Gemini (background)">
         <Row
-          label="Sign in with Google"
-          desc="Use Gemini with your own Google account — no API key, no Cloud project. Nova drives the Gemini web app with your signed-in session, and the agent keeps all of Nova's tools (files, terminal, browser). Google AI Pro ho to isi session me Pro models aur zyada limits milte hain."
-          control={
-            <button
-              className="btn primary"
-              onClick={() => {
-                useStore.getState().setMainView('gemini');
-                useStore.getState().setSettingsOpen(false);
-              }}
-            >
-              Open Gemini tab
-            </button>
-          }
+          label="Sign in once"
+          desc="Ek baar Google se sign in karo. Uske baad Gemini **background** me chalta hai \u2014 kaam Nova ke apne chat/agent se hota hai, Gemini ka web UI kahin nahi dikhta. Koi API key nahi. Google AI Pro ho to Pro models + zyada limits."
+          control={<GeminiAccountLine />}
         />
       </Group>
 
@@ -1292,8 +1327,8 @@ function CloudTab() {
   return (
     <div className="settings-body">
       <p className="muted small">
-        Ye sign-in <b>cloud files aur memory</b> ke liye hai (read-only Drive). <b>AI models ke liye nahi</b> — models ke
-        liye neeche "Open Gemini tab" ya Settings → Models dekho.
+        Ye sign-in <b>cloud files aur memory</b> ke liye hai (read-only Drive). <b>AI models ke liye nahi</b> — Gemini models
+        ke liye Settings → Models → "Google Gemini (background)" me sign in karo.
       </p>
 
       <Group title="Google Drive">
@@ -1408,16 +1443,10 @@ function CloudTab() {
         )}
         <Row
           label="Gemini models"
-          desc="Ye (Drive) sign-in models ke liye nahi hai. Free Gemini ke liye Gemini tab me apne Google account se sign in karo — koi API key nahi."
+          desc="Ye (Drive) sign-in models ke liye nahi hai. Gemini ke liye Settings → Models → 'Google Gemini (background)' me ek baar sign in karo — koi API key nahi."
           control={
-            <button
-              className="btn small"
-              onClick={() => {
-                useStore.getState().setMainView('gemini');
-                useStore.getState().setSettingsOpen(false);
-              }}
-            >
-              Open Gemini tab
+            <button className="btn small" onClick={() => useStore.getState().setSettingsTab('models')}>
+              Open Models
             </button>
           }
         />

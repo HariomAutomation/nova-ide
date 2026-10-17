@@ -100,7 +100,10 @@ export default function MenuBar() {
           { label: 'Search', action: () => store.getState().openSearchPage() },
           { label: 'Automations', action: () => store.getState().openAutomations() },
           { label: 'Customize', action: () => store.getState().openCustomize() },
-          { label: 'Gemini Web (subscription)', action: () => store.getState().setMainView('gemini') },
+          {
+            label: 'Gemini sign-in (Settings)',
+            action: () => store.getState().setSettingsOpen(true, 'models'),
+          },
           { sep: true },
           { label: 'Assistant Panel', action: () => store.getState().setChatVisible(!store.getState().chatVisible) },
           { label: 'Toggle Sidebar', action: () => store.getState().setSidebarVisible(!store.getState().sidebarVisible) },

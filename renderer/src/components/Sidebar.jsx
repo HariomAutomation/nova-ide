@@ -281,12 +281,6 @@ function ChatHome() {
         >
           <span className="sb-ico">{'\u2699'}</span> Customize
         </button>
-        <button
-          className={'sb-item' + (mainView === 'gemini' ? ' active' : '')}
-          onClick={() => useStore.getState().setMainView('gemini')}
-        >
-          <span className="sb-ico">{'\u{1F310}'}</span> Gemini
-        </button>
       </div>
 
       <div className="sb-section-row">
