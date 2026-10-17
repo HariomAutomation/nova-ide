@@ -407,6 +407,10 @@ ipcMain.handle('models:ping', async (_e, payload) => {
 
 ipcMain.on('gemini:wc-id', (_e, id) => geminiWeb.setWebContentsId(id));
 
+// Reports exactly what the driver can see on the Gemini page (selector match
+// counts + text samples), so a broken selector can be fixed from real data.
+ipcMain.handle('gemini:diagnose', async () => geminiWeb.diagnose());
+
 ipcMain.handle('gemini:newChat', async () => {
   try {
     return { ok: true, status: await geminiWeb.newChat() };

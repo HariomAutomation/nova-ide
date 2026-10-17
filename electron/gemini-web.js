@@ -130,18 +130,32 @@ const JS_STATE = `(() => {
   const sendBtn = pick(${JSON.stringify(SEND_SELECTORS)});
   const stopBtn = pick(${JSON.stringify(STOP_SELECTORS)});
   let last = null;
+  let via = null;
   const textSels = [
     'model-response .markdown.markdown-main-panel',
     'model-response .markdown',
+    'model-response message-content',
     '.model-response-text .markdown',
     '.model-response-text',
     'message-content',
     'model-response',
     '[data-test-id="model-response-text"]',
+    '[data-test-id="model-response"]',
+    'structured-content-container',
+    '[class*="markdown-main-panel"]',
+    '[class*="model-response"]',
+    'main [class*="markdown"]',
   ];
+  // Walk backwards and skip empty containers: an element can exist before the
+  // text has streamed into it.
   for (const s of textSels) {
-    const els = document.querySelectorAll(s);
-    if (els.length) { last = els[els.length - 1]; break; }
+    let els;
+    try { els = document.querySelectorAll(s); } catch { continue; }
+    for (let i = els.length - 1; i >= 0; i--) {
+      const t = els[i].innerText || '';
+      if (t.trim()) { last = els[i]; via = s; break; }
+    }
+    if (last) break;
   }
   return {
     url: location.href,
@@ -152,6 +166,48 @@ const JS_STATE = `(() => {
     busy: !!stopBtn,
     editorText: editor ? (editor.innerText || '') : '',
     text: last ? (last.innerText || '') : '',
+    via,
+  };
+})()`;
+
+// Diagnostics: exactly what the driver can see, so a selector mismatch can be
+// fixed from real data instead of guesswork.
+const JS_DIAG = `(() => {
+  const sels = ${JSON.stringify([
+    'model-response',
+    'model-response .markdown',
+    'model-response message-content',
+    'message-content',
+    '.model-response-text',
+    '[data-test-id="model-response"]',
+    'structured-content-container',
+    '[class*="markdown"]',
+    'rich-textarea .ql-editor',
+    'div[contenteditable="true"]',
+    'button[aria-label*="Stop" i]',
+    'button[aria-label*="Send" i]',
+  ])};
+  const counts = {};
+  for (const s of sels) {
+    try { counts[s] = document.querySelectorAll(s).length; } catch { counts[s] = 'err'; }
+  }
+  const lastText = (s) => {
+    try {
+      const els = document.querySelectorAll(s);
+      for (let i = els.length - 1; i >= 0; i--) {
+        const t = (els[i].innerText || '').trim();
+        if (t) return t.slice(0, 400);
+      }
+    } catch {}
+    return '';
+  };
+  return {
+    url: location.href,
+    title: document.title,
+    counts,
+    lastModelResponse: lastText('model-response'),
+    lastMarkdown: lastText('[class*="markdown"]'),
+    bodyHead: (document.body ? document.body.innerText : '').slice(0, 500),
   };
 })()`;
 
@@ -526,6 +582,17 @@ async function status() {
   return out;
 }
 
+/** What the driver can actually see on the page — for fixing selectors. */
+async function diagnose() {
+  try {
+    const wc = wcOrThrow();
+    const diag = await evaluate(wc, JS_DIAG);
+    return { ok: true, diag };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
 module.exports = {
   setWebContentsId,
   clearWebContents,
@@ -533,6 +600,7 @@ module.exports = {
   newChat,
   resetThreads,
   status,
+  diagnose,
   parseWebToolCalls,
   protocolBlock,
 };

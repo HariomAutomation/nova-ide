@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('nova', {
   reportGeminiWebview: (id) => ipcRenderer.send('gemini:wc-id', id),
   geminiNewChat: () => ipcRenderer.invoke('gemini:newChat'),
   geminiStatus: () => ipcRenderer.invoke('gemini:status'),
+  geminiDiagnose: () => ipcRenderer.invoke('gemini:diagnose'),
   openGeminiLoginWindow: (url) => ipcRenderer.invoke('gemini:openLoginWindow', url),
   onGeminiSignedIn: (cb) => {
     const l = (_e, d) => cb(d);

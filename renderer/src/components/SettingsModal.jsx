@@ -187,6 +187,7 @@ function ModelsTab() {
   function GeminiAccountLine() {
     const [st, setSt] = useState(null);
     const [busy, setBusy] = useState(false);
+    const [diag, setDiag] = useState('');
 
     useEffect(() => {
       const tick = () =>
@@ -224,6 +225,33 @@ function ModelsTab() {
         >
           {busy ? 'Opening\u2026' : ready ? 'Reconnect' : 'Sign in with Google'}
         </button>
+        {ready && (
+          <button
+            className="btn small"
+            title="Gemini page pe driver ko kya dikh raha hai — jawab na aaye to ye bhejo"
+            onClick={async () => {
+              try {
+                const r = await window.nova.geminiDiagnose();
+                const text = JSON.stringify(r, null, 1);
+                try {
+                  await navigator.clipboard.writeText(text);
+                } catch {}
+                const d = (r && r.diag) || {};
+                const hit = d.counts ? Object.entries(d.counts).filter(([, n]) => Number(n) > 0).map(([k, n]) => `${k}=${n}`).join(' · ') : '';
+                setDiag(`Copied to clipboard. Matched: ${hit || 'kuch nahi'} | lastMarkdown: ${String(d.lastMarkdown || '').slice(0, 60)}`);
+              } catch (e) {
+                setDiag(String(e.message || e));
+              }
+            }}
+          >
+            Diagnose
+          </button>
+        )}
+        {diag && (
+          <span className="muted small" style={{ flexBasis: '100%', lineHeight: 1.45 }}>
+            {diag}
+          </span>
+        )}
       </div>
     );
   }
