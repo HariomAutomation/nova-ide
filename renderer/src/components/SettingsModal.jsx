@@ -1286,7 +1286,7 @@ function CloudTab() {
             />
             <Row
               label="Client secret"
-              desc="Desktop app clients ke liye REQUIRED hai — Google ka token endpoint ise maangta hai. Yahan ek baar paste karke Save karo; Cloud Code aur Drive dono isi ko reuse karte hain."
+              desc="Desktop app clients ke liye REQUIRED hai — Google ka token endpoint ise maangta hai. Yahan ek baar paste karke Save karo; Drive sign-in isi ko use karta hai."
               control={
                 <input
                   className="input"
