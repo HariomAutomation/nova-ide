@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build
+dist/
+build/
+out/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+*~
+
+# Environment & local settings
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Electron / Playwright artifacts
+/tmp/
+test-results/
+playwright-report/
+blob-report/

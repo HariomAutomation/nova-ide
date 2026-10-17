@@ -1,0 +1,238 @@
+# Nova IDE
+
+A Cursor-like AI IDE built from scratch — **with your own API keys and full model choice**.
+
+The point: no plan gates. You bring any OpenAI-compatible endpoint — **Gemini 4**,
+OpenRouter, OpenCode Zen, OmniRoute, Sarvam AI, DeepSeek, Groq,
+Ollama, LM Studio, OpenAI, or anything custom — and pick the model yourself.
+
+## Features (v0.2)
+
+### Agent-first UI
+The center area **is** the agent — a Cursor-2026-style home with a big composer, repo chips
+and quick suggestions. The left sidebar has **New Chat / Search / Automations / Customize**,
+your repositories and recent chats (persisted across restarts). The right panel is an
+optional **Ask** assistant (`View → Assistant Panel`). Switch between the agent and the code
+editor with **Ctrl+Shift+A** or the **IDE ↗ / Agent ↗** pills. Light theme by default
+(`View → Theme` toggles), matching the new Cursor look.
+
+### Agent mode (the big one)
+The agent is an autonomous loop with real tools:
+
+| Tool | What it does | Approval |
+|---|---|---|
+| `list_dir` | List folders | auto |
+| `read_file` | Read files (numbered lines, pagination) | auto |
+| `grep_search` | Regex search across the workspace | auto |
+| `write_file` | Create/overwrite files | edit (auto by default) |
+| `edit_file` | Exact search/replace edits | edit (auto by default) |
+| `delete_file` | Delete files | edit (auto by default) |
+| `run_terminal_cmd` | Run shell commands (`bash -lc`) | **asks** (can auto-approve) |
+| `browser` | Drive a real Chromium via Playwright: `open`, `click`, `fill`, `press`, `text`, `screenshot`, `back`, `close` | browser (auto by default) |
+| `computer_use` | Screenshot the desktop + move/click/type/key | **asks** (can auto-approve) |
+| `web_search` | Search the web (DuckDuckGo, no key needed) | web (auto by default) |
+| `web_fetch` | Fetch a URL as readable text (docs, READMEs) | web (auto by default) |
+| `mcp_list_tools` | Discover tools of big MCP servers (bridge mode) | auto |
+
+- Tool calls show up as cards in the conversation: status, arguments, collapsible output, screenshots inline.
+- Approvals: Allow / Always / Deny directly in the card. "Always" persists to settings.
+- Files the agent edits reload live in the editor (if the tab is clean).
+- Recent chats are persisted; reopening one replays its transcript and keeps context.
+- Any model with OpenAI-style function calling works (DeepSeek, GPT-4o, Llama 3.x, …).
+
+### Free upgrades Cursor charges for (v0.3)
+- **MCP client + one-click Addons** — Customize → *Featured Addons*: **REA** (Reverse Engineer
+  Anything — Ghidra/Frida/decompile/memory, 207 tools) and **LeanToken** (token-bounded repo
+  exploration, 9 tools). Any other stdio MCP server: `~/.nova-ide/mcp.json`. **Bridge mode**:
+  servers with 40+ tools don't bloat every request — the agent discovers them with
+  `mcp_list_tools` and calls them by exact name, so context (and cost) stays small.
+- **Web search & fetch** — `web_search` (DuckDuckGo, no API key) and `web_fetch` built in.
+- **Project rules** — `NOVA.md` or `.nova/rules/*.md` in the repo are loaded into the agent's
+  system prompt automatically.
+- **Skills** — `~/.nova-ide/skills/<name>/SKILL.md`; type `/` in the composer to insert one.
+- **Checkpoints** — every agent edit is snapshotted; `⋯ → Restore files` undoes the agent's
+  edits for that chat.
+- **Automations** — save a prompt and re-run it as an agent task later (sidebar → Automations).
+- **Settings → Agents** — Cursor-style page: run modes (Auto-Review / Allowlist / Full Auto),
+  approvals allowlist (edits, terminal, browser, desktop, MCP), read access, file-deletion and
+  external-file protection, queue/interrupt for new messages, Ctrl+Enter submit, max steps.
+
+### Editor & shell
+- **Monaco** editor (VS Code core), 40+ languages, tabs, dirty indicators
+- **Search panel** — workspace-wide regex search (ripgrep-style), click a hit to jump to the line
+- **Terminal panel** (Ctrl+`) — run commands in the workspace, live output
+- **Inline AI edit (Ctrl+K)** — select code, describe a change, preview, Accept/Reject
+- **Ask panel** — plain streaming chat with an "include active file" toggle
+- **Menu bar** (File/Edit/View/Help) + status bar with model, terminal and folder chips
+
+### Models
+- One-click presets: **Gemini 4 (Argon)**, OpenRouter, **OpenCode Zen**, **OmniRoute
+  (self-host)**, **Sarvam AI**, DeepSeek, Groq, OpenAI, Ollama, LM Studio — plus custom endpoints
+- **⇅ Fetch models** — paste your key, pull the live model list from the endpoint, pick from the
+  dropdown (no need to memorize model IDs)
+- Multiple models, pick the active one in one click
+- Keys stored locally (`~/.config/Nova IDE/settings.json`), only sent to the provider you configured
+
+### Google Sign-In (Vertex AI)
+Sign in with your Google account instead of pasting a key, and run Gemini models through your own
+Google Cloud project's Vertex AI quota:
+
+- Settings → **Models** → **Google Account (Vertex AI)** → paste an OAuth **Client ID** (desktop
+  app type), **Project ID** + location → **Sign in with Google**
+- OAuth 2.0 loopback + PKCE; refresh token stored in `~/.nova-ide/google.json`, access tokens
+  refresh automatically before every request — nothing to copy around
+- **+ Add Gemini 4 (Vertex)** drops in a ready model (`google/gemini-4-argon`) wired to
+  `https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/endpoints/openapi`
+- Heads-up: the Gemini app **Pro subscription is not API quota** — Vertex usage bills to the Cloud
+  project (the $300 free trial covers it). Free API-key tier keeps working separately.
+
+## Run
+
+```bash
+cd nova-ide
+npm install
+npm start        # builds renderer, then launches Electron
+```
+
+Dev mode with hot reload:
+
+```bash
+npm run dev:renderer          # terminal 1 — Vite at :5173
+NOVA_DEV_SERVER=http://localhost:5173 npm run app   # terminal 2
+```
+
+## First steps
+
+1. `Ctrl+,` → **Models** → add a provider (e.g. **DeepSeek**) → paste your API key → Save
+2. `Ctrl+O` to open a folder
+3. Type a task in the center composer, e.g. *"Create a snake game in Python and run it to
+   check for errors"* — the agent reads/writes files, runs commands, drives the browser
+4. **Ctrl+Shift+A** to flip to the editor; `Ctrl+K` edits a selection with AI
+
+## Computer use (desktop control) — Linux notes
+
+`computer_use` needs a screenshot tool and an input-injection tool:
+
+- **Screenshots** — auto-detected chain: `xdg-desktop-portal` (Wayland), `gnome-screenshot`,
+  `grim` (wlroots), `scrot`, GNOME Shell D-Bus.
+  On GNOME Wayland the portal shows a **"Share" dialog per capture** (platform security —
+  click it and the screenshot is taken). On X11 it works silently.
+- **Input on X11/XWayland** — `xdotool`. This machine already has a user-space copy at
+  `~/.local/bin/xdotool` with `libxdo.so.3` in `~/.local/lib` (Nova adds that to
+  `LD_LIBRARY_PATH` automatically). For a system-wide install: `sudo apt install xdotool`.
+- **Input on Wayland (native apps)** — `sudo apt install ydotool` and enable the `ydotoold`
+  user service; ydotool injects at the kernel uinput level. xdotool only reaches XWayland
+  windows, not Wayland-native apps.
+
+Settings → **Computer** shows what Nova detected and a test screenshot button.
+
+## Browser tool
+
+Uses Playwright Chromium. Nova is bundled with `playwright` and reuses the usual
+`~/.cache/ms-playwright` browser cache; if the browser is missing, run:
+
+```bash
+npx playwright install chromium
+```
+
+Settings → **Browser** can launch a test page, show a screenshot, and toggle headless/visible.
+
+## Where settings live
+
+- Models + keys + agent/browser prefs: `~/.config/Nova IDE/settings.json`
+- MCP servers: `~/.nova-ide/mcp.json` (the Addons UI writes here)
+- Skills: `~/.nova-ide/skills/*/SKILL.md`
+- Checkpoints (undo agent edits): `~/.nova-ide/checkpoints/`
+- Agent artifacts (browser screenshots, desktop captures): `~/.nova-ide/artifacts/`
+
+## Automated testing (dev)
+
+```bash
+# terminal 1
+npx electron . --no-sandbox --remote-debugging-port=9222
+
+# terminal 2
+node scripts/verify-app.mjs 9222   # page title, DOM preview, console errors, screenshot
+node scripts/test-flow.mjs 9222    # open folder/file, edit, settings modal, AI error path
+node scripts/test-ask.mjs 9222     # Ask panel e2e (streaming, typing, reply) vs mock LLM
+node scripts/test-agent.mjs 9222   # full agent e2e against the bundled mock LLM:
+                                   #   write_file -> run_terminal_cmd (approval flow) ->
+                                   #   browser open + screenshot -> grep_search -> final answer,
+                                   #   plus terminal panel and search UI checks
+```
+
+`test-agent.mjs` is fully deterministic — it spawns `scripts/mock-llm.mjs`
+(a tiny OpenAI SSE server with scripted tool calls) and needs **no API key**.
+Screenshots land in `/tmp/opencode/*.png`.
+
+## Project layout
+
+```
+electron/             Electron main process + preload (CJS)
+  main.js             window, app:// protocol, fs IPC, search, terminal, AI + agent IPC
+  agent.js            agent loop: tool schemas, streaming tool-calls, approvals
+  preload.js          contextBridge API -> window.nova
+  tools/
+    fsTools.js        list/read/write/edit/delete + workspace search
+    terminal.js       runCommand (spawn bash, streams output)
+    browser.js        Playwright Chromium wrapper (lazy, headless toggle)
+    computer.js       desktop screenshot + input injection (gnome-tools/xdotool/ydotool)
+renderer/             React + Vite UI
+  src/                store (zustand), agent main view + composer, sidebar (chat/files/search),
+                      tool cards, terminal, search, menubar, settings tabs, monaco setup
+scripts/
+  verify-app.mjs      CDP smoke test
+  test-flow.mjs       CDP functional test (editor/settings/ask)
+  test-agent.mjs      CDP agent e2e (deterministic, mock LLM)
+  mock-llm.mjs        scripted OpenAI-SSE mock server with tool calls
+docs/
+  cursor-recon.md     Reverse-engineering notes on Cursor 3.24.18 (REA analysis)
+```
+
+## Automated testing (Sanity, Smoke, Regression, E2E)
+
+Run the full automated suite in one command:
+
+```bash
+npm run test:all
+```
+
+Or individual test suites:
+
+```bash
+npm run test:regression   # Core backend: fsTools, checkpoints, terminal, web, agent rules, heuristics (19/19 pass)
+npm run test:sanity       # UI & Store sanity via CDP (views, themes, settings defaults, window)
+npm run test:smoke        # File opening, Monaco editor typing, dirty state, error handling
+npm run test:agent        # End-to-end agent loop (tool execution, approvals, Playwright browser, grep, search)
+```
+
+## Cursor IDE Parity (Free vs Paid)
+
+| Feature | Cursor IDE (Paid $20-$40/mo) | Nova IDE (100% Free) |
+|---|---|---|
+| **Composer / Agent Loop** | Gated behind monthly quota & paid sub | **Free & unlimited** multi-step agent with bash, browser & files |
+| **Model Choice** | Locked to Cursor servers (`api2.cursor.sh`) | **Full freedom**: Gemini Web, Ollama, DeepSeek, Groq, OpenAI, etc. |
+| **Gemini 4 Access** | Requires paid credits | **Free** via embedded `gemini.google.com/app` session partition |
+| **Tab / Inline Autocomplete** | Paid Copilot++ feature | **Built-in** via Monaco `registerInlineCompletionsProvider` |
+| **`@` Context Mentions** | `@files`, `@git`, `@terminal`, `@web`, `@codebase` | **Built-in** in Composer (`@git`, `@terminal`, `@web`, `@codebase`, `@files`) |
+| **Project Rules** | `.cursorrules`, `.cursor/rules/*.mdc` | **Auto-loaded** (`.cursorrules`, `.cursor/rules/*.mdc`, `NOVA.md`, `AGENTS.md`) |
+| **Checkpoints & Undo** | Paid checkpointing | **Built-in** automatic snapshot & rollback (`checkpoints.js`) |
+| **Web Search & Fetch** | Counts against paid requests | **Free & unlimited** via DuckDuckGo HTML parser & direct fetch |
+| **MCP Integration** | Supported | **Built-in** with featured one-click addons (REA, LeanToken) |
+
+## Roadmap
+
+- [x] Agent mode with file/terminal/browser/computer tools
+- [x] Terminal panel (command runner)
+- [x] Agent-first UI (Cursor-2026 layout), light/dark themes, persisted recent chats
+- [x] MCP client + one-click Addons (REA, LeanToken) with token-saving bridge mode
+- [x] Web search / web fetch, project rules, skills, checkpoints, automations
+- [x] Tab autocomplete (inline completion provider with heuristics & LLM stream)
+- [x] Gemini 4 Web session integration (`gemini.google.com/app`)
+- [x] Cursor `@` mentions (`@git`, `@terminal`, `@web`, `@codebase`)
+- [x] `.cursorrules` and `.cursor/rules/*.mdc` auto-loading
+- [x] Comprehensive test matrix (Sanity, Smoke, Regression, E2E)
+- [ ] Full PTY terminal (node-pty + xterm.js)
+- [ ] Cmd/Ctrl+P quick open
+- [ ] Diff review UI for agent edits (Monaco diff editor)
+- [ ] LSP integration (diagnostics, go-to-definition)
