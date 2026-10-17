@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('nova', {
   agentApprove: (agentId, callId, allow) => ipcRenderer.invoke('agent:approve', { agentId, callId, allow }),
   agentNew: (agentId) => ipcRenderer.invoke('agent:new', { agentId }),
   onAgentEvent: (cb) => subscribe('agent:event', cb),
+  onAutomationWebhook: (cb) => subscribe('automation:webhook', cb),
 
   // terminal
   termRun: (payload) => ipcRenderer.invoke('term:run', payload),

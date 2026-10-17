@@ -22,7 +22,10 @@ export default function App() {
   const theme = useStore((s) => s.theme);
 
   useEffect(() => {
-    useStore.getState().loadSettings();
+    useStore.getState().loadSettings().then(() => {
+      // Automations with a startup/interval/daily trigger fire from here.
+      useStore.getState().startAutomationScheduler();
+    });
   }, []);
 
   useEffect(() => {
@@ -34,11 +37,15 @@ export default function App() {
     const offFs = window.nova.onFsChanged(({ path }) => useStore.getState().onFsChanged(path));
     const offTermData = window.nova.onTermData((p) => useStore.getState().termData(p));
     const offTermExit = window.nova.onTermExit((p) => useStore.getState().termExit(p));
+    const offWebhook = window.nova.onAutomationWebhook
+      ? window.nova.onAutomationWebhook(({ token }) => useStore.getState().handleAutomationWebhook(token))
+      : () => {};
     return () => {
       offAgent();
       offFs();
       offTermData();
       offTermExit();
+      offWebhook();
     };
   }, []);
 

@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
+const http = require('node:http');
 
 const fsTools = require('./tools/fsTools');
 const { runCommand } = require('./tools/terminal');
@@ -85,8 +86,58 @@ function createWindow() {
   }
 }
 
+/* ------------------------------ automation webhook ------------------------------ */
+// A tiny local HTTP listener so external tools can trigger an automation — the
+// local equivalent of Cursor's /automations/webhook/. Bound to 127.0.0.1 only.
+let webhookServer = null;
+let webhookPort = null;
+
+function startWebhookServer() {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      try {
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        if (req.method === 'GET' && url.pathname === '/automations/health') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end('{"ok":true}');
+          return;
+        }
+        const m = /^\/automations\/webhook\/([A-Za-z0-9_-]{6,64})$/.exec(url.pathname);
+        if (req.method !== 'POST' || !m) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end('{"error":"not found"}');
+          return;
+        }
+        let body = '';
+        req.on('data', (c) => {
+          body += c;
+          if (body.length > 100000) req.destroy();
+        });
+        req.on('end', () => {
+          send('automation:webhook', { token: m[1], body: body.slice(0, 10000) });
+          res.writeHead(202, { 'Content-Type': 'application/json' });
+          res.end('{"ok":true}');
+        });
+      } catch {
+        try {
+          res.writeHead(500);
+          res.end();
+        } catch {}
+      }
+    });
+    server.on('error', () => resolve(null));
+    server.listen(4599, '127.0.0.1', () => {
+      webhookServer = server;
+      webhookPort = server.address().port;
+      resolve(webhookPort);
+    });
+  });
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
+
+  startWebhookServer();
 
   try {
     const gemSession = session.fromPartition('persist:gemini');
@@ -148,6 +199,9 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   try {
     mcp.shutdown();
+  } catch {}
+  try {
+    if (webhookServer) webhookServer.close();
   } catch {}
 });
 
@@ -748,6 +802,7 @@ ipcMain.handle('app:info', async () => ({
     }
   })(),
   hostname: os.hostname(),
+  webhook: { port: webhookPort, base: webhookPort ? `http://127.0.0.1:${webhookPort}` : '' },
 }));
 
 ipcMain.handle('app:openExternal', async (_e, url) => {

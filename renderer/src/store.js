@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import { langFromPath } from './languages';
+import { dueAutomations, normalizeTrigger } from './automation-schedule';
+
+// Automation scheduler state (module-level: not part of the render tree).
+let autoTimer = null;
+let pendingAutomationId = null;
 
 const api = () => window.nova;
 
@@ -181,14 +186,20 @@ export const useStore = create((set, get) => ({
 
   /* ------------------------------ automations ------------------------------ */
 
-  addAutomation({ name, prompt }) {
+  addAutomation({ name, prompt, trigger, enabled }) {
     const p = String(prompt || '').trim();
     if (!p) return;
     const a = {
       id: uuid(),
       name: String(name || '').trim() || 'Automation',
       prompt: p,
+      trigger: normalizeTrigger(trigger),
+      enabled: enabled !== false,
+      webhookToken: uuid().replace(/-/g, '').slice(0, 16),
       createdAt: Date.now(),
+      lastRunAt: null,
+      lastStatus: null,
+      lastError: null,
     };
     set({ automations: [a, ...get().automations].slice(0, 50) });
     get().saveSettings();
@@ -205,12 +216,56 @@ export const useStore = create((set, get) => ({
     get().saveSettings();
   },
 
-  async runAutomation(id) {
+  async runAutomation(id, source) {
     const a = get().automations.find((x) => x.id === id);
-    if (!a) return;
+    if (!a) return false;
+    if (!get().models.find((m) => m.id === get().activeModelId)) {
+      get().setStatus('Automation needs a model — add one in Settings → Models first.');
+      get().updateAutomation(id, { lastRunAt: Date.now(), lastStatus: 'error', lastError: 'No model configured' });
+      return false;
+    }
+    if (get().agentBusy) {
+      get().setStatus('Automation skipped — the agent is busy. It will try again shortly.');
+      return false;
+    }
+    // Stamp the run before dispatching so interval/daily triggers don't re-fire.
+    get().updateAutomation(id, { lastRunAt: Date.now(), lastStatus: 'running', lastError: null });
+    pendingAutomationId = id;
     get().newAgentChat();
-    get().setStatus(`Running automation: ${a.name}`);
+    get().setStatus(`Running automation: ${a.name}${source ? ` (${source})` : ''}`);
     await get().agentSend(a.prompt);
+    return true;
+  },
+
+  /** Fire automations whose trigger is due. One agent turn at a time. */
+  startAutomationScheduler() {
+    if (autoTimer) return;
+    const tick = () => {
+      const s = get();
+      if (s.agentBusy || pendingAutomationId) return;
+      const due = dueAutomations(s.automations, Date.now());
+      if (due.length) s.runAutomation(due[0].id, 'schedule');
+    };
+    autoTimer = setInterval(tick, 30000);
+    setTimeout(tick, 5000);
+  },
+
+  stopAutomationScheduler() {
+    if (autoTimer) {
+      clearInterval(autoTimer);
+      autoTimer = null;
+    }
+  },
+
+  /** A local webhook hit (POST /automations/webhook/<token>) runs its automation. */
+  handleAutomationWebhook(token) {
+    const a = get().automations.find((x) => x.webhookToken && x.webhookToken === token);
+    if (!a) {
+      get().setStatus('Webhook received for an unknown automation.');
+      return false;
+    }
+    get().runAutomation(a.id, 'webhook');
+    return true;
   },
 
   /* -------------------------- workspace file list (@) -------------------------- */
@@ -539,7 +594,12 @@ export const useStore = create((set, get) => ({
       browserSettings: { headless: true, ...(s.browserSettings || {}) },
       theme: s.theme === 'dark' ? 'dark' : 'light',
       chats: Array.isArray(s.chats) ? s.chats.slice(0, MAX_CHATS) : [],
-      automations: Array.isArray(s.automations) ? s.automations.slice(0, 50) : [],
+      automations: (Array.isArray(s.automations) ? s.automations : []).slice(0, 50).map((a) => ({
+        ...a,
+        trigger: normalizeTrigger(a.trigger),
+        enabled: a.enabled !== false,
+        webhookToken: a.webhookToken || uuid().replace(/-/g, '').slice(0, 16),
+      })),
       usedAgent: !!s.usedAgent,
     });
     api()
@@ -969,6 +1029,7 @@ export const useStore = create((set, get) => ({
       case 'error':
         s.agentAppend({ kind: 'error', text: e.message });
         set({ agentBusy: false });
+        finishAutomationRun('error', e.message);
         pumpQueue();
         break;
       case 'done':
@@ -976,6 +1037,7 @@ export const useStore = create((set, get) => ({
         s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, { streaming: false });
         s.updateCurrentChatEntry();
         s.saveSettings();
+        finishAutomationRun('ok', null);
         pumpQueue();
         break;
       default:
@@ -1147,6 +1209,16 @@ export const useStore = create((set, get) => ({
 
   clearTerminal: () => set({ termLines: [] }),
 }));
+
+// Record how an automation run ended (called from the agent 'done'/'error' handlers).
+function finishAutomationRun(status, error) {
+  if (!pendingAutomationId) return;
+  const id = pendingAutomationId;
+  pendingAutomationId = null;
+  try {
+    useStore.getState().updateAutomation(id, { lastStatus: status, lastError: error || null, lastRunAt: Date.now() });
+  } catch {}
+}
 
 // Dev/debug + automation hook (used by scripts/test-flow.mjs / test-agent.mjs)
 if (typeof window !== 'undefined') {

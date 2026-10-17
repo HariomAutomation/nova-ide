@@ -14,6 +14,12 @@ import { parseWebToolCalls, protocolBlock } from '../electron/gemini-web.js';
 import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage } from '../electron/agent.js';
 import { isWithin } from '../electron/tools/paths.js';
 import computer from '../electron/tools/computer.js';
+import {
+  isAutomationDue,
+  dueAutomations,
+  normalizeTrigger,
+  describeTrigger,
+} from '../renderer/src/automation-schedule.js';
 import { getHeuristicCompletion } from '../renderer/src/completion-heuristics.js';
 
 const TEST_DIR = path.join(os.tmpdir(), 'nova-regression-' + Date.now());
@@ -498,6 +504,60 @@ suite.push(
     assert.ok(calls && calls.length === 1);
     assert.equal(calls[0].name, 'run_terminal_cmd');
     assert.match(calls[0].argsRaw, /npm test/);
+  })
+);
+
+/* ------------------------------- automations ------------------------------- */
+
+suite.push(
+  test('automation: normalizeTrigger validates and clamps', () => {
+    assert.deepEqual(normalizeTrigger({ type: 'interval', minutes: 0 }), { type: 'interval', minutes: 60 }); // 0 is invalid -> default
+    assert.deepEqual(normalizeTrigger({ type: 'interval', minutes: 99999 }), { type: 'interval', minutes: 10080 });
+    assert.deepEqual(normalizeTrigger({ type: 'daily', time: '7:05' }), { type: 'daily', time: '07:05' });
+    assert.deepEqual(normalizeTrigger({ type: 'daily', time: '7:5' }), { type: 'daily', time: '09:00' }); // needs 2-digit minutes
+    assert.deepEqual(normalizeTrigger({ type: 'daily', time: 'nope' }), { type: 'daily', time: '09:00' });
+    assert.deepEqual(normalizeTrigger({ type: 'bogus' }), { type: 'manual' });
+    assert.deepEqual(normalizeTrigger(null), { type: 'manual' });
+  })
+);
+
+suite.push(
+  test('automation: isAutomationDue across trigger types', () => {
+    const now = new Date(2026, 0, 1, 10, 0, 0).getTime();
+    assert.equal(isAutomationDue({ enabled: true, trigger: { type: 'manual' } }, now), false);
+    assert.equal(isAutomationDue({ enabled: false, trigger: { type: 'interval', minutes: 1 }, lastRunAt: 0 }, now), false);
+    // startup: once
+    assert.equal(isAutomationDue({ enabled: true, trigger: { type: 'startup' }, lastRunAt: 0 }, now), true);
+    assert.equal(isAutomationDue({ enabled: true, trigger: { type: 'startup' }, lastRunAt: 1 }, now), false);
+    // interval
+    assert.equal(isAutomationDue({ enabled: true, trigger: { type: 'interval', minutes: 30 }, lastRunAt: now - 29 * 60000 }, now), false);
+    assert.equal(isAutomationDue({ enabled: true, trigger: { type: 'interval', minutes: 30 }, lastRunAt: now - 31 * 60000 }, now), true);
+    // daily 09:00 — now is 10:00
+    assert.equal(isAutomationDue({ enabled: true, trigger: { type: 'daily', time: '09:00' }, lastRunAt: 0 }, now), true);
+    assert.equal(
+      isAutomationDue({ enabled: true, trigger: { type: 'daily', time: '09:00' }, lastRunAt: new Date(2026, 0, 1, 9, 30).getTime() }, now),
+      false,
+    );
+    assert.equal(isAutomationDue({ enabled: true, trigger: { type: 'daily', time: '23:00' }, lastRunAt: 0 }, now), false);
+  })
+);
+
+suite.push(
+  test('automation: dueAutomations filters + orders, describeTrigger labels', () => {
+    const now = new Date(2026, 0, 1, 12, 0, 0).getTime();
+    const list = [
+      { id: 'a', createdAt: 2, enabled: true, trigger: { type: 'startup' }, lastRunAt: 0 },
+      { id: 'b', createdAt: 1, enabled: true, trigger: { type: 'startup' }, lastRunAt: 0 },
+      { id: 'c', createdAt: 3, enabled: true, trigger: { type: 'manual' } },
+      { id: 'd', createdAt: 4, enabled: true, trigger: { type: 'interval', minutes: 5 }, lastRunAt: now },
+    ];
+    const due = dueAutomations(list, now).map((x) => x.id);
+    assert.deepEqual(due, ['b', 'a']);
+    assert.deepEqual(dueAutomations(null, now), []);
+    assert.equal(describeTrigger({ type: 'manual' }), 'Manual');
+    assert.equal(describeTrigger({ type: 'interval', minutes: 15 }), 'Every 15 min');
+    assert.equal(describeTrigger({ type: 'daily', time: '07:30' }), 'Daily at 07:30');
+    assert.equal(describeTrigger({ type: 'startup' }), 'On app start');
   })
 );
 
