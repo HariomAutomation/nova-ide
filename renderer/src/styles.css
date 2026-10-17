@@ -4708,3 +4708,21 @@ input:focus, select:focus, textarea:focus {
 }
 .rp-empty { padding: 10px 8px; }
 .rp-foot { display: flex; gap: 6px; padding: 6px 2px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
+
+/* chat row menu (pin / rename / delete) */
+.chat-menu { width: 168px; min-width: 168px; z-index: 200; animation: novaFadeUp 0.14s ease both; }
+.dropdown-item.danger { color: var(--danger-text, #f2a1a4); }
+.dropdown-item.danger:hover { background: var(--danger-bg, rgba(229, 72, 77, 0.15)); }
+.sb-pin { margin-right: 5px; font-size: 10px; }
+.sb-chat-edit {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--bg-input, var(--panel));
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 1px 5px;
+  outline: none;
+}

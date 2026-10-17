@@ -242,12 +242,43 @@ function ChatHome() {
   const navFwd = useStore((s) => s.navFwd);
   const gitBranch = useStore((s) => s.gitBranch);
 
+  const [chatMenu, setChatMenu] = useState(null); // { id, x, y, pinned }
+  const [editingId, setEditingId] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+
+  useEffect(() => {
+    if (!chatMenu) return;
+    const onDown = (e) => {
+      if (e.target && e.target.closest && (e.target.closest('.chat-menu') || e.target.closest('.sb-chat-x'))) return;
+      setChatMenu(null);
+    };
+    const onScroll = () => setChatMenu(null);
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [chatMenu]);
+
+  function commitRename(id) {
+    const t = editTitle.trim();
+    if (t) useStore.getState().renameChat(id, t);
+    setEditingId(null);
+  }
+
   const userName = appInfo?.username || 'you';
 
   // Group chats by the folder they were created in, newest group first.
   const groups = [];
   const byKey = new Map();
-  const sorted = [...chats].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const sorted = [...chats].sort((a, b) => {
+    const pa = a.pinned ? 1 : 0;
+    const pb = b.pinned ? 1 : 0;
+    if (pa !== pb) return pb - pa; // pinned first
+    if (pa && pb) return (b.pinnedAt || 0) - (a.pinnedAt || 0);
+    return (b.updatedAt || 0) - (a.updatedAt || 0);
+  });
   for (const c of sorted) {
     const key = c.folder || '__none__';
     if (!byKey.has(key)) {
@@ -383,17 +414,36 @@ function ChatHome() {
                 title={c.title}
               >
                 <span className="sb-dot" />
-                <span className="sb-chat-title">{c.title || 'New chat'}</span>
+                {editingId === c.id ? (
+                  <input
+                    className="sb-chat-edit"
+                    value={editTitle}
+                    autoFocus
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename(c.id);
+                      if (e.key === 'Escape') setEditingId(null);
+                    }}
+                    onBlur={() => commitRename(c.id)}
+                  />
+                ) : (
+                  <span className="sb-chat-title">
+                    {c.pinned ? <span className="sb-pin">{'\u{1F4CC}'}</span> : null}
+                    {c.title || 'New chat'}
+                  </span>
+                )}
                 <span className="sb-time">{timeAgo(c.updatedAt)}</span>
                 <button
                   className="sb-chat-x"
-                  title="Remove from list"
+                  title="More"
                   onClick={(e) => {
                     e.stopPropagation();
-                    removeChat(c.id);
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setChatMenu((m) => (m && m.id === c.id ? null : { id: c.id, x: r.right, y: r.bottom, pinned: !!c.pinned }));
                   }}
                 >
-                  {'\u00D7'}
+                  {'\u22EF'}
                 </button>
               </div>
             ))}
@@ -401,6 +451,43 @@ function ChatHome() {
         ))}
       </div>
 
+
+      {chatMenu && (
+        <div
+          className="chat-menu dropdown"
+          style={{ position: 'fixed', left: Math.max(8, chatMenu.x - 168), top: chatMenu.y + 4 }}
+        >
+          <button
+            className="dropdown-item"
+            onClick={() => {
+              useStore.getState().pinChat(chatMenu.id, !chatMenu.pinned);
+              setChatMenu(null);
+            }}
+          >
+            {chatMenu.pinned ? 'Unpin' : 'Pin'}
+          </button>
+          <button
+            className="dropdown-item"
+            onClick={() => {
+              const c = chats.find((x) => x.id === chatMenu.id);
+              setEditingId(chatMenu.id);
+              setEditTitle((c && c.title) || '');
+              setChatMenu(null);
+            }}
+          >
+            Rename
+          </button>
+          <button
+            className="dropdown-item danger"
+            onClick={() => {
+              removeChat(chatMenu.id);
+              setChatMenu(null);
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
 
       <div className="sb-account">
         <span className="avatar">{(userName[0] || 'N').toUpperCase()}</span>

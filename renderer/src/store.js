@@ -1301,6 +1301,23 @@ export const useStore = create((set, get) => ({
     s._applyChat(chatId);
   },
 
+  pinChat(chatId, pinned) {
+    const on = pinned !== false;
+    set({
+      chats: get().chats.map((c) =>
+        c.id === chatId ? { ...c, pinned: on, pinnedAt: on ? Date.now() : null } : c,
+      ),
+    });
+    get().saveSettings();
+  },
+
+  renameChat(chatId, title) {
+    const t = String(title || '').trim();
+    if (!t) return;
+    set({ chats: get().chats.map((c) => (c.id === chatId ? { ...c, title: t.slice(0, 120) } : c)) });
+    get().saveSettings();
+  },
+
   removeChat(chatId) {
     const s = get();
     set({
