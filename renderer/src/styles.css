@@ -4829,3 +4829,9 @@ img.avatar.sm { width: 22px; height: 22px; }
   text-transform: uppercase;
   color: var(--muted);
 }
+
+/* Settings rows: a wide control must wrap instead of squeezing the label to
+   one word per line. */
+.srow { flex-wrap: wrap; }
+.srow-text { flex: 1 1 260px; min-width: 0; }
+.srow-control { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }

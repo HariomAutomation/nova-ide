@@ -202,17 +202,39 @@ async function ensureProject() {
   return project;
 }
 
-/** Available model ids (best effort). */
+/**
+ * Available model ids (best effort - the endpoint is undocumented, so try a few
+ * shapes and report the real reason if all fail).
+ */
 async function listModels() {
-  try {
-    const j = await apiCall('fetchAvailableModels', { metadata: META });
-    const out = [];
-    for (const m of Object.keys(j.models || {})) out.push(m);
-    if (Array.isArray(j.models)) for (const m of j.models) out.push(m && (m.id || m.name));
-    return { models: out.filter(Boolean) };
-  } catch (e) {
-    return { error: String(e.message || e) };
+  const project = await ensureProject().catch(() => null);
+  const attempts = [
+    { method: 'fetchAvailableModels', body: { metadata: META, ...(project ? { project } : {}) } },
+    { method: 'fetchAvailableModels', body: { project, metadata: META } },
+    { method: 'listModels', body: { project, metadata: META } },
+  ];
+  const errors = [];
+  for (const a of attempts) {
+    try {
+      const j = await apiCall(a.method, a.body);
+      const m = j && j.models;
+      const out = [];
+      if (Array.isArray(m)) {
+        for (const x of m) out.push(typeof x === 'string' ? x : x && (x.name || x.id || x.model));
+      } else if (m && typeof m === 'object') {
+        for (const k of Object.keys(m)) {
+          const v = m[k];
+          out.push(v && (v.name || v.id) ? v.name || v.id : k);
+        }
+      }
+      const list = out.filter(Boolean);
+      if (list.length) return { models: list };
+      errors.push(`${a.method}: reply me koi model nahi mila`);
+    } catch (e) {
+      errors.push(`${a.method}: ${String(e.message || e)}`);
+    }
   }
+  return { error: errors.join('  |  ') };
 }
 
 /* ------------------------------ message mapping ------------------------------ */
