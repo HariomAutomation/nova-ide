@@ -454,6 +454,7 @@ export const useStore = create((set, get) => ({
       const r = await api().memoryAdd({ text: body, source: 'user' });
       if (r && r.notes) set({ memory: { ...get().memory, notes: r.notes, path: r.path || get().memory.path } });
       get().setStatus('Saved to memory.');
+      get().pushMemoryToCloud().catch(() => {});
     } catch (e) {
       get().setStatus(`Memory save failed: ${e.message}`);
     }
@@ -463,6 +464,7 @@ export const useStore = create((set, get) => ({
     try {
       const r = await api().memoryRemove(id);
       if (r && r.notes) set({ memory: { ...get().memory, notes: r.notes } });
+      get().pushMemoryToCloud().catch(() => {});
     } catch (e) {
       get().setStatus(`Memory delete failed: ${e.message}`);
     }
@@ -473,9 +475,49 @@ export const useStore = create((set, get) => ({
       const r = await api().memoryClear();
       if (r && r.notes) set({ memory: { ...get().memory, notes: r.notes } });
       get().setStatus('Memory cleared.');
+      get().pushMemoryToCloud().catch(() => {});
     } catch (e) {
       get().setStatus(`Memory clear failed: ${e.message}`);
     }
+  },
+
+  /** Merge the Drive memory into local memory, then push the union back. */
+  async pullMemoryFromCloud() {
+    const { drive } = get();
+    if (!drive || !drive.connected) return { ok: false, reason: 'not-connected' };
+    const r = await api().gdriveMemoryPull();
+    if (!r || r.error) {
+      get().setStatus(`Memory sync failed: ${(r && r.error) || 'unknown'}`);
+      return { ok: false, error: (r && r.error) || 'unknown' };
+    }
+    const cloud = Array.isArray(r.notes) ? r.notes : [];
+    const local = get().memory.notes || [];
+    if (!r.found && !cloud.length) {
+      // First sign-in on this account — seed Drive from whatever is local.
+      await get().pushMemoryToCloud();
+      return { ok: true, seeded: true };
+    }
+    const seen = new Set(local.map((n) => n.id));
+    const merged = [...local, ...cloud.filter((n) => n && n.id && !seen.has(n.id))];
+    const res = await api().memorySet(merged);
+    if (res && res.notes) {
+      set({ memory: { ...get().memory, notes: res.notes, path: res.path || get().memory.path } });
+    }
+    await get().pushMemoryToCloud();
+    return { ok: true, merged: merged.length };
+  },
+
+  /** Push local memory to the signed-in account's Drive (app-data folder). */
+  async pushMemoryToCloud() {
+    const { drive, memory } = get();
+    if (!drive || !drive.connected) return { ok: false, reason: 'not-connected' };
+    const r = await api().gdriveMemoryPush(memory.notes || []);
+    if (r && r.error) {
+      get().setStatus(`Memory sync failed: ${r.error}`);
+      return { ok: false, error: r.error };
+    }
+    set({ drive: { ...get().drive, memorySyncedAt: Date.now() } });
+    return { ok: true };
   },
 
   /* ---------------------------- cloud (drive) ---------------------------- */
@@ -511,6 +553,8 @@ export const useStore = create((set, get) => ({
       }
       set({ drive: { ...get().drive, ...r.status } });
       get().setStatus(`Cloud connected${r.status.email ? `: ${r.status.email}` : ''}.`);
+      // Memory is per Google account: pull it down now that we are signed in.
+      await get().pullMemoryFromCloud().catch(() => {});
       await get().loadDriveFiles();
       return { ok: true };
     } catch (e) {

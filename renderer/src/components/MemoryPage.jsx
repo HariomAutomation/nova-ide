@@ -4,10 +4,12 @@ import { timeAgo } from '../timeAgo';
 
 export default function MemoryPage() {
   const memory = useStore((s) => s.memory);
+  const drive = useStore((s) => s.drive);
   const [text, setText] = useState('');
 
   useEffect(() => {
     useStore.getState().loadMemory();
+    useStore.getState().loadDrive();
   }, []);
 
   function add() {
@@ -27,11 +29,25 @@ export default function MemoryPage() {
             anything.
           </p>
         </div>
-        {memory.notes.length > 0 && (
-          <button className="btn small danger" onClick={() => useStore.getState().clearMemory()}>
-            Clear all
-          </button>
-        )}
+        <div className="sc-actions">
+          {drive && drive.connected ? (
+            <>
+              <span className="muted small">Synced with Google Drive</span>
+              <button className="btn small" onClick={() => useStore.getState().pullMemoryFromCloud()}>
+                Sync now
+              </button>
+            </>
+          ) : (
+            <button className="btn small" onClick={() => useStore.getState().setSettingsOpen(true, 'cloud')}>
+              Sign in with Google to sync
+            </button>
+          )}
+          {memory.notes.length > 0 && (
+            <button className="btn small danger" onClick={() => useStore.getState().clearMemory()}>
+              Clear all
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mem-add card">

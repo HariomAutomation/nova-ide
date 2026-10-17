@@ -80,6 +80,20 @@ async function remove(id) {
   return { ok: true, notes: next };
 }
 
+async function setNotes(notes) {
+  const clean = (Array.isArray(notes) ? notes : [])
+    .filter((n) => n && typeof n.text === 'string' && n.text.trim())
+    .slice(0, MAX_NOTES)
+    .map((n) => ({
+      id: n.id || crypto.randomUUID(),
+      text: normalizeText(n.text),
+      source: n.source || 'user',
+      createdAt: n.createdAt || Date.now(),
+    }));
+  await writeAll(clean);
+  return { ok: true, notes: clean, path: MEMORY_PATH };
+}
+
 async function clear() {
   await writeAll([]);
   return { ok: true, notes: [] };
@@ -99,4 +113,4 @@ async function memoryText(maxChars = 6000, maxNotes = 80) {
   return lines.join('\n').slice(0, maxChars);
 }
 
-module.exports = { list, add, update, remove, clear, memoryText, normalizeText, MEMORY_PATH, CONFIG_DIR };
+module.exports = { list, add, update, remove, setNotes, clear, memoryText, normalizeText, MEMORY_PATH, CONFIG_DIR };

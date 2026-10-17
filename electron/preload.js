@@ -108,6 +108,7 @@ contextBridge.exposeInMainWorld('nova', {
   memoryAdd: (payload) => ipcRenderer.invoke('memory:add', payload),
   memoryUpdate: (payload) => ipcRenderer.invoke('memory:update', payload),
   memoryRemove: (id) => ipcRenderer.invoke('memory:remove', { id }),
+  memorySet: (notes) => ipcRenderer.invoke('memory:set', { notes }),
   memoryClear: () => ipcRenderer.invoke('memory:clear'),
 
   // cloud (google drive, read-only)
@@ -119,6 +120,8 @@ contextBridge.exposeInMainWorld('nova', {
   gdriveList: (query) => ipcRenderer.invoke('gdrive:list', { query }),
   gdriveRead: (id) => ipcRenderer.invoke('gdrive:read', { id }),
   gdriveDownload: (payload) => ipcRenderer.invoke('gdrive:download', payload),
+  gdriveMemoryPull: () => ipcRenderer.invoke('gdrive:memoryPull'),
+  gdriveMemoryPush: (notes) => ipcRenderer.invoke('gdrive:memoryPush', { notes }),
 
   // misc
   appInfo: () => ipcRenderer.invoke('app:info'),

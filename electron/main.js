@@ -718,6 +718,7 @@ ipcMain.handle('memory:list', async () => memory.list());
 ipcMain.handle('memory:add', async (_e, { text, source }) => memory.add(text, source));
 ipcMain.handle('memory:update', async (_e, { id, patch }) => memory.update(id, patch));
 ipcMain.handle('memory:remove', async (_e, { id }) => memory.remove(id));
+ipcMain.handle('memory:set', async (_e, { notes }) => memory.setNotes(notes));
 ipcMain.handle('memory:clear', async () => memory.clear());
 
 /* ------------------------------ cloud (google drive) ------------------------------ */
@@ -743,6 +744,20 @@ ipcMain.handle('gdrive:list', async (_e, { query }) => {
 ipcMain.handle('gdrive:read', async (_e, { id }) => {
   try {
     return await gdrive.readFile(id);
+  } catch (e) {
+    return { error: String((e && e.message) || e) };
+  }
+});
+ipcMain.handle('gdrive:memoryPull', async () => {
+  try {
+    return await gdrive.readMemory();
+  } catch (e) {
+    return { error: String((e && e.message) || e), notes: [] };
+  }
+});
+ipcMain.handle('gdrive:memoryPush', async (_e, { notes }) => {
+  try {
+    return await gdrive.writeMemory(notes);
   } catch (e) {
     return { error: String((e && e.message) || e) };
   }

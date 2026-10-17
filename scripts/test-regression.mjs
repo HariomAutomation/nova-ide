@@ -687,6 +687,10 @@ suite.push(
     const l2 = await memory.list();
     assert.equal(l2.notes.length, 1);
 
+    const setRes = await memory.setNotes([{ id: 'x1', text: 'Merged from Drive', source: 'agent' }]);
+    assert.equal(setRes.notes.length, 1);
+    assert.equal((await memory.list()).notes.length, 1);
+
     assert.equal(memory.normalizeText('  a\n\n   b  '), 'a b');
     assert.equal((await memory.add('   ')).error, 'Note is empty.');
   })

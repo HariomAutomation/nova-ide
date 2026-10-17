@@ -29,7 +29,10 @@ const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
 const DRIVE_FILES = 'https://www.googleapis.com/drive/v3/files';
-const SCOPE = 'openid email https://www.googleapis.com/auth/drive.readonly';
+const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
+const MEMORY_NAME = 'memory.json';
+const SCOPE =
+  'openid email https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.appdata';
 
 const GOOGLE_DOC = 'application/vnd.google-apps.document';
 const GOOGLE_SHEET = 'application/vnd.google-apps.spreadsheet';
@@ -293,6 +296,62 @@ async function downloadFile(id, dest) {
   return { ok: true, path: dest, name: meta.name };
 }
 
+
+/* ------------------------- memory sync (appDataFolder) ------------------------- */
+// Memory lives in the user's Drive app-data folder, so it follows the signed-in
+// account across machines. Nova only ever sees its own file.
+
+async function findMemoryFile() {
+  const url =
+    `${DRIVE_FILES}?spaces=appDataFolder&q=${encodeURIComponent(`name='${MEMORY_NAME}'`)}` +
+    `&fields=${encodeURIComponent('files(id,name,modifiedTime)')}`;
+  const j = await apiGet(url);
+  return ((j && j.files) || [])[0] || null;
+}
+
+async function readMemory() {
+  const f = await findMemoryFile();
+  if (!f) return { found: false, notes: [] };
+  const r = await apiGet(`${DRIVE_FILES}/${encodeURIComponent(f.id)}?alt=media`, { raw: true });
+  const text = await r.text();
+  try {
+    const j = JSON.parse(text);
+    return { found: true, fileId: f.id, notes: Array.isArray(j.notes) ? j.notes : [] };
+  } catch {
+    return { found: true, fileId: f.id, notes: [] };
+  }
+}
+
+async function writeMemory(notes) {
+  const json = JSON.stringify({ notes: Array.isArray(notes) ? notes : [] }, null, 2);
+  const token = await getAccessToken();
+  const existing = await findMemoryFile();
+
+  if (existing) {
+    const res = await fetch(`${DRIVE_UPLOAD}/${encodeURIComponent(existing.id)}?uploadType=media`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: json,
+    });
+    if (!res.ok) throw new Error(`Drive memory update HTTP ${res.status}`);
+    return { ok: true, fileId: existing.id };
+  }
+
+  const boundary = 'nova' + crypto.randomBytes(8).toString('hex');
+  const metadata = { name: MEMORY_NAME, parents: ['appDataFolder'], mimeType: 'application/json' };
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${json}\r\n--${boundary}--`;
+  const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  if (!res.ok) throw new Error(`Drive memory create HTTP ${res.status}`);
+  const j = await res.json().catch(() => ({}));
+  return { ok: true, fileId: j.id || null };
+}
+
 module.exports = {
   status,
   save,
@@ -301,6 +360,8 @@ module.exports = {
   listFiles,
   readFile,
   downloadFile,
+  readMemory,
+  writeMemory,
   getAccessToken,
   getLastAuthUrl,
 };
