@@ -5,7 +5,7 @@ import { useStore } from '../store';
 import { basename } from '../timeAgo';
 import ToolCard from './ToolCard';
 import RepoMenu from './RepoMenu';
-import { usableModels as pickUsableModels } from '../model-filter';
+import { usableModels as pickUsableModels, RETIRED_AUTHS } from '../model-filter';
 import { groupModels, variantsOf, variantCount } from '../model-family';
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -396,8 +396,9 @@ export default function AgentMain() {
   const modelFamilies = groupModels(usableModels);
   const openFam = modelFamilies.find((f) => f.key === openFamily) || null;
   const hiddenModelCount = models.length - usableModels.length;
+  // Retired providers are not "hidden for want of a key" - don't count them.
   const hiddenModelNames = models
-    .filter((m) => !usableModels.some((u) => u.id === m.id))
+    .filter((m) => !RETIRED_AUTHS.includes(m.auth) && !usableModels.some((u) => u.id === m.id))
     .map((m) => m.label || m.model || 'model');
   const inConversation = agentItems.length > 0 || agentBusy || queued.length > 0;
 
