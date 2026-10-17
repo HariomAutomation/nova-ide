@@ -249,7 +249,8 @@ function ModelsTab() {
               title="Cloud Code Private API is not in the public Library - use this direct link"
               onClick={() => {
                 const base = 'https://console.developers.google.com/apis/api/cloudcode-pa.googleapis.com/overview';
-                window.nova.openExternal(st.project ? `${base}?project=${encodeURIComponent(st.project)}` : base);
+                const proj = st.project || st.projectNumber;
+                window.nova.openExternal(proj ? `${base}?project=${encodeURIComponent(proj)}` : base);
               }}
             >
               Enable Cloud Code API ↗

@@ -97,6 +97,9 @@ async function status() {
     picture: c.picture || null,
     project: c.project || null,
     model: c.model || DEFAULT_MODEL,
+    // The OAuth client id embeds the project number, so the "enable this API"
+    // link can always point at the right project.
+    projectNumber: (CLIENT_ID.split('-')[0] || '').trim() || null,
     hasClient: !!CLIENT_ID,
     configPath: configPath(),
   };
