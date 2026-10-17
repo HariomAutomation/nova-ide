@@ -41,7 +41,15 @@ const GOOGLE_SLIDES = 'application/vnd.google-apps.presentation';
 // A build can ship its own Google OAuth client so sign-in is one click and the
 // user never sees a Client ID field. If none is bundled, the user can still
 // paste their own under "Advanced".
-const DEFAULT_CLIENT_ID = process.env.NOVA_GOOGLE_CLIENT_ID || '';
+// Default Google OAuth client ID, so "Sign in with Google" is one click with no
+// setup. A client ID is public (it appears in the consent URL). Override with the
+// NOVA_GOOGLE_CLIENT_ID env var, or clear it in the UI's Advanced field.
+const DEFAULT_CLIENT_ID =
+  process.env.NOVA_GOOGLE_CLIENT_ID ||
+  '695004570637-16f2oo3s60a0m93p7dt8hld3et8fqunp.apps.googleusercontent.com';
+// Deliberately NOT committed: a client secret is a real credential. Desktop-app
+// clients do not need one (Nova uses PKCE); set it via the NOVA_GOOGLE_CLIENT_SECRET
+// env var or the Advanced field in Settings -> Cloud if your setup asks for it.
 const DEFAULT_CLIENT_SECRET = process.env.NOVA_GOOGLE_CLIENT_SECRET || '';
 
 let accessCache = { token: null, exp: 0 };
