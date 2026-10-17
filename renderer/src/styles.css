@@ -1704,24 +1704,24 @@ kbd {
   white-space: nowrap;
 }
 
+/* Always visible so every chat has a discoverable remove button. */
 .sb-chat-x {
-  visibility: hidden;
   border: none;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 0 5px;
   font-size: 12px;
-}
-
-.sb-chat-row:hover .sb-chat-x {
-  visibility: visible;
+  line-height: 1;
+  opacity: 0.55;
+  flex-shrink: 0;
 }
 
 .sb-chat-x:hover {
   background: var(--bg-elevated);
   color: var(--text);
+  opacity: 1;
 }
 
 .sb-empty {

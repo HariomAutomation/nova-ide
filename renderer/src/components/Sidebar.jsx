@@ -157,15 +157,10 @@ function GettingStarted() {
           {doneCount === steps.length ? ' \u2713' : ''}
         </span>
       </div>
-      {next ? (
+      {next && (
         <button className="gs-cta" onClick={next.action} title={next.label}>
           <span className="gs-cta-ico">{next.icon}</span>
           {next.cta}
-        </button>
-      ) : (
-        <button className="gs-cta" onClick={() => useStore.getState().openAutomations()}>
-          <span className="gs-cta-ico">{'\u26A1'}</span>
-          Try an automation
         </button>
       )}
     </div>
