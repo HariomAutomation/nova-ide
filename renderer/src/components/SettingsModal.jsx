@@ -256,6 +256,73 @@ function ModelsTab() {
     );
   }
 
+  /** Engine picker + Playwright sign-in (one visible window, then headless). */
+  function GeminiEngineLine() {
+    const [eng, setEng] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState('');
+
+    useEffect(() => {
+      const tick = () =>
+        window.nova
+          .geminiEngine()
+          .then(setEng)
+          .catch(() => {});
+      tick();
+      const id = setInterval(tick, 6000);
+      return () => clearInterval(id);
+    }, []);
+
+    const pw = (eng && eng.playwright) || {};
+    return (
+      <div className="cc-line">
+        <select
+          className="select"
+          value={(eng && eng.mode) || 'auto'}
+          onChange={async (e) => {
+            await window.nova.setGeminiEngine(e.target.value).catch(() => {});
+            setEng(await window.nova.geminiEngine().catch(() => eng));
+          }}
+        >
+          <option value="auto">Auto (Playwright, then built-in)</option>
+          <option value="playwright">Playwright only</option>
+          <option value="builtin">Built-in driver</option>
+        </select>
+        <button
+          className="btn small"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              const r = await window.nova.openGeminiPwLogin();
+              setMsg(
+                r && r.ok
+                  ? 'Sign-in window khul gayi — wahan Google se sign in karo (ek baar).'
+                  : `Error: ${(r && r.error) || 'unknown'}`
+              );
+            } catch (e) {
+              setMsg(String(e.message || e));
+            }
+            setBusy(false);
+          }}
+        >
+          {busy ? 'Opening\u2026' : 'Sign in (browser)'}
+        </button>
+        <span className="muted small" style={{ flexBasis: '100%', lineHeight: 1.45 }}>
+          {pw.available
+            ? `Playwright ${pw.version || ''} · ${pw.running ? 'running' : 'idle'}${pw.signedIn ? ' · signed in' : ''}`
+            : 'Playwright install nahi mila (npm install chalao)'}
+          {eng && eng.lastPwError ? ` · last error: ${String(eng.lastPwError).slice(0, 90)}` : ''}
+        </span>
+        {msg && (
+          <span className="muted small" style={{ flexBasis: '100%' }}>
+            {msg}
+          </span>
+        )}
+      </div>
+    );
+  }
+
   /** Sign-in / status row for the experimental Cloud Code provider. */
   function CloudCodeLine() {
     const [st, setSt] = useState(null);
@@ -561,6 +628,17 @@ function ModelsTab() {
             </>
           }
           control={<GeminiAccountLine />}
+        />
+        <Row
+          label="Engine"
+          desc={
+            <>
+              <b>Playwright</b> browser automation (stable locators + auto-waiting — tez aur reliable) ya purana built-in
+              driver. <b>Auto</b> pehle Playwright try karta hai, fail hone pe built-in pe chala jata hai. Playwright apna
+              alag profile use karta hai, isliye upar wale sign-in ke bajaye <b>Sign in (browser)</b> ek baar karo.
+            </>
+          }
+          control={<GeminiEngineLine />}
         />
       </Group>
 

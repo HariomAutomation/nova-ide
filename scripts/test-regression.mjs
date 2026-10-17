@@ -10,7 +10,7 @@ import fsTools from '../electron/tools/fsTools.js';
 import checkpoints from '../electron/tools/checkpoints.js';
 import { runCommand } from '../electron/tools/terminal.js';
 import { webFetch, webSearch } from '../electron/tools/web.js';
-import { parseWebToolCalls, protocolBlock } from '../electron/gemini-web.js';
+import { parseWebToolCalls, protocolBlock, setEngineMode, getEngineMode } from '../electron/gemini-web.js';
 import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage } from '../electron/agent.js';
 import { isWithin } from '../electron/tools/paths.js';
 import computer from '../electron/tools/computer.js';
@@ -22,6 +22,7 @@ import voice from '../electron/tools/voice.js';
 import { usableModels, isModelUsable } from '../renderer/src/model-filter.js';
 import { groupModels, latestOf, versionOf } from '../renderer/src/model-family.js';
 import { handle as mcpHandle, askGemini } from './mcp-gemini-web.mjs';
+import * as geminiPw from '../electron/gemini-pw.js';
 import {
   isAutomationDue,
   dueAutomations,
@@ -923,6 +924,28 @@ suite.push(
       throw new Error('must not fetch');
     });
     assert.match(noBridge.error, /bridge nahi mila/);
+  })
+);
+
+/* ------------------------------ gemini engine ------------------------------ */
+
+suite.push(
+  test('gemini engine: mode round-trip and Playwright engine info', () => {
+    const info = geminiPw.engineInfo();
+    assert.equal(typeof info.available, 'boolean');
+    assert.ok(String(info.profile).includes('gemini-profile'));
+    assert.equal(typeof geminiPw.ask, 'function');
+    assert.equal(typeof geminiPw.newChat, 'function');
+    assert.equal(typeof geminiPw.openLogin, 'function');
+    assert.equal(geminiPw.GEMINI_URL, 'https://gemini.google.com/app');
+
+    // mode is a plain setting: valid values stick, anything else falls back
+    assert.equal(setEngineMode('playwright'), 'playwright');
+    assert.equal(getEngineMode(), 'playwright');
+    assert.equal(setEngineMode('builtin'), 'builtin');
+    assert.equal(getEngineMode(), 'builtin');
+    assert.equal(setEngineMode('nonsense'), 'auto');
+    assert.equal(getEngineMode(), 'auto');
   })
 );
 

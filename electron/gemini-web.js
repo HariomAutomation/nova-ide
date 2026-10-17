@@ -22,6 +22,7 @@
  * are possible. Errors fall back with friendly messages.
  */
 const { webContents, shell } = require('electron');
+const geminiPw = require('./gemini-pw');
 
 let wcId = null;
 let chain = Promise.resolve();
@@ -508,7 +509,91 @@ function parseWebToolCalls(text) {
 
 /* ------------------------------- main flow ------------------------------- */
 
-async function runPrompt({ threadKey, system, messages, tools, onDelta, signal }) {
+/* ------------------------- engine selection ------------------------- */
+
+// 'auto'      - try Playwright, fall back to the built-in driver
+// 'playwright'- Playwright only (errors surface)
+// 'builtin'   - the old offscreen-webview driver
+let engineMode = 'auto';
+let pwThreads = new Map();
+let pwLastError = '';
+
+function setEngineMode(m) {
+  engineMode = ['auto', 'playwright', 'builtin'].includes(m) ? m : 'auto';
+  return engineMode;
+}
+
+function getEngineMode() {
+  return engineMode;
+}
+
+// Keep module.exports as plain shorthand below: Node's CJS named-export
+// detection only sees those, and the tests import them by name.
+function openPwLogin() {
+  return geminiPw.openLogin();
+}
+
+function pwStatus() {
+  return geminiPw.status();
+}
+
+function closePw() {
+  return geminiPw.close();
+}
+
+async function engineStatus() {
+  const info = geminiPw.engineInfo();
+  let pw = { ok: false };
+  if (info.available) pw = await geminiPw.status().catch((e) => ({ ok: false, error: String(e.message || e) }));
+  return { mode: engineMode, playwright: info, pw, lastPwError: pwLastError };
+}
+
+/** Playwright path: no webview involved at all. */
+async function runPromptPw({ threadKey, system, messages, tools, onDelta, signal }) {
+  const msgs = Array.isArray(messages) ? messages : [];
+  const key = threadKey || 'default';
+  const prev = pwThreads.get(key);
+  const fresh = !prev;
+
+  let delta = composeDelta(msgs, prev ? prev.cursor : 0);
+  if (!delta.trim()) {
+    const lastUser = [...msgs].reverse().find((m) => m && m.role === 'user');
+    delta = 'User:\n' + String((lastUser && lastUser.content) || '').slice(0, MAX_PROMPT);
+  }
+
+  if (fresh) {
+    await geminiPw.newChat();
+    pwThreads.set(key, { cursor: 0 });
+  }
+
+  const chunks = [];
+  if (fresh && system) chunks.push('[Instructions]\n' + String(system).slice(0, 6000));
+  chunks.push(delta);
+  const proto = protocolBlock(tools);
+  if (proto) chunks.push(proto);
+  let promptText = chunks.join('\n\n');
+  if (promptText.length > MAX_PROMPT) promptText = promptText.slice(-MAX_PROMPT);
+
+  const text = await geminiPw.ask({ prompt: promptText, onDelta, signal });
+  pwThreads.set(key, { cursor: msgs.length });
+  return text;
+}
+
+async function runPrompt(args) {
+  if (engineMode !== 'builtin' && geminiPw.available()) {
+    try {
+      return await runPromptPw(args);
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      pwLastError = String((e && e.message) || e);
+      if (engineMode === 'playwright') throw e;
+      // 'auto' -> fall through to the built-in driver below
+    }
+  }
+  return runPromptBuiltin(args);
+}
+
+async function runPromptBuiltin({ threadKey, system, messages, tools, onDelta, signal }) {
   const wc = wcOrThrow();
   const msgs = Array.isArray(messages) ? messages : [];
   const key = threadKey || 'default';
@@ -593,11 +678,21 @@ function prompt(args) {
 
 function resetThreads() {
   threads.clear();
+  pwThreads = new Map();
 }
 
 async function newChat() {
-  const wc = wcOrThrow();
   resetThreads();
+  if (engineMode !== 'builtin' && geminiPw.available()) {
+    try {
+      await geminiPw.newChat();
+      return { ok: true, engine: 'playwright' };
+    } catch (e) {
+      pwLastError = String((e && e.message) || e);
+      if (engineMode === 'playwright') throw e;
+    }
+  }
+  const wc = wcOrThrow();
   await newChatInternal(wc);
   return status();
 }
@@ -637,6 +732,12 @@ module.exports = {
   resetThreads,
   status,
   diagnose,
+  setEngineMode,
+  getEngineMode,
+  engineStatus,
+  openPwLogin,
+  pwStatus,
+  closePw,
   parseWebToolCalls,
   protocolBlock,
 };

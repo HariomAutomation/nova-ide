@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld('nova', {
   geminiNewChat: () => ipcRenderer.invoke('gemini:newChat'),
   geminiStatus: () => ipcRenderer.invoke('gemini:status'),
   geminiDiagnose: () => ipcRenderer.invoke('gemini:diagnose'),
+  geminiEngine: () => ipcRenderer.invoke('gemini:engine'),
+  setGeminiEngine: (mode) => ipcRenderer.invoke('gemini:setEngine', mode),
+  openGeminiPwLogin: () => ipcRenderer.invoke('gemini:openLogin'),
   openGeminiLoginWindow: (url) => ipcRenderer.invoke('gemini:openLoginWindow', url),
   onGeminiSignedIn: (cb) => {
     const l = (_e, d) => cb(d);

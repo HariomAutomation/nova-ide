@@ -230,6 +230,7 @@ app.whenReady().then(() => {
   } catch {}
 
   startWebhookServer();
+  loadGeminiEngine();
 
   try {
     const gemSession = session.fromPartition('persist:gemini');
@@ -410,6 +411,34 @@ ipcMain.on('gemini:wc-id', (_e, id) => geminiWeb.setWebContentsId(id));
 // Reports exactly what the driver can see on the Gemini page (selector match
 // counts + text samples), so a broken selector can be fixed from real data.
 ipcMain.handle('gemini:diagnose', async () => geminiWeb.diagnose());
+
+/* ---- which engine drives Gemini: Playwright (fast) or the built-in driver ---- */
+
+const GEMINI_ENGINE_FILE = path.join(os.homedir(), '.nova-ide', 'gemini-engine.json');
+
+async function loadGeminiEngine() {
+  try {
+    const j = JSON.parse(await fs.readFile(GEMINI_ENGINE_FILE, 'utf8'));
+    if (j && j.mode) geminiWeb.setEngineMode(j.mode);
+  } catch {}
+}
+
+ipcMain.handle('gemini:engine', async () => {
+  const st = await geminiWeb.engineStatus();
+  return { ok: true, mode: geminiWeb.getEngineMode(), ...st };
+});
+
+ipcMain.handle('gemini:setEngine', async (_e, mode) => {
+  const m = geminiWeb.setEngineMode(mode);
+  try {
+    await fs.mkdir(path.dirname(GEMINI_ENGINE_FILE), { recursive: true });
+    await fs.writeFile(GEMINI_ENGINE_FILE, JSON.stringify({ mode: m }, null, 2), 'utf8');
+  } catch {}
+  return { ok: true, mode: m };
+});
+
+// Playwright sign-in: opens a visible browser window once; the profile keeps it.
+ipcMain.handle('gemini:openLogin', async () => geminiWeb.openPwLogin());
 
 ipcMain.handle('gemini:newChat', async () => {
   try {
