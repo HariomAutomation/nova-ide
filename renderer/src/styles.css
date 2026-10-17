@@ -4593,3 +4593,26 @@ input:focus, select:focus, textarea:focus {
   [data-theme='anime'] .agent-home-inner h1,
   [data-theme='anime'] .repo-chip.cloud.on { animation: none !important; }
 }
+
+/* --------------------------- "Run on" menu (Cursor-like) --------------------------- */
+.runon-menu {
+  left: 0;
+  right: auto;
+  top: calc(100% + 6px);
+  min-width: 280px;
+  padding: 6px;
+  z-index: 160;
+}
+.runon-head {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  padding: 4px 9px 6px;
+}
+.runon-check { margin-left: auto; color: var(--accent); font-size: 13px; }
+.runon-sep { border-top: 1px solid var(--border); margin: 5px 0; }
+.runon-sub { padding: 2px 10px 6px 34px; }
+.runon-new { display: flex; gap: 6px; padding: 2px 4px 4px; }
+.runon-new .input { flex: 1; min-width: 0; }

@@ -108,6 +108,8 @@ contextBridge.exposeInMainWorld('nova', {
   gitPush: (cwd) => ipcRenderer.invoke('git:push', { cwd }),
   gitPull: (cwd) => ipcRenderer.invoke('git:pull', { cwd }),
   gitLog: (payload) => ipcRenderer.invoke('git:log', payload),
+  gitWorktreeAdd: (payload) => ipcRenderer.invoke('git:worktreeAdd', payload),
+  gitWorktreeList: (cwd) => ipcRenderer.invoke('git:worktreeList', { cwd }),
 
   // misc
   appInfo: () => ipcRenderer.invoke('app:info'),

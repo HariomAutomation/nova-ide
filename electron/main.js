@@ -689,6 +689,8 @@ ipcMain.handle('git:checkout', async (_e, { cwd, branch }) => gitTool.checkout(c
 ipcMain.handle('git:push', async (_e, { cwd }) => gitTool.push(cwd));
 ipcMain.handle('git:pull', async (_e, { cwd }) => gitTool.pull(cwd));
 ipcMain.handle('git:log', async (_e, { cwd, limit }) => gitTool.log(cwd, limit));
+ipcMain.handle('git:worktreeAdd', async (_e, { cwd, path: dir, branch }) => gitTool.worktreeAdd(cwd, dir, branch));
+ipcMain.handle('git:worktreeList', async (_e, { cwd }) => gitTool.worktreeList(cwd));
 
 /* ------------------------------ checkpoints ------------------------------ */
 

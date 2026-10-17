@@ -180,9 +180,37 @@ async function pull(cwd) {
   return { ok: r.code === 0, output: (r.stdout + r.stderr).trim(), error: r.code === 0 ? null : (r.stderr || r.error) };
 }
 
+async function worktreeAdd(cwd, dir, branch) {
+  if (!dir) return { ok: false, error: 'No path for the worktree.' };
+  let r = await git(cwd, ['worktree', 'add', dir, '-b', branch], 60000);
+  if (r.code !== 0 && /already exists/i.test(r.stderr || '')) {
+    r = await git(cwd, ['worktree', 'add', dir, branch], 60000);
+  }
+  return { ok: r.code === 0, path: dir, output: (r.stdout + r.stderr).trim(), error: r.code === 0 ? null : (r.stderr || r.error) };
+}
+
+async function worktreeList(cwd) {
+  const r = await git(cwd, ['worktree', 'list', '--porcelain']);
+  if (r.code !== 0) return { worktrees: [] };
+  const trees = [];
+  let cur = {};
+  for (const line of r.stdout.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      if (cur.path) trees.push(cur);
+      cur = { path: line.slice(9).trim() };
+    } else if (line.startsWith('branch ')) {
+      cur.branch = line.slice(7).trim().replace(/^refs\/heads\//, '');
+    }
+  }
+  if (cur.path) trees.push(cur);
+  return { worktrees: trees };
+}
+
 module.exports = {
   git,
   status,
+  worktreeAdd,
+  worktreeList,
   diff,
   stage,
   unstage,

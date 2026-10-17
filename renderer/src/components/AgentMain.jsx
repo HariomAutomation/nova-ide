@@ -212,10 +212,43 @@ function RepoChips() {
   const gitBranch = useStore((s) => s.gitBranch);
   const appInfo = useStore((s) => s.appInfo);
   const google = useStore((s) => s.google);
+  const runOn = useStore((s) => s.runOn);
+  const [menu, setMenu] = useState(null); // null | 'runon' | 'remote'
+  const [wtName, setWtName] = useState('');
+  const wrapRef = useRef(null);
+
   useEffect(() => {
     useStore.getState().loadGoogle().catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setMenu(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [menu]);
+
   const cloudOn = !!(google && google.connected);
+  const choose = (t) => {
+    if (t === 'cloud' && !cloudOn) {
+      setMenu(null);
+      useStore.getState().setStatus('Connect Google to use cloud models (Vertex AI).');
+      useStore.getState().setSettingsOpen(true, 'models');
+      return;
+    }
+    useStore.getState().setRunOn(t);
+    setMenu(null);
+  };
+  const createWorktree = async () => {
+    const n = wtName.trim();
+    if (!n) return;
+    setMenu(null);
+    setWtName('');
+    await useStore.getState().newWorktree(n);
+  };
+
   return (
     <div className="home-chips">
       <button
@@ -238,35 +271,61 @@ function RepoChips() {
         {gitBranch || 'main'}
         <span className="chip-caret">{'\u2304'}</span>
       </button>
-      <button
-        className="repo-chip"
-        title={appInfo ? `${appInfo.username}@${appInfo.hostname}` : 'This computer'}
-        onClick={() =>
-          useStore.getState().setStatus(appInfo ? `Running on ${appInfo.username}@${appInfo.hostname}` : 'This computer')
-        }
-      >
-        <span className="chip-ico">{'\u{1F5A5}\uFE0F'}</span>
-        This Computer
-        <span className="chip-caret">{'\u2304'}</span>
-      </button>
-      <button
-        className={'repo-chip cloud' + (cloudOn ? ' on' : '')}
-        title={
-          cloudOn
-            ? `Cloud connected \u2014 ${google.email || 'Google account'}`
-            : 'Connect Google to use cloud models (Vertex AI)'
-        }
-        onClick={() =>
-          cloudOn
-            ? useStore.getState().setStatus(`Cloud connected: ${google.email || 'Google account'}`)
-            : useStore.getState().setSettingsOpen(true, 'models')
-        }
-      >
-        <span className="chip-ico">{'\u2601\uFE0F'}</span>
-        Cloud
-        <span className={'cloud-dot' + (cloudOn ? ' on' : '')} />
-        <span className="chip-caret">{'\u2304'}</span>
-      </button>
+      <div className="menu-anchor" ref={wrapRef}>
+        <button
+          className={'repo-chip' + (runOn === 'cloud' ? ' cloud on' : '')}
+          title="Choose where agents run"
+          onClick={() => setMenu((m) => (m ? null : 'runon'))}
+        >
+          <span className="chip-ico">{runOn === 'cloud' ? '\u2601\uFE0F' : '\u{1F5A5}\uFE0F'}</span>
+          {runOn === 'cloud' ? 'Cloud' : 'This Computer'}
+          <span className="chip-caret">{'\u2304'}</span>
+        </button>
+        {menu && (
+          <div className="dropdown runon-menu">
+            <div className="runon-head">Run on</div>
+            <button className="plus-row" onClick={() => choose('cloud')}>
+              <span className="plus-ico">{'\u2601\uFE0F'}</span>
+              <span className="plus-text">
+                <span className="plus-title">Cloud</span>
+                <span className="plus-desc muted">{cloudOn ? google.email || 'Google account' : 'Connect Google to enable'}</span>
+              </span>
+              {runOn === 'cloud' && <span className="runon-check">{'\u2713'}</span>}
+            </button>
+            <button className="plus-row" onClick={() => choose('local')}>
+              <span className="plus-ico">{'\u{1F5A5}\uFE0F'}</span>
+              <span className="plus-text">
+                <span className="plus-title">This Computer</span>
+                <span className="plus-desc muted">{appInfo ? `${appInfo.username}@${appInfo.hostname}` : 'Local machine'}</span>
+              </span>
+              {runOn === 'local' && <span className="runon-check">{'\u2713'}</span>}
+            </button>
+            <button className="plus-row" onClick={() => setMenu('remote')}>
+              <span className="plus-ico">{'\u{1F5A7}'}</span>
+              <span className="plus-text">
+                <span className="plus-title">Remote Machine</span>
+              </span>
+              <span className="plus-chev">{'\u203A'}</span>
+            </button>
+            {menu === 'remote' && <div className="runon-sub muted small">No remote machines configured yet.</div>}
+            <div className="runon-sep" />
+            <div className="runon-new">
+              <input
+                className="input"
+                placeholder="worktree name"
+                value={wtName}
+                onChange={(e) => setWtName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') createWorktree();
+                }}
+              />
+              <button className="btn small primary" disabled={!wtName.trim()} onClick={createWorktree}>
+                {'\uFF0B'} New Worktree
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

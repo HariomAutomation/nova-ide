@@ -627,6 +627,26 @@ suite.push(
   })
 );
 
+suite.push(
+  test('git: worktreeAdd creates a sibling worktree on a new branch', async () => {
+    const repo = path.join(TEST_DIR, 'git-wt');
+    await fsp.mkdir(repo, { recursive: true });
+    const setup =
+      'git init -q && git config user.email t@t && git config user.name t && ' +
+      'printf "a\\n" > f.txt && git add f.txt && git commit -qm init';
+    const r0 = await runCommand({ command: setup, cwd: repo });
+    assert.equal(r0.code, 0, r0.stderr);
+
+    const dir = repo + '-wt';
+    const r = await git.worktreeAdd(repo, dir, 'wt-branch');
+    assert.equal(r.ok, true, r.error);
+
+    const list = await git.worktreeList(repo);
+    assert.ok(list.worktrees.some((w) => w.path === dir), 'worktree path listed');
+    assert.ok(list.worktrees.some((w) => w.branch === 'wt-branch'), 'worktree branch listed');
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

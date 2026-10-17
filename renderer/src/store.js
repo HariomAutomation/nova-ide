@@ -112,6 +112,7 @@ export const useStore = create((set, get) => ({
   git: { repo: false, branch: null, upstream: null, ahead: 0, behind: 0, remote: null, files: [], loading: false, error: null },
   gitMessage: '',
   gitBusy: false,
+  runOn: 'local', // 'local' | 'cloud' — where agent turns are meant to run
 
   /* --------------------------------- search --------------------------------- */
   searchQuery: '',
@@ -577,6 +578,34 @@ export const useStore = create((set, get) => ({
     }
   },
 
+  setRunOn(target) {
+    set({ runOn: target === 'cloud' ? 'cloud' : 'local' });
+    get().saveSettings();
+  },
+
+  /** Create a git worktree (fresh branch in a sibling folder) and open it. */
+  async newWorktree(name) {
+    const { rootFolder } = get();
+    if (!rootFolder) {
+      get().setStatus('Open a folder first.');
+      return;
+    }
+    const safe =
+      String(name || 'worktree')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'worktree';
+    const target = `${rootFolder.replace(/\/+$/, '')}-${safe}`;
+    const r = await api().gitWorktreeAdd({ cwd: rootFolder, path: target, branch: safe });
+    if (r && r.ok) {
+      get().setStatus(`Worktree created: ${target}`);
+      await get().openFolder(target);
+    } else {
+      get().setStatus(`Worktree failed: ${(r && r.error) || 'unknown error'}`);
+    }
+  },
+
   async gitPull() {
     const { rootFolder } = get();
     if (!rootFolder) return;
@@ -700,6 +729,7 @@ export const useStore = create((set, get) => ({
       agentSettings: { ...DEFAULT_AGENT_SETTINGS, ...(s.agentSettings || {}) },
       browserSettings: { headless: true, ...(s.browserSettings || {}) },
       theme: ['light', 'dark', 'anime'].includes(s.theme) ? s.theme : 'anime',
+      runOn: s.runOn === 'cloud' ? 'cloud' : 'local',
       chats: Array.isArray(s.chats) ? s.chats.slice(0, MAX_CHATS) : [],
       automations: (Array.isArray(s.automations) ? s.automations : []).slice(0, 50).map((a) => ({
         ...a,
@@ -721,7 +751,7 @@ export const useStore = create((set, get) => ({
   },
 
   async saveSettings() {
-    const { models, activeModelId, rootFolder, agentSettings, browserSettings, theme, chats, automations, usedAgent, keyVault } =
+    const { models, activeModelId, rootFolder, agentSettings, browserSettings, theme, chats, automations, usedAgent, keyVault, runOn } =
       get();
     try {
       await api().setSettings({
@@ -733,6 +763,7 @@ export const useStore = create((set, get) => ({
         theme,
         usedAgent,
         keyVault,
+        runOn,
         automations: (automations || []).slice(0, 50),
         chats: (chats || []).slice(0, MAX_CHATS),
       });
