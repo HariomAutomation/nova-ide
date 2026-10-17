@@ -962,6 +962,11 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
     return isWithin(workspaceRoot, p);
   };
 
+  // Every loop iteration is one provider request. Counting them makes it
+  // obvious why a single message can eat a free-tier quota. Declared outside the
+  // try so the catch can report it.
+  let modelRequests = 0;
+
   try {
     emit({ type: 'turn_start' });
 
@@ -971,6 +976,7 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
       if (signal.aborted) break;
       emit({ type: 'step', step: step + 1, maxSteps });
 
+      modelRequests += 1;
       const { content, toolCalls } = await callModel({
         config,
         messages: compactMessages(session.messages),
@@ -1099,7 +1105,8 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
     if (e && e.name === 'AbortError') {
       emit({ type: 'done', aborted: true });
     } else {
-      emit({ type: 'error', message: String((e && e.message) || e) });
+      const used = typeof modelRequests === 'number' && modelRequests ? `\n\n(Is turn me ${modelRequests} model request gaye.)` : '';
+      emit({ type: 'error', message: String((e && e.message) || e) + used });
     }
   } finally {
     session.running = false;

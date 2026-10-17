@@ -3,6 +3,23 @@
  * Especially Google: 429 with "limit: 0" means the model is paid-tier only,
  * a plain 429 means the free-tier quota is used up for the day.
  */
+/**
+ * Google reports how long to wait in an error detail:
+ *   "retryDelay":"22680.179850251s"
+ * Turn that into something a person can read.
+ */
+function parseRetryDelay(raw) {
+  const m = /"retryDelay"\s*:\s*"([\d.]+)s"/.exec(raw || '');
+  if (!m) return '';
+  const secs = Math.round(parseFloat(m[1]));
+  if (!Number.isFinite(secs) || secs <= 0) return '';
+  const h = Math.floor(secs / 3600);
+  const min = Math.round((secs % 3600) / 60);
+  if (h >= 1) return `${h}h ${min}m`;
+  if (min >= 1) return `${min}m`;
+  return `${secs}s`;
+}
+
 function describeHttpError(url, status, statusText, text) {
   const raw = (text || '').replace(/\s+/g, ' ').slice(0, 700);
   let msg = raw;
@@ -15,13 +32,31 @@ function describeHttpError(url, status, statusText, text) {
   let hint = '';
   const isGoogle = /generativelanguage\.googleapis\.com|aiplatform\.googleapis\.com/.test(url || '');
   if (isGoogle) {
-    if (status === 429 && /limit: 0/.test(raw)) {
+    const reset = parseRetryDelay(raw);
+    const zeroLimit = /limit:\s*0\b/.test(raw);
+    const perDay = /per[_ ]?day/i.test(raw); // "PerDay" in Google's metric name too
+    const perMinute = /per[_ ]?minute/i.test(raw);
+    if (status === 429 && zeroLimit) {
       hint =
-        '\n\n💡 Ye model aapki key ke tier me available nahi hai — Google iske liye paid billing maangta hai. ' +
-        'Google Cloud me billing enable karo (free trial se start kar sakte ho) ya koi free model try karo (jaise gemini-3.8-flash).';
+        '\n\n💡 Is model ka free quota 0 hai (limit: 0) — Google ise sirf paid billing pe deta hai. ' +
+        'Koi free model chuno (jaise gemini-2.5-flash / gemini-flash-latest) ya billing enable karo.';
+    } else if (status === 429 && perDay) {
+      hint =
+        `\n\n💡 Is model ka free-tier DAILY quota khatam hai${reset ? ` — ${reset} me reset hoga` : ''}. ` +
+        'Doosre model pe switch karo (limits per-model hote hain), ya reset ka wait karo.';
+    } else if (status === 429 && perMinute) {
+      hint = '\n\n💡 Per-minute rate limit lag gaya — ek minute ruk ke dobara bhejo.';
     } else if (status === 429) {
-      hint = '\n\n💡 Free-tier quota khatam / rate limit. Thodi der me retry karo, ya billing enable karo unlimited ke liye.';
-    } else if (status === 401 || status === 403) {
+      hint =
+        `\n\n💡 Free-tier quota / rate limit lag gaya${reset ? ` — ${reset} me reset hoga` : ''}. ` +
+        'Doosra model try karo ya billing enable karo.';
+    }
+    if (status === 429) {
+      hint +=
+        '\n💡 Yaad rakho: agent me har "step" = ek API request, to ek message bhi kai requests le sakta hai. ' +
+        'Preview/experimental models ka free quota bahut chhota (ya 0) hota hai.';
+    }
+    if (status === 401 || status === 403) {
       hint = '\n\n💡 API key / permissions check karo — key sahi hai? us project me Gemini API enabled hai?';
     } else if (status === 404 && /models\//.test(msg)) {
       hint = '\n\n💡 Model ID galat lag raha hai — Settings -> Models -> ⇅ Fetch se exact model ID pick karo.';

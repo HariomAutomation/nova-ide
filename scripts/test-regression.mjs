@@ -11,6 +11,7 @@ import checkpoints from '../electron/tools/checkpoints.js';
 import { runCommand } from '../electron/tools/terminal.js';
 import { webFetch, webSearch } from '../electron/tools/web.js';
 import { parseWebToolCalls, protocolBlock, setEngineMode, getEngineMode } from '../electron/gemini-web.js';
+import { describeHttpError } from '../electron/tools/errors.js';
 import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage } from '../electron/agent.js';
 import { isWithin } from '../electron/tools/paths.js';
 import computer from '../electron/tools/computer.js';
@@ -789,6 +790,37 @@ suite.push(
     assert.equal(decls[0].functionDeclarations[0].parameters.additionalProperties, undefined);
     assert.equal(cloudcode.toFunctionDeclarations([]), undefined);
     assert.equal(typeof cloudcode.generate, 'function');
+  })
+);
+
+/* ------------------------------- quota errors ------------------------------- */
+
+suite.push(
+  test('errors: a Gemini 429 explains the quota and the reset time', () => {
+    const day = JSON.stringify({
+      error: {
+        code: 429,
+        message: 'Quota exceeded for quota metric GenerateRequestsPerDayPerProjectPerModel-FreeTier',
+        status: 'RESOURCE_EXHAUSTED',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '22680.179850251s' }],
+      },
+    });
+    const out = describeHttpError('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', 429, 'Too Many Requests', day);
+    assert.match(out, /DAILY quota khatam/);
+    assert.match(out, /6h 18m/);            // 22680s -> 6h 18m, not "6h30m1.798"
+    assert.match(out, /har "step" = ek API request/);
+
+    const zero = JSON.stringify({ error: { code: 429, message: 'Quota exceeded, limit: 0' } });
+    const out2 = describeHttpError('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', 429, '', zero);
+    assert.match(out2, /free quota 0 hai/);
+
+    const perMin = JSON.stringify({ error: { code: 429, message: 'Quota exceeded per_minute' } });
+    const out3 = describeHttpError('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', 429, '', perMin);
+    assert.match(out3, /Per-minute rate limit/);
+
+    // non-Google providers keep the generic hints
+    const generic = describeHttpError('https://api.example.com/v1/chat/completions', 429, '', 'rate limited');
+    assert.match(generic, /HTTP 429/);
   })
 );
 
