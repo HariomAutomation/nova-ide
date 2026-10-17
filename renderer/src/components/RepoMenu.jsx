@@ -169,8 +169,9 @@ export default function RepoMenu({ onClose }) {
                 </button>
               </div>
               <div className="rp-hint muted small">
-                "Create OAuth App" kholo → Application name kuch bhi → Homepage URL kuch bhi → <b>Register</b> → client ID
-                copy karke upar paste karo. (Device flow me secret/callback ki zaroorat nahi.)
+                "Create OAuth App" kholo → Application name kuch bhi → Homepage URL kuch bhi → <b>Enable Device Flow</b> tick →
+                Redirect/Callback URL me <b>https://nova.local</b> daalo (form ise maangta hai, device flow me use nahi hota)
+                → "Expire user access tokens" uncheck → <b>Register</b> → client ID copy karke upar paste karo.
               </div>
             </>
           )}
