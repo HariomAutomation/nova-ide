@@ -374,11 +374,24 @@ function openGeminiLoginWindow(targetUrl) {
     },
   });
 
+  let signedIn = false;
+
   geminiLoginWin.webContents.setUserAgent(FIREFOX_UA);
   geminiLoginWin.loadURL(startUrl);
 
   const checkRedirect = (_e, url) => {
-    if (url && (url.includes('gemini.google.com/app') || (url.includes('gemini.google.com') && !url.includes('accounts.google.com')))) {
+    // Match on the HOST, not a substring. The sign-in URL itself carries
+    // `continue=https://gemini.google.com/app`, so a substring test matched the
+    // very first navigation and closed the window immediately — the popup
+    // flashed and vanished before the user could log in.
+    let host = '';
+    try {
+      host = new URL(url).host;
+    } catch {
+      return;
+    }
+    if (host === 'gemini.google.com' || host.endsWith('.gemini.google.com')) {
+      signedIn = true;
       setTimeout(() => {
         try {
           if (geminiLoginWin && !geminiLoginWin.isDestroyed()) {
@@ -387,7 +400,7 @@ function openGeminiLoginWindow(targetUrl) {
           }
           send('gemini:signedIn', { ok: true, url });
         } catch {}
-      }, 1000);
+      }, 1200);
     }
   };
 
@@ -396,7 +409,9 @@ function openGeminiLoginWindow(targetUrl) {
 
   geminiLoginWin.on('closed', () => {
     geminiLoginWin = null;
-    send('gemini:signedIn', { ok: true });
+    // Only report success if we actually landed on the Gemini app; closing the
+    // window (cancel) must not look like a successful sign-in.
+    if (!signedIn) send('gemini:signedIn', { ok: false, cancelled: true });
   });
 }
 
