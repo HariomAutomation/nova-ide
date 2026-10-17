@@ -453,7 +453,7 @@ function ModelsTab() {
         />
         <Row
           label="Setup (ek baar)"
-          desc="Google Cloud Console → OAuth consent screen → Data access me ye scope add karo: https://www.googleapis.com/auth/cloud-platform"
+          desc="1) Google Cloud Console → OAuth consent screen → Data access me ye scope add karo: https://www.googleapis.com/auth/cloud-platform   2) Client secret ek baar Settings → Cloud → Advanced me paste karke Save karo (wahi yahan reuse hoga)."
           control={
             <button
               className="btn small"
@@ -1304,7 +1304,7 @@ function CloudTab() {
             />
             <Row
               label="Client secret"
-              desc="Optional for Desktop app clients — Nova uses PKCE."
+              desc="Desktop app clients ke liye REQUIRED hai — Google ka token endpoint ise maangta hai. Yahan ek baar paste karke Save karo; Cloud Code aur Drive dono isi ko reuse karte hain."
               control={
                 <input
                   className="input"

@@ -26,6 +26,22 @@ const CLIENT_ID =
   '695004570637-16f2oo3s60a0m93p7dt8hld3et8fqunp.apps.googleusercontent.com';
 const CLIENT_SECRET = process.env.NOVA_GOOGLE_CLIENT_SECRET || '';
 
+/**
+ * Desktop-app OAuth clients must send a client_secret at the token endpoint
+ * ("client_secret is missing" otherwise). Reuse the one already saved for the
+ * Drive/Cloud sign-in so it only has to be entered once.
+ */
+async function sharedClientSecret() {
+  if (CLIENT_SECRET) return CLIENT_SECRET;
+  for (const file of ['gdrive.json', 'cloudcode.json']) {
+    try {
+      const j = JSON.parse(await fsp.readFile(path.join(configDir(), file), 'utf8'));
+      if (j && j.clientSecret) return j.clientSecret;
+    } catch {}
+  }
+  return '';
+}
+
 const SCOPES = [
   'openid',
   'email',
@@ -102,7 +118,8 @@ async function getAccessToken() {
     refresh_token: c.refreshToken,
     grant_type: 'refresh_token',
   });
-  if (CLIENT_SECRET) body.set('client_secret', CLIENT_SECRET);
+  const secret = await sharedClientSecret();
+  if (secret) body.set('client_secret', secret);
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -299,6 +316,7 @@ async function generate({ model, system, messages, tools, onDelta, signal }) {
 
 async function login() {
   if (!CLIENT_ID) throw new Error('Google client ID chahiye (Settings → Cloud → Advanced me paste karo).');
+  const secret = await sharedClientSecret();
   const verifier = b64url(crypto.randomBytes(32));
   const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
   const state = b64url(crypto.randomBytes(16));
@@ -347,7 +365,7 @@ async function login() {
           grant_type: 'authorization_code',
           redirect_uri: redirectUri,
         });
-        if (CLIENT_SECRET) tokenBody.set('client_secret', CLIENT_SECRET);
+        if (secret) tokenBody.set('client_secret', secret);
         const tr = await fetch(TOKEN_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -383,8 +401,11 @@ async function login() {
         res.end('<h2>Nova: Cloud Code connected ✓ — ye tab band kar sakte ho.</h2>');
         finish(resolve, await status());
       } catch (e) {
+        // Show the real reason instead of a bare "error" page.
+        const msg = String((e && e.message) || e);
         try {
-          res.writeHead(500).end('error');
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(`<h2>Nova: Cloud Code sign-in failed</h2><p>${msg.replace(/</g, '&lt;')}</p>`);
         } catch {}
         finish(reject, e);
       }
