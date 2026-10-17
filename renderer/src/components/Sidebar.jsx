@@ -259,6 +259,12 @@ function ChatHome() {
           <span className="sb-ico">{'\u2387'}</span> Source Control
         </button>
         <button
+          className={'sb-item' + (mainView === 'cloud' ? ' active' : '')}
+          onClick={() => useStore.getState().openCloud()}
+        >
+          <span className="sb-ico">{'\u2601\uFE0F'}</span> Cloud
+        </button>
+        <button
           className={'sb-item' + (mainView === 'customize' ? ' active' : '')}
           onClick={() => useStore.getState().openCustomize()}
         >

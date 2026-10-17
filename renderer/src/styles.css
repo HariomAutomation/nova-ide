@@ -4616,3 +4616,16 @@ input:focus, select:focus, textarea:focus {
 .runon-sub { padding: 2px 10px 6px 34px; }
 .runon-new { display: flex; gap: 6px; padding: 2px 4px 4px; }
 .runon-new .input { flex: 1; min-width: 0; }
+
+/* ------------------------------ cloud (drive) ------------------------------ */
+.cloud-list { display: flex; flex-direction: column; gap: 1px; }
+.cloud-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  animation: novaFadeUp 0.22s ease both;
+}
+.cloud-row:hover { background: var(--bg-hover); }
+.cloud-ico { width: 18px; text-align: center; flex-shrink: 0; }

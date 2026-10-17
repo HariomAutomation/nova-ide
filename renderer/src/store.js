@@ -97,7 +97,7 @@ export const useStore = create((set, get) => ({
 
   /* --------------------------------- layout --------------------------------- */
   theme: 'light',
-  mainView: 'agent', // 'agent' | 'editor' | 'search' | 'automations' | 'customize' | 'git'
+  mainView: 'agent', // 'agent' | 'editor' | 'search' | 'automations' | 'customize' | 'git' | 'cloud'
   settingsOpen: false,
   settingsTab: 'models',
   status: '',
@@ -113,6 +113,9 @@ export const useStore = create((set, get) => ({
   gitMessage: '',
   gitBusy: false,
   runOn: 'local', // 'local' | 'cloud' — where agent turns are meant to run
+
+  /* --------------------------------- cloud --------------------------------- */
+  drive: { connected: false, email: null, hasClient: false, loading: false, files: [], error: null, query: '' },
 
   /* --------------------------------- search --------------------------------- */
   searchQuery: '',
@@ -420,6 +423,123 @@ export const useStore = create((set, get) => ({
     get().navPush();
     set({ mainView: 'git' });
     get().loadGit().catch(() => {});
+  },
+
+  /* ---------------------------- cloud (drive) ---------------------------- */
+
+  openCloud() {
+    get().navPush();
+    set({ mainView: 'cloud' });
+    get().loadDrive().catch(() => {});
+  },
+
+  async loadDrive() {
+    try {
+      const st = (await api().gdriveStatus()) || {};
+      set({ drive: { ...get().drive, ...st, error: null } });
+    } catch (e) {
+      set({ drive: { ...get().drive, error: String(e.message || e) } });
+    }
+  },
+
+  async saveDriveClient(patch) {
+    const st = await api().gdriveSave(patch || {});
+    set({ drive: { ...get().drive, ...st } });
+    return st;
+  },
+
+  async driveSignIn() {
+    get().setStatus('Browser me Google sign-in complete karo…');
+    try {
+      const r = await api().gdriveLogin();
+      if (!r || !r.ok) {
+        get().setStatus(`Cloud sign-in failed: ${(r && r.error) || 'unknown error'}`);
+        return { ok: false, error: (r && r.error) || 'unknown error' };
+      }
+      set({ drive: { ...get().drive, ...r.status } });
+      get().setStatus(`Cloud connected${r.status.email ? `: ${r.status.email}` : ''}.`);
+      await get().loadDriveFiles();
+      return { ok: true };
+    } catch (e) {
+      get().setStatus(`Cloud sign-in failed: ${e.message}`);
+      return { ok: false, error: e.message };
+    }
+  },
+
+  async driveSignOut() {
+    const r = await api().gdriveLogout();
+    set({ drive: { ...get().drive, ...r.status, files: [] } });
+    get().setStatus('Cloud disconnected.');
+  },
+
+  async loadDriveFiles(query) {
+    const q = query !== undefined ? query : get().drive.query;
+    set({ drive: { ...get().drive, loading: true, query: q, error: null } });
+    try {
+      const r = (await api().gdriveList(q)) || {};
+      set({ drive: { ...get().drive, loading: false, files: r.files || [], error: r.error || null } });
+    } catch (e) {
+      set({ drive: { ...get().drive, loading: false, error: String(e.message || e) } });
+    }
+  },
+
+  /** Read a cloud file into an editor tab (text) — no local copy needed. */
+  async openCloudFile(file) {
+    if (!file || !file.id) return;
+    try {
+      const r = await api().gdriveRead(file.id);
+      if (!r || r.error) {
+        get().setStatus(`Cloud read failed: ${(r && r.error) || 'unknown'}`);
+        return;
+      }
+      if (r.binary) {
+        get().setStatus(`"${file.name}" is a binary file — use Download instead.`);
+        return;
+      }
+      const name = file.name || r.name || 'cloud-file';
+      const path = `cloud://${file.id}`;
+      const existing = get().tabs.find((t) => t.path === path);
+      if (existing) {
+        set({ activePath: path, mainView: 'editor' });
+        return;
+      }
+      const text = r.text || '';
+      const tab = {
+        path,
+        name,
+        language: langFromPath(name),
+        content: text,
+        savedContent: text,
+        dirty: false,
+        truncated: false,
+        untitled: true,
+        cloud: true,
+      };
+      set({ tabs: [...get().tabs, tab], activePath: path, mainView: 'editor', status: `Opened cloud file ${name}` });
+    } catch (e) {
+      get().setStatus(`Cloud read failed: ${e.message}`);
+    }
+  },
+
+  /** Download a cloud file into <workspace>/.nova-cloud and open it. */
+  async downloadCloudFile(file) {
+    const { rootFolder } = get();
+    if (!rootFolder) {
+      get().setStatus('Open a folder first, then download from the cloud.');
+      return;
+    }
+    const dest = `${rootFolder.replace(/\/+$/, '')}/.nova-cloud/${file.name || 'cloud-file'}`;
+    try {
+      const r = await api().gdriveDownload({ id: file.id, dest });
+      if (r && r.ok) {
+        get().setStatus(`Downloaded to ${r.path}`);
+        await get().openFile(r.path);
+      } else {
+        get().setStatus(`Download failed: ${(r && r.error) || 'unknown'}`);
+      }
+    } catch (e) {
+      get().setStatus(`Download failed: ${e.message}`);
+    }
   },
 
   setGitMessage: (v) => set({ gitMessage: v }),

@@ -15,6 +15,7 @@ import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage } 
 import { isWithin } from '../electron/tools/paths.js';
 import computer from '../electron/tools/computer.js';
 import git from '../electron/tools/git.js';
+import gdrive from '../electron/tools/gdrive.js';
 import {
   isAutomationDue,
   dueAutomations,
@@ -644,6 +645,21 @@ suite.push(
     const list = await git.worktreeList(repo);
     assert.ok(list.worktrees.some((w) => w.path === dir), 'worktree path listed');
     assert.ok(list.worktrees.some((w) => w.branch === 'wt-branch'), 'worktree branch listed');
+  })
+);
+
+/* ----------------------------------- cloud ----------------------------------- */
+
+suite.push(
+  test('gdrive: exposes the cloud API and reports status', async () => {
+    for (const fn of ['status', 'save', 'login', 'logout', 'listFiles', 'readFile', 'downloadFile']) {
+      assert.equal(typeof gdrive[fn], 'function', `${fn} missing`);
+    }
+    const st = await gdrive.status();
+    assert.equal(typeof st.connected, 'boolean');
+    assert.equal(typeof st.hasClient, 'boolean');
+    assert.match(st.scope, /drive\.readonly/);
+    assert.match(st.configPath, /gdrive\.json$/);
   })
 );
 

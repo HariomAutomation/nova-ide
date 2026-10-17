@@ -11,6 +11,7 @@ const browserTool = require('./tools/browser');
 const computerTool = require('./tools/computer');
 const checkpoints = require('./tools/checkpoints');
 const gitTool = require('./tools/git');
+const gdrive = require('./tools/gdrive');
 const { describeHttpError } = require('./tools/errors');
 const { isWithin } = require('./tools/paths');
 const mcp = require('./mcp');
@@ -680,6 +681,41 @@ ipcMain.handle('git:pull', async (_e, { cwd }) => gitTool.pull(cwd));
 ipcMain.handle('git:log', async (_e, { cwd, limit }) => gitTool.log(cwd, limit));
 ipcMain.handle('git:worktreeAdd', async (_e, { cwd, path: dir, branch }) => gitTool.worktreeAdd(cwd, dir, branch));
 ipcMain.handle('git:worktreeList', async (_e, { cwd }) => gitTool.worktreeList(cwd));
+
+/* ------------------------------ cloud (google drive) ------------------------------ */
+
+ipcMain.handle('gdrive:status', async () => gdrive.status());
+ipcMain.handle('gdrive:save', async (_e, patch) => gdrive.save(patch || {}));
+ipcMain.handle('gdrive:login', async () => {
+  try {
+    return { ok: true, status: await gdrive.login() };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+ipcMain.handle('gdrive:logout', async () => ({ ok: true, status: await gdrive.logout() }));
+ipcMain.handle('gdrive:last-url', () => ({ url: gdrive.getLastAuthUrl() }));
+ipcMain.handle('gdrive:list', async (_e, { query }) => {
+  try {
+    return await gdrive.listFiles(query);
+  } catch (e) {
+    return { error: String((e && e.message) || e), files: [] };
+  }
+});
+ipcMain.handle('gdrive:read', async (_e, { id }) => {
+  try {
+    return await gdrive.readFile(id);
+  } catch (e) {
+    return { error: String((e && e.message) || e) };
+  }
+});
+ipcMain.handle('gdrive:download', async (_e, { id, dest }) => {
+  try {
+    return await gdrive.downloadFile(id, dest);
+  } catch (e) {
+    return { error: String((e && e.message) || e) };
+  }
+});
 
 /* ------------------------------ checkpoints ------------------------------ */
 

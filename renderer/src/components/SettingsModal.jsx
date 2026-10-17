@@ -841,10 +841,150 @@ function AboutTab() {
   );
 }
 
+function CloudTab() {
+  const drive = useStore((s) => s.drive);
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [url, setUrl] = useState(null);
+  const [seeded, setSeeded] = useState(false);
+
+  useEffect(() => {
+    useStore.getState().loadDrive();
+  }, []);
+
+  useEffect(() => {
+    if (drive && !seeded) {
+      setClientId(drive.clientId || '');
+      setSeeded(true);
+    }
+  }, [drive, seeded]);
+
+  async function save() {
+    await useStore.getState().saveDriveClient({ clientId, clientSecret: clientSecret || undefined });
+    setMsg({ type: 'ok', text: 'Saved.' });
+  }
+
+  async function signIn() {
+    if (!clientId.trim()) {
+      setMsg({
+        type: 'err',
+        text: 'Pehle OAuth Client ID daalo (Google Cloud Console -> APIs & Services -> Credentials -> OAuth client ID -> type: Desktop app).',
+      });
+      return;
+    }
+    await useStore.getState().saveDriveClient({ clientId, clientSecret: clientSecret || undefined });
+    setBusy(true);
+    setMsg({ type: 'info', text: 'Browser me Google sign-in khulega… consent ke baad yahan status update hoga.' });
+    try {
+      const r = await window.nova.gdriveLogin();
+      if (r && r.ok) {
+        setMsg({ type: 'ok', text: `Connected \u2713 ${(r.status && r.status.email) || ''}` });
+      } else {
+        const lu = await window.nova.gdriveLastUrl().catch(() => null);
+        setUrl((lu && lu.url) || null);
+        setMsg({ type: 'err', text: `Sign-in failed: ${(r && r.error) || 'unknown error'}` });
+      }
+    } catch (e) {
+      setMsg({ type: 'err', text: `Sign-in failed: ${e.message}` });
+    } finally {
+      setBusy(false);
+      await useStore.getState().loadDrive();
+    }
+  }
+
+  return (
+    <div className="settings-body">
+      <p className="muted small">
+        Sign in with Google once (read-only Drive access) and Nova can list and open your cloud files any time. Nova can
+        read cloud files, never modify them.
+      </p>
+
+      <Group title="Google Drive">
+        <Row
+          label="Status"
+          desc={drive.connected ? `Connected${drive.email ? `: ${drive.email}` : ''}` : 'Not connected'}
+          control={<span className={'cz-dot ' + (drive.connected ? 'ok' : '')} />}
+        />
+        <Row
+          label="OAuth Client ID"
+          desc="Google Cloud Console → APIs & Services → Credentials → Create credentials → OAuth client ID → type: Desktop app. (Drive API bhi enable karo.)"
+          control={
+            <input
+              className="input"
+              style={{ width: 320 }}
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="1234-abc.apps.googleusercontent.com"
+            />
+          }
+        />
+        <Row
+          label="Client secret"
+          desc="Optional for Desktop app clients — Nova PKCE use karta hai."
+          control={
+            <input
+              className="input"
+              style={{ width: 260 }}
+              type="password"
+              value={clientSecret}
+              onChange={(e) => setClientSecret(e.target.value)}
+              placeholder="GOCSPX-…"
+            />
+          }
+        />
+        <Row
+          label="Connect"
+          desc="Sign-in aapke system browser me khulega; ek baar hone ke baad Nova khud token refresh karega."
+          control={
+            <div className="input-row">
+              <button className="btn small" onClick={save}>
+                Save
+              </button>
+              {drive.connected ? (
+                <button className="btn small danger" onClick={() => useStore.getState().driveSignOut()}>
+                  Sign out
+                </button>
+              ) : (
+                <button className="btn small primary" disabled={busy} onClick={signIn}>
+                  {busy ? '↻ Browser khul raha hai…' : 'Sign in with Google'}
+                </button>
+              )}
+              {url && (
+                <button
+                  className="btn small"
+                  onClick={() =>
+                    navigator.clipboard
+                      .writeText(url)
+                      .then(() => useStore.getState().setStatus('Sign-in URL copied'))
+                  }
+                >
+                  Copy sign-in URL
+                </button>
+              )}
+            </div>
+          }
+        />
+        {msg && <div className={'g-inline g-' + msg.type}>{msg.text}</div>}
+      </Group>
+
+      {drive.connected && (
+        <div className="preset-row">
+          <button className="btn primary" onClick={() => useStore.getState().openCloud()}>
+            Browse cloud files
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const NAV = [
   ['general', 'General', '\u2699\uFE0F'],
   ['agents', 'Agents', '\u{1F916}'],
   ['models', 'Models', '\u{1F9E0}'],
+  ['cloud', 'Cloud', '\u2601\uFE0F'],
   ['mcp', 'MCP', '\u{1F50C}'],
   ['browser', 'Browser & Network', '\u{1F310}'],
   ['computer', 'Computer', '\u{1F5A5}\uFE0F'],
@@ -911,6 +1051,7 @@ export default function SettingsModal() {
           {current[0] === 'general' && <GeneralTab />}
           {current[0] === 'agents' && <AgentsTab />}
           {current[0] === 'models' && <ModelsTab />}
+          {current[0] === 'cloud' && <CloudTab />}
           {current[0] === 'mcp' && <McpTab />}
           {current[0] === 'browser' && <BrowserTab />}
           {current[0] === 'computer' && <ComputerTab />}

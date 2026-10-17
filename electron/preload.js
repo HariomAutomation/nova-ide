@@ -103,6 +103,16 @@ contextBridge.exposeInMainWorld('nova', {
   gitWorktreeAdd: (payload) => ipcRenderer.invoke('git:worktreeAdd', payload),
   gitWorktreeList: (cwd) => ipcRenderer.invoke('git:worktreeList', { cwd }),
 
+  // cloud (google drive, read-only)
+  gdriveStatus: () => ipcRenderer.invoke('gdrive:status'),
+  gdriveSave: (patch) => ipcRenderer.invoke('gdrive:save', patch),
+  gdriveLogin: () => ipcRenderer.invoke('gdrive:login'),
+  gdriveLogout: () => ipcRenderer.invoke('gdrive:logout'),
+  gdriveLastUrl: () => ipcRenderer.invoke('gdrive:last-url'),
+  gdriveList: (query) => ipcRenderer.invoke('gdrive:list', { query }),
+  gdriveRead: (id) => ipcRenderer.invoke('gdrive:read', { id }),
+  gdriveDownload: (payload) => ipcRenderer.invoke('gdrive:download', payload),
+
   // misc
   appInfo: () => ipcRenderer.invoke('app:info'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),

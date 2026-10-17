@@ -212,6 +212,7 @@ function RepoChips() {
   const gitBranch = useStore((s) => s.gitBranch);
   const appInfo = useStore((s) => s.appInfo);
   const runOn = useStore((s) => s.runOn);
+  const drive = useStore((s) => s.drive);
   const [menu, setMenu] = useState(null); // null | 'runon' | 'remote'
   const [wtName, setWtName] = useState('');
   const wrapRef = useRef(null);
@@ -276,14 +277,23 @@ function RepoChips() {
               className="plus-row"
               onClick={() => {
                 setMenu(null);
-                useStore.getState().setStatus('Cloud execution is coming soon in Nova — agents run on this computer for now.');
+                if (drive && drive.connected) {
+                  useStore.getState().setRunOn('cloud');
+                  useStore.getState().setStatus('Run target: Cloud — your cloud files are in the Cloud tab.');
+                } else {
+                  useStore.getState().setStatus('Connect Google Drive to use the cloud (Settings → Cloud).');
+                  useStore.getState().setSettingsOpen(true, 'cloud');
+                }
               }}
             >
               <span className="plus-ico">{'\u2601\uFE0F'}</span>
               <span className="plus-text">
                 <span className="plus-title">Cloud</span>
-                <span className="plus-desc muted">Coming soon</span>
+                <span className="plus-desc muted">
+                  {drive && drive.connected ? drive.email || 'Connected' : 'Connect Google Drive'}
+                </span>
               </span>
+              {runOn === 'cloud' && <span className="runon-check">{'\u2713'}</span>}
             </button>
             <button className="plus-row" onClick={() => choose('local')}>
               <span className="plus-ico">{'\u{1F5A5}\uFE0F'}</span>
