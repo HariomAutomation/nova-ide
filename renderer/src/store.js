@@ -128,7 +128,6 @@ export const useStore = create((set, get) => ({
   skills: null,
   mcpInfo: null,
   addons: null,
-  google: null,
 
   /* --------------------------------- terminal --------------------------------- */
   termLines: [],
@@ -357,80 +356,6 @@ export const useStore = create((set, get) => ({
     } catch (e) {
       get().setStatus(`Addon toggle failed: ${e.message}`);
     }
-  },
-
-  /* ------------------------------ google sign-in (Vertex AI) ------------------------------ */
-
-  async loadGoogle() {
-    try {
-      set({ google: await api().googleStatus() });
-    } catch (e) {
-      set({ google: { error: String(e.message || e) } });
-    }
-  },
-
-  async saveGoogle(patch) {
-    try {
-      const st = await api().googleSave(patch);
-      set({ google: st });
-      get().setStatus('Google settings saved.');
-      return st;
-    } catch (e) {
-      get().setStatus(`Save failed: ${e.message}`);
-      return null;
-    }
-  },
-
-  async googleSignIn() {
-    get().setStatus('Browser me Google sign-in complete karo…');
-    try {
-      const r = await api().googleLogin();
-      if (!r || !r.ok) {
-        get().setStatus(`Google sign-in failed: ${(r && r.error) || 'unknown error'}`);
-        return false;
-      }
-      set({ google: r.status });
-      get().setStatus(`Google account connected${r.status.email ? `: ${r.status.email}` : ''}.`);
-      return true;
-    } catch (e) {
-      get().setStatus(`Google sign-in failed: ${e.message}`);
-      return false;
-    }
-  },
-
-  async googleSignOut() {
-    try {
-      const r = await api().googleLogout();
-      set({ google: r.status });
-      get().setStatus('Google account disconnected.');
-    } catch (e) {
-      get().setStatus(`Sign-out failed: ${e.message}`);
-    }
-  },
-
-  addVertexModel() {
-    const g = get().google;
-    if (!g || !g.connected || !g.projectId) {
-      get().setStatus('Pehle Google account connect karo aur Project ID save karo.');
-      return;
-    }
-    const loc = g.location || 'us-central1';
-    const baseUrl = `https://${loc}-aiplatform.googleapis.com/v1/projects/${g.projectId}/locations/${loc}/endpoints/openapi`;
-    const models = get().models || [];
-    const existing = models.find((m) => m.auth === 'google');
-    const id = existing ? existing.id : crypto.randomUUID();
-    const entry = {
-      id,
-      label: 'Gemini 4 (Vertex)',
-      baseUrl,
-      model: 'google/gemini-4-argon',
-      apiKey: '',
-      auth: 'google',
-    };
-    const next = existing ? models.map((m) => (m.auth === 'google' ? { ...m, baseUrl, model: entry.model } : m)) : [...models, entry];
-    get().setModels(next, id);
-    get().saveSettings();
-    get().setStatus('Gemini 4 (Vertex, Google account) add ho gaya aur active bhi — chat try karo!');
   },
 
   /* ------------------------------- checkpoints ------------------------------- */

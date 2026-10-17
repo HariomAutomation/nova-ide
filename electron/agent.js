@@ -11,7 +11,6 @@ const checkpoints = require('./tools/checkpoints');
 const { describeHttpError } = require('./tools/errors');
 const { isWithin } = require('./tools/paths');
 const mcp = require('./mcp');
-const googleAuth = require('./google-auth');
 const geminiWeb = require('./gemini-web');
 
 /* ------------------------------ tool schemas ------------------------------ */
@@ -369,9 +368,7 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey }
   const url = base + '/chat/completions';
 
   const headers = { 'Content-Type': 'application/json' };
-  let authKey = config.apiKey;
-  if (config.auth === 'google') authKey = await googleAuth.getAccessToken();
-  if (authKey) headers.Authorization = `Bearer ${authKey}`;
+  if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
   if (/openrouter\.ai/.test(base)) {
     headers['HTTP-Referer'] = 'https://nova-ide.local';
     headers['X-Title'] = 'Nova IDE';

@@ -14,7 +14,6 @@ const gitTool = require('./tools/git');
 const { describeHttpError } = require('./tools/errors');
 const { isWithin } = require('./tools/paths');
 const mcp = require('./mcp');
-const googleAuth = require('./google-auth');
 const geminiWeb = require('./gemini-web');
 const agent = require('./agent');
 
@@ -249,9 +248,7 @@ ipcMain.handle('models:list', async (_e, payload) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 20000);
     const headers = {};
-    let key = apiKey;
-    if (auth === 'google') key = await googleAuth.getAccessToken();
-    if (key) headers.Authorization = `Bearer ${key}`;
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
     const res = await fetch(url, { headers, signal: ctrl.signal });
     clearTimeout(timer);
     if (!res.ok) {
@@ -281,15 +278,7 @@ ipcMain.handle('models:ping', async (_e, payload) => {
   const base = String(baseUrl || '').trim().replace(/\/+$/, '');
   if (!/^https?:\/\//.test(base)) return { error: 'Sahi http(s) base URL daalo pehle.' };
   const authHeaders = {};
-  let key = apiKey;
-  if (auth === 'google') {
-    try {
-      key = await googleAuth.getAccessToken();
-    } catch (e) {
-      return { error: String(e.message || e) };
-    }
-  }
-  if (key) authHeaders.Authorization = `Bearer ${key}`;
+  if (apiKey) authHeaders.Authorization = `Bearer ${apiKey}`;
 
   const chatModel = String(model || '').trim();
   if (!chatModel) return { error: 'Pehle model id daalo (ya list se pick karo).' };
@@ -321,21 +310,6 @@ ipcMain.handle('models:ping', async (_e, payload) => {
     return { models, chatOk: false, chatError: String(e.message || e) };
   }
 });
-
-ipcMain.handle('google:status', async () => googleAuth.status());
-
-ipcMain.handle('google:save', async (_e, patch) => googleAuth.save(patch || {}));
-
-ipcMain.handle('google:login', async () => {
-  try {
-    return { ok: true, status: await googleAuth.login() };
-  } catch (e) {
-    return { ok: false, error: String((e && e.message) || e) };
-  }
-});
-
-ipcMain.handle('google:logout', async () => ({ ok: true, status: await googleAuth.logout() }));
-ipcMain.handle('google:last-url', () => ({ url: googleAuth.getLastAuthUrl() }));
 
 /* ------------------------------ Gemini Web (jugaad provider) ------------------------------ */
 
@@ -879,9 +853,7 @@ ipcMain.handle('ai:chat', async (_e, payload) => {
     const url = base + '/chat/completions';
 
     const headers = { 'Content-Type': 'application/json' };
-    let authKey = config.apiKey;
-    if (config.auth === 'google') authKey = await googleAuth.getAccessToken();
-    if (authKey) headers.Authorization = `Bearer ${authKey}`;
+    if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
     if (/openrouter\.ai/.test(base)) {
       headers['HTTP-Referer'] = 'https://nova-ide.local';
       headers['X-Title'] = 'Nova IDE';

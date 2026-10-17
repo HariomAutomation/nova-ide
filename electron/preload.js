@@ -28,19 +28,11 @@ contextBridge.exposeInMainWorld('nova', {
   addonsStatus: () => ipcRenderer.invoke('addons:status'),
   addonsToggle: (id, enable) => ipcRenderer.invoke('addons:toggle', { id, enable }),
   restoreCheckpoint: (agentId) => ipcRenderer.invoke('checkpoint:restore', { agentId }),
-  googleLastUrl: () => ipcRenderer.invoke('google:last-url'),
-
   // settings
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (obj) => ipcRenderer.invoke('settings:set', obj),
   listModels: (payload) => ipcRenderer.invoke('models:list', payload),
   testModel: (payload) => ipcRenderer.invoke('models:ping', payload),
-
-  // google sign-in (Vertex AI)
-  googleStatus: () => ipcRenderer.invoke('google:status'),
-  googleSave: (patch) => ipcRenderer.invoke('google:save', patch),
-  googleLogin: () => ipcRenderer.invoke('google:login'),
-  googleLogout: () => ipcRenderer.invoke('google:logout'),
 
   // Gemini Web (jugaad provider — drives the signed-in web app tab)
   reportGeminiWebview: (id) => ipcRenderer.send('gemini:wc-id', id),

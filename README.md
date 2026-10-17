@@ -90,22 +90,6 @@ The agent is an autonomous loop with real tools:
 - Keys stored locally (`~/.config/Nova IDE/settings.json`, removed entries park their key in
   `keyVault` so re-adding a preset restores it), only sent to the provider you configured
 
-### Google Sign-In (Vertex AI)
-Sign in with your Google account instead of pasting a key, and run Gemini models through your own
-Google Cloud project's Vertex AI quota:
-
-- Settings → **Models** → **Google Account (Vertex AI)** → paste an OAuth **Client ID** (desktop
-  app type), **Project ID** + location → **Sign in with Google**. The sign-in button stays
-  disabled until a Client ID (+ secret) is saved.
-- OAuth 2.0 loopback + PKCE; refresh token stored in `~/.nova-ide/google.json`, access tokens
-  refresh automatically before every request — nothing to copy around
-- If the system browser doesn't open automatically, a **Copy sign-in URL** button appears —
-  paste the URL manually to complete sign-in.
-- **+ Add Gemini 4 (Vertex)** drops in a ready model (`google/gemini-4-argon`) wired to
-  `https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/endpoints/openapi`
-- Heads-up: the Gemini app **Pro subscription is not API quota** — Vertex usage bills to the Cloud
-  project (the $300 free trial covers it). Free API-key tier keeps working separately.
-
 ## Run
 
 ```bash

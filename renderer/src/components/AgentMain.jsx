@@ -211,15 +211,10 @@ function RepoChips() {
   const rootFolder = useStore((s) => s.rootFolder);
   const gitBranch = useStore((s) => s.gitBranch);
   const appInfo = useStore((s) => s.appInfo);
-  const google = useStore((s) => s.google);
   const runOn = useStore((s) => s.runOn);
   const [menu, setMenu] = useState(null); // null | 'runon' | 'remote'
   const [wtName, setWtName] = useState('');
   const wrapRef = useRef(null);
-
-  useEffect(() => {
-    useStore.getState().loadGoogle().catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (!menu) return;
@@ -230,14 +225,7 @@ function RepoChips() {
     return () => document.removeEventListener('mousedown', onDown);
   }, [menu]);
 
-  const cloudOn = !!(google && google.connected);
   const choose = (t) => {
-    if (t === 'cloud' && !cloudOn) {
-      setMenu(null);
-      useStore.getState().setStatus('Connect Google to use cloud models (Vertex AI).');
-      useStore.getState().setSettingsOpen(true, 'models');
-      return;
-    }
     useStore.getState().setRunOn(t);
     setMenu(null);
   };
@@ -284,13 +272,18 @@ function RepoChips() {
         {menu && (
           <div className="dropdown runon-menu">
             <div className="runon-head">Run on</div>
-            <button className="plus-row" onClick={() => choose('cloud')}>
+            <button
+              className="plus-row"
+              onClick={() => {
+                setMenu(null);
+                useStore.getState().setStatus('Cloud execution is coming soon in Nova — agents run on this computer for now.');
+              }}
+            >
               <span className="plus-ico">{'\u2601\uFE0F'}</span>
               <span className="plus-text">
                 <span className="plus-title">Cloud</span>
-                <span className="plus-desc muted">{cloudOn ? google.email || 'Google account' : 'Connect Google to enable'}</span>
+                <span className="plus-desc muted">Coming soon</span>
               </span>
-              {runOn === 'cloud' && <span className="runon-check">{'\u2713'}</span>}
             </button>
             <button className="plus-row" onClick={() => choose('local')}>
               <span className="plus-ico">{'\u{1F5A5}\uFE0F'}</span>
