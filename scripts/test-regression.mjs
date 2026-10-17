@@ -829,20 +829,26 @@ suite.push(
     const models = [
       { id: 'a', label: 'A' }, // no key -> hidden
       { id: 'b', label: 'B', apiKey: 'sk-1' }, // key -> shown
-      { id: 'c', label: 'C', auth: 'gemini-web' }, // session -> shown
+      { id: 'c', label: 'C', auth: 'gemini-web' }, // retired -> hidden
       { id: 'd', label: 'D', auth: 'cloudcode' }, // session -> shown
     ];
     assert.deepEqual(
       usableModels(models, null).map((m) => m.id),
-      ['b', 'c', 'd']
+      ['b', 'd']
     );
     // the active model is always kept, even without a key
     assert.deepEqual(
       usableModels(models, 'a').map((m) => m.id),
-      ['a', 'b', 'c', 'd']
+      ['a', 'b', 'd']
+    );
+    // a retired provider never shows, even when it is the active one
+    assert.deepEqual(
+      usableModels(models, 'c').map((m) => m.id),
+      ['b', 'd']
     );
     assert.equal(isModelUsable({ id: 'x', apiKey: '   ' }, null), false);
     assert.equal(isModelUsable({ id: 'y', auth: 'cloudcode' }, null), true);
+    assert.equal(isModelUsable({ id: 'z', auth: 'gemini-web' }, null), false);
   })
 );
 

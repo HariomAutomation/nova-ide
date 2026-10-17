@@ -123,14 +123,6 @@ const PRESETS = [
     hint: 'Free AI Studio key pe chalne wala fast Flash model — verified working. Quota khatam ho to gemini-3.1-flash-lite / gemini-3.5-flash try karo.',
   },
   {
-    id: 'gemini-web',
-    label: 'Gemini Web (subscription)',
-    baseUrl: '',
-    model: 'gemini-web',
-    auth: 'gemini-web',
-    hint: 'Nova ke 🌐 Gemini tab ka web app automate karta hai — aapka Google account brain banta hai (Google AI Pro ho to Pro models + higher limits isi session me), aur agent Nova ke saare tools (files, terminal, browser, MCP) chala sakta hai. Pehle sidebar me Gemini kholke sign in karo. ⚠️ Web UI automation — Google ToS gray area, rate-limit/CAPTCHA possible.',
-  },
-  {
     id: 'cloudcode',
     label: 'Gemini (Google account \u00B7 Cloud Code)',
     baseUrl: '',
@@ -183,142 +175,94 @@ function ModelsTab() {
   const [tests, setTests] = useState({}); // cardId -> {state:'testing'|'ok'|'fail', msg, count}
   const [showList, setShowList] = useState({}); // cardId -> bool (show all fetched versions)
 
-  /** Sign-in / status row for the background Gemini Web session. */
-  function GeminiAccountLine() {
-    const [st, setSt] = useState(null);
-    const [busy, setBusy] = useState(false);
-    const [diag, setDiag] = useState('');
-
-    useEffect(() => {
-      const tick = () =>
-        window.nova
-          .geminiStatus()
-          .then(setSt)
-          .catch(() => {});
-      tick();
-      const id = setInterval(tick, 5000);
-      return () => clearInterval(id);
-    }, []);
-
-    const ready = !!(st && st.ok && st.hasEditor);
-    return (
-      <div className="cc-line">
-        <span className={ready ? 'testline-ok' : 'muted small'}>
-          {st
-            ? ready
-              ? 'connected \u2014 Gemini background me chalta hai'
-              : st.error
-                ? String(st.error).slice(0, 90)
-                : 'not signed in'
-            : '\u2026'}
-        </span>
-        <button
-          className={'btn small' + (ready ? '' : ' primary')}
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await window.nova.openGeminiLoginWindow();
-            } catch {}
-            setBusy(false);
-          }}
-        >
-          {busy ? 'Opening\u2026' : ready ? 'Reconnect' : 'Sign in with Google'}
-        </button>
-        {ready && (
-          <button
-            className="btn small"
-            title="Gemini page pe driver ko kya dikh raha hai — jawab na aaye to ye bhejo"
-            onClick={async () => {
-              try {
-                const r = await window.nova.geminiDiagnose();
-                const text = JSON.stringify(r, null, 1);
-                try {
-                  await navigator.clipboard.writeText(text);
-                } catch {}
-                const d = (r && r.diag) || {};
-                const hit = d.counts ? Object.entries(d.counts).filter(([, n]) => Number(n) > 0).map(([k, n]) => `${k}=${n}`).join(' · ') : '';
-                setDiag(`Copied to clipboard. Matched: ${hit || 'kuch nahi'} | lastMarkdown: ${String(d.lastMarkdown || '').slice(0, 60)}`);
-              } catch (e) {
-                setDiag(String(e.message || e));
-              }
-            }}
-          >
-            Diagnose
-          </button>
-        )}
-        {diag && (
-          <span className="muted small" style={{ flexBasis: '100%', lineHeight: 1.45 }}>
-            {diag}
-          </span>
-        )}
-      </div>
-    );
-  }
-
-  /** Engine picker + Playwright sign-in (one visible window, then headless). */
-  function GeminiEngineLine() {
-    const [eng, setEng] = useState(null);
+  /** Free Gemini API: paste a key, fetch the models, pick one. */
+  function GeminiApiLine() {
+    const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
+    const isGeminiModel = (m) => /generativelanguage\.googleapis\.com/i.test(String(m.baseUrl || ''));
+    const gEntry = draft.find(isGeminiModel);
+    const [key, setKey] = useState(gEntry ? gEntry.apiKey || '' : '');
+    const [list, setList] = useState([]);
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState('');
 
-    useEffect(() => {
-      const tick = () =>
-        window.nova
-          .geminiEngine()
-          .then(setEng)
-          .catch(() => {});
-      tick();
-      const id = setInterval(tick, 6000);
-      return () => clearInterval(id);
-    }, []);
+    /** Find (or create) the Gemini entry and apply the key. */
+    function ensureEntry(nextKey) {
+      let entry = draft.find(isGeminiModel);
+      let next;
+      if (!entry) {
+        entry = {
+          id: crypto.randomUUID(),
+          label: 'Gemini',
+          baseUrl: GEMINI_BASE,
+          model: 'gemini-flash-latest',
+          apiKey: nextKey || '',
+        };
+        next = [...draft, entry];
+      } else {
+        next = draft.map((m) => (m.id === entry.id ? { ...m, apiKey: nextKey ?? m.apiKey } : m));
+      }
+      setDraft(next);
+      return { next, entry };
+    }
 
-    const pw = (eng && eng.playwright) || {};
+    async function fetchModels() {
+      setBusy(true);
+      setMsg('');
+      try {
+        const { next, entry } = ensureEntry(key);
+        setActive(entry.id);
+        commit(next, entry.id);
+        const r = await window.nova.listModels({ baseUrl: entry.baseUrl, apiKey: key, auth: 'gemini' });
+        if (r && Array.isArray(r.models) && r.models.length) {
+          setList(r.models);
+          setMsg(`${r.models.length} models mile — neeche se ek click me pick karo.`);
+        } else {
+          setMsg(`Error: ${(r && r.error) || 'koi model nahi mila'}`);
+        }
+      } catch (e) {
+        setMsg(String((e && e.message) || e));
+      }
+      setBusy(false);
+    }
+
+    function pick(id) {
+      const { next, entry } = ensureEntry(key);
+      const withModel = next.map((m) => (m.id === entry.id ? { ...m, model: id } : m));
+      setDraft(withModel);
+      setActive(entry.id);
+      commit(withModel, entry.id);
+      setMsg(`Model set: ${id} (active)`);
+    }
+
     return (
-      <div className="cc-line">
-        <select
-          className="select"
-          value={(eng && eng.mode) || 'auto'}
-          onChange={async (e) => {
-            await window.nova.setGeminiEngine(e.target.value).catch(() => {});
-            setEng(await window.nova.geminiEngine().catch(() => eng));
-          }}
-        >
-          <option value="auto">Auto (Playwright, then built-in)</option>
-          <option value="playwright">Playwright only</option>
-          <option value="builtin">Built-in driver</option>
-        </select>
-        <button
-          className="btn small"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              const r = await window.nova.openGeminiPwLogin();
-              setMsg(
-                r && r.ok
-                  ? 'Sign-in window khul gayi — wahan Google se sign in karo (ek baar).'
-                  : `Error: ${(r && r.error) || 'unknown'}`
-              );
-            } catch (e) {
-              setMsg(String(e.message || e));
-            }
-            setBusy(false);
-          }}
-        >
-          {busy ? 'Opening\u2026' : 'Sign in (browser)'}
-        </button>
-        <span className="muted small" style={{ flexBasis: '100%', lineHeight: 1.45 }}>
-          {pw.available
-            ? `Playwright ${pw.version || ''} · ${pw.running ? 'running' : 'idle'}${pw.signedIn ? ' · signed in' : ''}`
-            : 'Playwright install nahi mila (npm install chalao)'}
-          {eng && eng.lastPwError ? ` · last error: ${String(eng.lastPwError).slice(0, 90)}` : ''}
-        </span>
-        {msg && (
-          <span className="muted small" style={{ flexBasis: '100%' }}>
-            {msg}
-          </span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', minWidth: 0 }}>
+        <div className="input-row">
+          <input
+            className="input"
+            style={{ width: 300 }}
+            type="password"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="AIza… (AI Studio key)"
+          />
+          <button className="btn small primary" disabled={busy} onClick={fetchModels}>
+            {busy ? 'Fetching\u2026' : 'Fetch models'}
+          </button>
+        </div>
+        {list.length > 0 && (
+          <div className="preset-row" style={{ maxHeight: 150, overflowY: 'auto' }}>
+            {list.map((id) => (
+              <button
+                key={id}
+                className={'btn small' + (gEntry && gEntry.model === id ? ' primary' : '')}
+                onClick={() => pick(id)}
+              >
+                {id}
+              </button>
+            ))}
+          </div>
         )}
+        {msg && <span className="muted small">{msg}</span>}
       </div>
     );
   }
@@ -590,10 +534,15 @@ function ModelsTab() {
         provider you configure. Agent mode needs a model that supports tool calling (Gemini 3.x, DeepSeek, GPT-4o, Llama 3.x…).
       </p>
 
-      <Group title="Recommended — Gemini with an API key">
+      <Group title="Gemini — free API (recommended)">
         <Row
           label="1. Get a free key"
-          desc="AI Studio se free API key milti hai. Ye rasta Google-supported hai aur asli tool-calling deta hai, isliye agent theek se files/terminal/browser chalata hai."
+          desc={
+            <>
+              AI Studio se <b>free</b> API key lo. Ye Google-supported rasta hai aur asli tool-calling deta hai, isliye
+              agent theek se files/terminal/browser chalata hai.
+            </>
+          }
           control={
             <button className="btn small" onClick={() => window.nova.openExternal('https://aistudio.google.com/apikey')}>
               Get AI Studio key ↗
@@ -601,44 +550,14 @@ function ModelsTab() {
           }
         />
         <Row
-          label="2. Add the Gemini model"
-          desc="Base URL aur model pehle se bhare hue ek model card ban jayega — bas apni key paste karke Save karo, phir Test connection."
-          control={
-            <button
-              className="btn small primary"
-              onClick={() => {
-                const preset = PRESETS.find((x) => x.id === 'gemini-flash-free');
-                if (preset) addPreset(preset);
-              }}
-            >
-              Add Gemini model
-            </button>
-          }
-        />
-      </Group>
-
-      <Group title="Google Gemini (background)">
-        <Row
-          label="Sign in once"
+          label="2. Fetch &amp; pick a model"
           desc={
             <>
-              Ek baar Google se sign in karo. Uske baad Gemini <b>background</b> me chalta hai — kaam Nova ke apne chat/agent
-              se hota hai, Gemini ka web UI kahin nahi dikhta. Koi API key nahi. Google AI Pro ho to Pro models + zyada
-              limits. Jawab na aaye to <b>Diagnose</b> dabao.
+              Key paste karke <b>Fetch models</b> dabao — jo models aapki key pe available hain wo pills me aa jayenge, ek
+              click me pick ho jayenge.
             </>
           }
-          control={<GeminiAccountLine />}
-        />
-        <Row
-          label="Engine"
-          desc={
-            <>
-              <b>Playwright</b> browser automation (stable locators + auto-waiting — tez aur reliable) ya purana built-in
-              driver. <b>Auto</b> pehle Playwright try karta hai, fail hone pe built-in pe chala jata hai. Playwright apna
-              alag profile use karta hai, isliye upar wale sign-in ke bajaye <b>Sign in (browser)</b> ek baar karo.
-            </>
-          }
-          control={<GeminiEngineLine />}
+          control={<GeminiApiLine />}
         />
       </Group>
 
@@ -1440,7 +1359,7 @@ function CloudTab() {
     <div className="settings-body">
       <p className="muted small">
         Ye sign-in <b>cloud files aur memory</b> ke liye hai (read-only Drive). <b>AI models ke liye nahi</b> — Gemini models
-        ke liye Settings → Models → "Google Gemini (background)" me sign in karo.
+        ke liye Settings → Models → "Gemini — free API" me key daalo aur Fetch models dabao.
       </p>
 
       <Group title="Google Drive">
@@ -1555,7 +1474,7 @@ function CloudTab() {
         )}
         <Row
           label="Gemini models"
-          desc="Ye (Drive) sign-in models ke liye nahi hai. Gemini ke liye Settings → Models → 'Google Gemini (background)' me ek baar sign in karo — koi API key nahi."
+          desc="Ye (Drive) sign-in models ke liye nahi hai. Gemini ke liye Settings → Models → 'Gemini — free API' me AI Studio key daal ke Fetch models dabao."
           control={
             <button className="btn small" onClick={() => useStore.getState().setSettingsTab('models')}>
               Open Models

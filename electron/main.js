@@ -335,13 +335,21 @@ ipcMain.handle('settings:set', async (_e, obj) => {
  */
 ipcMain.handle('models:list', async (_e, payload) => {
   const { baseUrl, apiKey, auth } = payload || {};
-  const url = String(baseUrl || '').trim().replace(/\/+$/, '') + '/models';
+  let base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  // Google's Gemini API authenticates with ?key=, not a Bearer header — and the
+  // model list lives on the native API even when chat goes through /openai.
+  const isGemini = /generativelanguage\.googleapis\.com/i.test(base);
+  let url = base + '/models';
+  if (isGemini) {
+    url = base.replace(/\/openai$/i, '') + '/models';
+    if (apiKey) url += `${url.includes('?') ? '&' : '?'}key=${encodeURIComponent(apiKey)}`;
+  }
   if (!/^https?:\/\//.test(url)) return { error: 'Enter a valid http(s) base URL first.' };
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 20000);
     const headers = {};
-    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    if (apiKey && !isGemini) headers.Authorization = `Bearer ${apiKey}`;
     const res = await fetch(url, { headers, signal: ctrl.signal });
     clearTimeout(timer);
     if (!res.ok) {

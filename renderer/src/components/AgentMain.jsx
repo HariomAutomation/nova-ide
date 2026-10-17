@@ -111,7 +111,7 @@ function diagnoseError(text) {
   if (/not signed in|sign.?in|no webcontents|gemini.*(web|editor)/i.test(low) && /gemini/i.test(low)) {
     return {
       headline: 'Gemini Web me sign-in nahi hai',
-      detail: 'Sidebar me 🌐 Gemini tab kholo, Google account se sign in karo, phir dobara bhejo. Ya upar model picker se Gemini API model chuno.',
+      detail: 'Settings → Models → Gemini — free API me AI Studio key daalo, Fetch models dabao, phir upar picker se wo model chuno.',
       kind: 'settings',
     };
   }
@@ -1056,7 +1056,7 @@ export default function AgentMain() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {usableModels.length === 0 && (
                   <div style={{ padding: '8px 10px 12px', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                    No working model yet. Add an API key or sign in with Google (Gemini tab) — Settings → Models.
+                    No working model yet — Settings → Models → Gemini (free API), key daalo aur Fetch models dabao.
                   </div>
                 )}
 
