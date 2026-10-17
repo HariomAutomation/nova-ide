@@ -29,6 +29,9 @@ const threads = new Map(); // threadKey -> { cursor: messages.length already sen
 
 const MAX_PROMPT = 24000;
 const ANSWER_TIMEOUT_MS = 5 * 60 * 1000;
+// How often we ask the page for the answer so far. Smaller = smoother text and
+// a quicker finish, at the cost of a little more work per second.
+const POLL_MS = 250;
 
 /* ------------------------------- plumbing ------------------------------- */
 
@@ -149,9 +152,12 @@ const JS_STATE = `(() => {
     busy: !!stopBtn,
     editorText: editor ? (editor.innerText || '') : '',
     text: last ? (last.innerText || '') : '',
-    body: document.body ? document.body.innerText.slice(0, 400) : '',
   };
 })()`;
+
+// Read separately (only when something goes wrong): document.body.innerText is
+// expensive on a heavy page and must not run on every poll.
+const JS_BODY = `(() => (document.body ? document.body.innerText.slice(0, 400) : ''))()`;
 
 const JS_FOCUS = `(() => {
   const ed = ${jsPick(EDITOR_SELECTORS)};
@@ -184,9 +190,25 @@ const JS_SEND_RECT = `(() => {
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 })()`;
 
+// Clicking "New chat" is much cheaper than reloading the whole app, so try hard
+// to find it (the reload fallback costs several seconds on every fresh thread).
 const JS_NEW_CHAT = `(() => {
-  const btn = ${jsPick(['button[aria-label="New chat"]', 'button[aria-label*="New chat"]'])};
-  if (btn) { btn.click(); return { clicked: true }; }
+  const sels = [
+    'button[aria-label="New chat"]',
+    'button[aria-label*="New chat" i]',
+    'a[aria-label*="New chat" i]',
+    '[data-test-id="new-chat-button"]',
+    '[data-test-id="new-chat"]',
+  ];
+  for (const s of sels) {
+    try {
+      const el = document.querySelector(s);
+      if (el) { el.click(); return { clicked: true, via: s }; }
+    } catch {}
+  }
+  const cands = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+  const hit = cands.find((el) => /new chat/i.test(String(el.getAttribute('aria-label') || el.textContent || '').trim()));
+  if (hit) { hit.click(); return { clicked: true, via: 'text' }; }
   return { clicked: false };
 })()`;
 
@@ -437,7 +459,7 @@ async function runPrompt({ threadKey, system, messages, tools, onDelta, signal }
       e.name = 'AbortError';
       throw e;
     }
-    await sleep(450);
+    await sleep(POLL_MS);
     const st = await pageState(wc).catch(() => null);
     if (!st) continue;
     if (st.text && st.text !== lastText) {
@@ -453,11 +475,12 @@ async function runPrompt({ threadKey, system, messages, tools, onDelta, signal }
     } else if (lastText && !st.busy) {
       stable += 1;
     }
-    if (lastText && !st.busy && stable >= 3) break; // ~1.3s unchanged = done
+    if (lastText && !st.busy && stable >= 3) break; // ~0.75s unchanged = done
     if (Date.now() - t0 > ANSWER_TIMEOUT_MS) {
+      const body = await evaluate(wc, JS_BODY).catch(() => '');
       throw new Error(
         'Gemini se jawab nahi aaya (5 min timeout). Page check karo — shayad sign-in ya CAPTCHA maang raha hai.' +
-          (st.body ? ' Page: ' + st.body.slice(0, 200) : '')
+          (body ? ' Page: ' + String(body).slice(0, 200) : '')
       );
     }
   }
