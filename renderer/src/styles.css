@@ -4809,3 +4809,9 @@ img.avatar.sm { width: 22px; height: 22px; }
   text-overflow: ellipsis;
   max-width: 340px;
 }
+
+/* cloud code provider row */
+.cc-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0 2px; }
+
+/* cloud code provider row */
+.cc-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0 2px; }

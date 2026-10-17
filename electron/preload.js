@@ -103,6 +103,14 @@ contextBridge.exposeInMainWorld('nova', {
   gitWorktreeAdd: (payload) => ipcRenderer.invoke('git:worktreeAdd', payload),
   gitWorktreeList: (cwd) => ipcRenderer.invoke('git:worktreeList', { cwd }),
 
+  // cloud code (experimental — Gemini via the Google Antigravity backend)
+  cloudcodeStatus: () => ipcRenderer.invoke('cloudcode:status'),
+  cloudcodeLogin: () => ipcRenderer.invoke('cloudcode:login'),
+  cloudcodeLogout: () => ipcRenderer.invoke('cloudcode:logout'),
+  cloudcodeLastUrl: () => ipcRenderer.invoke('cloudcode:last-url'),
+  cloudcodeSaveModel: (model) => ipcRenderer.invoke('cloudcode:saveModel', { model }),
+  cloudcodeModels: () => ipcRenderer.invoke('cloudcode:models'),
+
   // github
   githubStatus: () => ipcRenderer.invoke('github:status'),
   githubSave: (token) => ipcRenderer.invoke('github:save', { token }),

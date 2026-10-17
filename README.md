@@ -233,6 +233,7 @@ npm run test:agent        # End-to-end agent loop (tool execution, approvals, Pl
 | **Checkpoints & Undo** | Paid checkpointing | **Built-in** automatic snapshot & rollback (`checkpoints.js`) |
 | **Web Search & Fetch** | Counts against paid requests | **Free & unlimited** via DuckDuckGo HTML parser & direct fetch |
 | **MCP Integration** | Supported | **Built-in** with featured one-click addons (REA, LeanToken, Penpot) |
+| **Cloud Code provider** | — | **Experimental**: Gemini via Google's Cloud Code backend (what Antigravity uses) with your own Google account — no API key, real function calling. Undocumented API; a normal API key stays the reliable route |
 | **Memory** | — | **Built-in** long-term notes (`~/.nova-ide/memory.json`); injected into the system prompt every turn, for every model, and the agent can add notes with the `remember` tool |
 
 ## Roadmap

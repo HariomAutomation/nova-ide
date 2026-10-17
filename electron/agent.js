@@ -13,6 +13,7 @@ const { isWithin } = require('./tools/paths');
 const memory = require('./tools/memory');
 const mcp = require('./mcp');
 const geminiWeb = require('./gemini-web');
+const cloudcode = require('./tools/cloudcode');
 
 /* ------------------------------ tool schemas ------------------------------ */
 
@@ -407,6 +408,20 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey }
       }
     }
     return { content: text, toolCalls: [] };
+  }
+
+  if (config.auth === 'cloudcode') {
+    // Gemini via Google's Cloud Code backend (what Antigravity uses), driven by
+    // the signed-in Google account. Real function calling, no API key.
+    const sys = messages.find((m) => m && m.role === 'system');
+    return cloudcode.generate({
+      model: config.model,
+      system: sys && typeof sys.content === 'string' ? sys.content : '',
+      messages,
+      tools,
+      onDelta,
+      signal,
+    });
   }
 
   const base = String(config.baseUrl || '').replace(/\/+$/, '');

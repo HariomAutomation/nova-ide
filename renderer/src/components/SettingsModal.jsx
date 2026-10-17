@@ -123,6 +123,14 @@ const PRESETS = [
     hint: 'Nova ke 🌐 Gemini tab ka web app automate karta hai — aapka Google account brain banta hai (Google AI Pro ho to Pro models + higher limits isi session me), aur agent Nova ke saare tools (files, terminal, browser, MCP) chala sakta hai. Pehle sidebar me Gemini kholke sign in karo. ⚠️ Web UI automation — Google ToS gray area, rate-limit/CAPTCHA possible.',
   },
   {
+    id: 'cloudcode',
+    label: 'Gemini (Google account \u00B7 Cloud Code)',
+    baseUrl: '',
+    model: 'gemini-3-pro-preview',
+    auth: 'cloudcode',
+    hint: 'EXPERIMENTAL: Google Antigravity jo backend use karta hai (cloudcode-pa) — aapke Google account / AI Pro se Gemini, bina API key, asli function calling ke saath. Undocumented API hai: kabhi bhi badal sakta hai, ToS grey area.',
+  },
+  {
     id: 'openrouter',
     label: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
@@ -166,6 +174,81 @@ function ModelsTab() {
   const [modelOpts, setModelOpts] = useState({}); // cardId -> [model ids] fetched from the endpoint
   const [tests, setTests] = useState({}); // cardId -> {state:'testing'|'ok'|'fail', msg, count}
   const [showList, setShowList] = useState({}); // cardId -> bool (show all fetched versions)
+
+  /** Sign-in / status row for the experimental Cloud Code provider. */
+  function CloudCodeLine() {
+    const [st, setSt] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState(null);
+
+    useEffect(() => {
+      window.nova
+        .cloudcodeStatus()
+        .then(setSt)
+        .catch(() => {});
+    }, []);
+
+    async function signIn() {
+      setBusy(true);
+      setMsg(null);
+      try {
+        const r = await window.nova.cloudcodeLogin();
+        if (r && r.ok) {
+          setSt(r.status);
+          setMsg({ type: 'ok', text: `Connected \u2713 ${(r.status && r.status.email) || ''}` });
+        } else {
+          setMsg({ type: 'err', text: (r && r.error) || 'sign-in failed' });
+        }
+      } catch (e) {
+        setMsg({ type: 'err', text: String(e.message || e) });
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function signOut() {
+      const r = await window.nova.cloudcodeLogout();
+      setSt(r && r.status);
+      setMsg(null);
+    }
+
+    async function fetchModels() {
+      const r = await window.nova.cloudcodeModels();
+      if (r && r.models && r.models.length) {
+        setModelOpts((o) => ({ ...o, cloudcode: r.models }));
+        setMsg({ type: 'ok', text: `${r.models.length} models found` });
+      } else {
+        setMsg({ type: 'err', text: (r && r.error) || 'no models returned' });
+      }
+    }
+
+    return (
+      <div className="cc-line">
+        <span className={st && st.connected ? 'testline-ok' : 'muted small'}>
+          {st
+            ? st.connected
+              ? `connected \u00B7 ${st.email || ''}${st.project ? ` \u00B7 ${st.project}` : ''}`
+              : 'not connected'
+            : '\u2026'}
+        </span>
+        {st && st.connected ? (
+          <>
+            <button className="btn small" onClick={fetchModels}>
+              Fetch models
+            </button>
+            <button className="btn small" onClick={signOut}>
+              Sign out
+            </button>
+          </>
+        ) : (
+          <button className="btn small primary" disabled={busy} onClick={signIn}>
+            {busy ? 'Opening browser\u2026' : 'Sign in with Google'}
+          </button>
+        )}
+        {msg && <span className={msg.type === 'ok' ? 'testline-ok' : 'search-error small'}>{msg.text}</span>}
+      </div>
+    );
+  }
 
   /** Test / Fetch control shown under each model card. */
   function TestLine({ id }) {
@@ -410,6 +493,24 @@ function ModelsTab() {
                 terminal, browser, MCP sab available).
               </div>
             </div>
+          ) : m.auth === 'cloudcode' ? (
+            <div className="model-grid">
+              <div className="muted small" style={{ paddingTop: 2, lineHeight: 1.5 }}>
+                <b>EXPERIMENTAL.</b> Google Antigravity jo backend use karta hai (cloudcode-pa) — aapke Google account /
+                AI Pro se Gemini, <b>bina API key</b>, asli tool calling ke saath. Ye ek undocumented internal API hai:
+                kabhi bhi badal sakta hai, aur ToS grey area hai.
+              </div>
+              <label>
+                Model
+                <input
+                  className="input"
+                  value={m.model}
+                  onChange={(e) => update(m.id, { model: e.target.value })}
+                  placeholder="gemini-3-pro-preview"
+                />
+              </label>
+              <CloudCodeLine />
+            </div>
           ) : (
           <div className="model-grid">
             <label>
@@ -426,7 +527,7 @@ function ModelsTab() {
             </label>
           </div>
           )}
-          <TestLine id={m.id} />
+          {!m.auth && <TestLine id={m.id} />}
         </div>
       ))}
 

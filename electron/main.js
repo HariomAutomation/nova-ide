@@ -14,6 +14,7 @@ const gitTool = require('./tools/git');
 const gdrive = require('./tools/gdrive');
 const memory = require('./tools/memory');
 const ghTool = require('./tools/github');
+const cloudcode = require('./tools/cloudcode');
 const { describeHttpError } = require('./tools/errors');
 const { isWithin } = require('./tools/paths');
 const mcp = require('./mcp');
@@ -742,6 +743,21 @@ ipcMain.handle('git:pull', async (_e, { cwd }) => gitTool.pull(cwd));
 ipcMain.handle('git:log', async (_e, { cwd, limit }) => gitTool.log(cwd, limit));
 ipcMain.handle('git:worktreeAdd', async (_e, { cwd, path: dir, branch }) => gitTool.worktreeAdd(cwd, dir, branch));
 ipcMain.handle('git:worktreeList', async (_e, { cwd }) => gitTool.worktreeList(cwd));
+
+/* ------------------------------ cloud code (experimental) ------------------------------ */
+
+ipcMain.handle('cloudcode:status', async () => cloudcode.status());
+ipcMain.handle('cloudcode:login', async () => {
+  try {
+    return { ok: true, status: await cloudcode.login() };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+ipcMain.handle('cloudcode:logout', async () => ({ ok: true, status: await cloudcode.logout() }));
+ipcMain.handle('cloudcode:last-url', () => ({ url: cloudcode.getLastAuthUrl() }));
+ipcMain.handle('cloudcode:saveModel', async (_e, { model }) => cloudcode.saveModel(model));
+ipcMain.handle('cloudcode:models', async () => cloudcode.listModels());
 
 /* ------------------------------ github ------------------------------ */
 

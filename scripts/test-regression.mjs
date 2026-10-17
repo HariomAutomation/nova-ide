@@ -17,6 +17,7 @@ import computer from '../electron/tools/computer.js';
 import git from '../electron/tools/git.js';
 import gdrive from '../electron/tools/gdrive.js';
 import gh from '../electron/tools/github.js';
+import cloudcode from '../electron/tools/cloudcode.js';
 import {
   isAutomationDue,
   dueAutomations,
@@ -733,6 +734,46 @@ suite.push(
     assert.equal(typeof st.connected, 'boolean');
     assert.match(st.configPath, /github\.json$/);
     assert.equal((await gh.save('   ')).error, 'Token required');
+  })
+);
+
+/* --------------------------------- cloud code --------------------------------- */
+
+suite.push(
+  test('cloudcode: maps OpenAI-style messages + tools to the Gemini shape', () => {
+    const contents = cloudcode.toGeminiContents([
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'hi' },
+      {
+        role: 'assistant',
+        tool_calls: [{ id: 'c1', function: { name: 'read_file', arguments: '{"path":"a.js"}' } }],
+      },
+      { role: 'tool', tool_call_id: 'c1', content: 'file body' },
+    ]);
+    assert.equal(contents.length, 3);
+    assert.equal(contents[0].role, 'user');
+    assert.equal(contents[0].parts[0].text, 'hi');
+    assert.equal(contents[1].role, 'model');
+    assert.equal(contents[1].parts[0].functionCall.name, 'read_file');
+    assert.deepEqual(contents[1].parts[0].functionCall.args, { path: 'a.js' });
+    assert.equal(contents[2].parts[0].functionResponse.name, 'read_file');
+
+    const decls = cloudcode.toFunctionDeclarations([
+      {
+        name: 'read_file',
+        description: 'read',
+        parameters: {
+          type: 'object',
+          properties: { path: { type: 'string' } },
+          required: ['path'],
+          additionalProperties: false,
+        },
+      },
+    ]);
+    assert.equal(decls[0].functionDeclarations[0].name, 'read_file');
+    assert.equal(decls[0].functionDeclarations[0].parameters.additionalProperties, undefined);
+    assert.equal(cloudcode.toFunctionDeclarations([]), undefined);
+    assert.equal(typeof cloudcode.generate, 'function');
   })
 );
 
