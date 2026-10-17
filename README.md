@@ -232,7 +232,8 @@ npm run test:agent        # End-to-end agent loop (tool execution, approvals, Pl
 | **Project Rules** | `.cursorrules`, `.cursor/rules/*.mdc` | **Auto-loaded** (`.cursorrules`, `.cursor/rules/*.mdc`, `NOVA.md`, `AGENTS.md`) |
 | **Checkpoints & Undo** | Paid checkpointing | **Built-in** automatic snapshot & rollback (`checkpoints.js`) |
 | **Web Search & Fetch** | Counts against paid requests | **Free & unlimited** via DuckDuckGo HTML parser & direct fetch |
-| **MCP Integration** | Supported | **Built-in** with featured one-click addons (REA, LeanToken) |
+| **MCP Integration** | Supported | **Built-in** with featured one-click addons (REA, LeanToken, Penpot) |
+| **Memory** | — | **Built-in** long-term notes (`~/.nova-ide/memory.json`); injected into the system prompt every turn, for every model, and the agent can add notes with the `remember` tool |
 
 ## Roadmap
 

@@ -265,6 +265,12 @@ function ChatHome() {
           <span className="sb-ico">{'\u2601\uFE0F'}</span> Cloud
         </button>
         <button
+          className={'sb-item' + (mainView === 'memory' ? ' active' : '')}
+          onClick={() => useStore.getState().openMemory()}
+        >
+          <span className="sb-ico">{'\u{1F9E0}'}</span> Memory
+        </button>
+        <button
           className={'sb-item' + (mainView === 'customize' ? ' active' : '')}
           onClick={() => useStore.getState().openCustomize()}
         >

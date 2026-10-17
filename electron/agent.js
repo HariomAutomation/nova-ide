@@ -10,6 +10,7 @@ const web = require('./tools/web');
 const checkpoints = require('./tools/checkpoints');
 const { describeHttpError } = require('./tools/errors');
 const { isWithin } = require('./tools/paths');
+const memory = require('./tools/memory');
 const mcp = require('./mcp');
 const geminiWeb = require('./gemini-web');
 
@@ -231,6 +232,19 @@ const TOOL_DEFS = [
         max: { type: 'integer', description: 'Max commits to show (default 20).' },
       },
       required: ['path'],
+    },
+  },
+  {
+    name: 'remember',
+    category: 'read',
+    description:
+      'Save a durable note to long-term memory — user preferences, project facts, decisions, anything worth carrying into future chats. Memory is injected into the system prompt at the start of every future turn, for every model, so a new model understands the context right away.',
+    parameters: {
+      type: 'object',
+      properties: {
+        note: { type: 'string', description: 'One concise fact or decision to remember.' },
+      },
+      required: ['note'],
     },
   },
 ];
@@ -661,6 +675,11 @@ async function executeTool(name, args, ctx) {
       }
       return { text: chunks.join('\n\n') };
     }
+    case 'remember': {
+      const r = await memory.add(args.note, 'agent');
+      if (r.error) return { text: `Could not save note: ${r.error}`, ok: false };
+      return { text: `Saved to memory: ${r.note.text}` };
+    }
     case 'todo_write': {
       const todos = normalizeTodos(args.todos);
       if (ctx.session) ctx.session.todos = todos;
@@ -767,6 +786,7 @@ async function buildSystemPrompt({ workspaceRoot, settings }) {
     '- Use list_dir and grep_search to find relevant files instead of guessing paths.',
     '- For a task with several steps, call todo_write to keep a visible task list, updating it as you go.',
     '- Use code_lineage to see who last changed a file or a line range (git history).',
+    '- Use remember to save durable context (user preferences, project facts, decisions) — it is read at the start of every future turn.',
     '- For commands, use run_terminal_cmd. Prefer non-interactive commands (-y flags, no pagers).',
     '- The browser tool drives a real Chromium page. Use open before click/fill/text/screenshot.',
     '- computer_use drives the real desktop (screenshot, move, click, double_click, right_click, drag, scroll, type, key, wait); a fresh screenshot comes back after each action, so screenshot → act → look at the result.',
@@ -774,6 +794,12 @@ async function buildSystemPrompt({ workspaceRoot, settings }) {
     '- After finishing the task, reply with a short summary of what changed and any caveats.',
     '- If the task needs more information, ask a concise question instead of guessing.',
   ];
+
+  // Memory FIRST, so any model starts with the user's context instead of cold.
+  const mem = await memory.memoryText();
+  if (mem) {
+    lines.splice(4, 0, 'Long-term memory — notes saved earlier (read these first for context):', mem, '');
+  }
 
   const rules = await loadRules(workspaceRoot);
   if (rules.length) {

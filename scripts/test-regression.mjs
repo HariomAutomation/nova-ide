@@ -663,6 +663,35 @@ suite.push(
   })
 );
 
+/* ---------------------------------- memory ---------------------------------- */
+
+suite.push(
+  test('memory: add / list / memoryText / remove round-trip', async () => {
+    process.env.NOVA_CONFIG_DIR = path.join(TEST_DIR, 'nova-home');
+    const memory = (await import('../electron/tools/memory.js')).default;
+    await memory.clear();
+
+    const a = await memory.add('User prefers TypeScript and pnpm.', 'user');
+    assert.equal(a.ok, true);
+    await memory.add('Project Nova uses Electron + Vite.', 'agent');
+
+    const l = await memory.list();
+    assert.equal(l.notes.length, 2);
+    assert.match(l.path, /memory\.json$/);
+
+    const txt = await memory.memoryText();
+    assert.match(txt, /TypeScript/);
+    assert.match(txt, /Electron/);
+
+    await memory.remove(l.notes[0].id);
+    const l2 = await memory.list();
+    assert.equal(l2.notes.length, 1);
+
+    assert.equal(memory.normalizeText('  a\n\n   b  '), 'a b');
+    assert.equal((await memory.add('   ')).error, 'Note is empty.');
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

@@ -97,7 +97,7 @@ export const useStore = create((set, get) => ({
 
   /* --------------------------------- layout --------------------------------- */
   theme: 'light',
-  mainView: 'agent', // 'agent' | 'editor' | 'search' | 'automations' | 'customize' | 'git' | 'cloud'
+  mainView: 'agent', // 'agent' | 'editor' | 'search' | 'automations' | 'customize' | 'git' | 'cloud' | 'memory'
   settingsOpen: false,
   settingsTab: 'models',
   status: '',
@@ -113,6 +113,9 @@ export const useStore = create((set, get) => ({
   gitMessage: '',
   gitBusy: false,
   runOn: 'local', // 'local' | 'cloud' — where agent turns are meant to run
+
+  /* -------------------------------- memory -------------------------------- */
+  memory: { notes: [], path: null, loading: false },
 
   /* --------------------------------- cloud --------------------------------- */
   drive: { connected: false, email: null, hasClient: false, loading: false, files: [], error: null, query: '' },
@@ -423,6 +426,56 @@ export const useStore = create((set, get) => ({
     get().navPush();
     set({ mainView: 'git' });
     get().loadGit().catch(() => {});
+  },
+
+  /* ------------------------------- memory ------------------------------- */
+
+  openMemory() {
+    get().navPush();
+    set({ mainView: 'memory' });
+    get().loadMemory().catch(() => {});
+  },
+
+  async loadMemory() {
+    set({ memory: { ...get().memory, loading: true } });
+    try {
+      const r = (await api().memoryList()) || {};
+      set({ memory: { notes: r.notes || [], path: r.path || null, loading: false } });
+    } catch (e) {
+      set({ memory: { ...get().memory, loading: false } });
+      get().setStatus(`Memory load failed: ${e.message}`);
+    }
+  },
+
+  async addMemory(text) {
+    const body = String(text || '').trim();
+    if (!body) return;
+    try {
+      const r = await api().memoryAdd({ text: body, source: 'user' });
+      if (r && r.notes) set({ memory: { ...get().memory, notes: r.notes, path: r.path || get().memory.path } });
+      get().setStatus('Saved to memory.');
+    } catch (e) {
+      get().setStatus(`Memory save failed: ${e.message}`);
+    }
+  },
+
+  async removeMemory(id) {
+    try {
+      const r = await api().memoryRemove(id);
+      if (r && r.notes) set({ memory: { ...get().memory, notes: r.notes } });
+    } catch (e) {
+      get().setStatus(`Memory delete failed: ${e.message}`);
+    }
+  },
+
+  async clearMemory() {
+    try {
+      const r = await api().memoryClear();
+      if (r && r.notes) set({ memory: { ...get().memory, notes: r.notes } });
+      get().setStatus('Memory cleared.');
+    } catch (e) {
+      get().setStatus(`Memory clear failed: ${e.message}`);
+    }
   },
 
   /* ---------------------------- cloud (drive) ---------------------------- */

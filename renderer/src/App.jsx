@@ -8,6 +8,7 @@ import SearchPage from './components/SearchPage';
 import AutomationsPage from './components/AutomationsPage';
 import SourceControlPage from './components/SourceControlPage';
 import CloudPage from './components/CloudPage';
+import MemoryPage from './components/MemoryPage';
 import CustomizePage from './components/CustomizePage';
 import GeminiView from './components/GeminiView';
 import ChatPanel from './components/ChatPanel';
@@ -103,6 +104,7 @@ export default function App() {
           {mainView === 'automations' && <AutomationsPage />}
           {mainView === 'git' && <SourceControlPage />}
           {mainView === 'cloud' && <CloudPage />}
+          {mainView === 'memory' && <MemoryPage />}
           {mainView === 'customize' && <CustomizePage />}
           {/* Always mounted (hidden when inactive) so the sign-in session and
               the agent's driver keep working across views. */}

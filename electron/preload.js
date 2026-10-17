@@ -103,6 +103,13 @@ contextBridge.exposeInMainWorld('nova', {
   gitWorktreeAdd: (payload) => ipcRenderer.invoke('git:worktreeAdd', payload),
   gitWorktreeList: (cwd) => ipcRenderer.invoke('git:worktreeList', { cwd }),
 
+  // memory (long-term notes)
+  memoryList: () => ipcRenderer.invoke('memory:list'),
+  memoryAdd: (payload) => ipcRenderer.invoke('memory:add', payload),
+  memoryUpdate: (payload) => ipcRenderer.invoke('memory:update', payload),
+  memoryRemove: (id) => ipcRenderer.invoke('memory:remove', { id }),
+  memoryClear: () => ipcRenderer.invoke('memory:clear'),
+
   // cloud (google drive, read-only)
   gdriveStatus: () => ipcRenderer.invoke('gdrive:status'),
   gdriveSave: (patch) => ipcRenderer.invoke('gdrive:save', patch),

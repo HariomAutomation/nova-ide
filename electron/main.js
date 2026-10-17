@@ -12,6 +12,7 @@ const computerTool = require('./tools/computer');
 const checkpoints = require('./tools/checkpoints');
 const gitTool = require('./tools/git');
 const gdrive = require('./tools/gdrive');
+const memory = require('./tools/memory');
 const { describeHttpError } = require('./tools/errors');
 const { isWithin } = require('./tools/paths');
 const mcp = require('./mcp');
@@ -710,6 +711,14 @@ ipcMain.handle('git:pull', async (_e, { cwd }) => gitTool.pull(cwd));
 ipcMain.handle('git:log', async (_e, { cwd, limit }) => gitTool.log(cwd, limit));
 ipcMain.handle('git:worktreeAdd', async (_e, { cwd, path: dir, branch }) => gitTool.worktreeAdd(cwd, dir, branch));
 ipcMain.handle('git:worktreeList', async (_e, { cwd }) => gitTool.worktreeList(cwd));
+
+/* ------------------------------ memory ------------------------------ */
+
+ipcMain.handle('memory:list', async () => memory.list());
+ipcMain.handle('memory:add', async (_e, { text, source }) => memory.add(text, source));
+ipcMain.handle('memory:update', async (_e, { id, patch }) => memory.update(id, patch));
+ipcMain.handle('memory:remove', async (_e, { id }) => memory.remove(id));
+ipcMain.handle('memory:clear', async () => memory.clear());
 
 /* ------------------------------ cloud (google drive) ------------------------------ */
 
