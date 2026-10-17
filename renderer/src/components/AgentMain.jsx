@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify';
 import { useStore } from '../store';
 import { basename } from '../timeAgo';
 import ToolCard from './ToolCard';
+import RepoMenu from './RepoMenu';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -207,15 +208,33 @@ function SplitIcon() {
   );
 }
 
-function RepoChips() {
+function RepoChips({ docked }) {
   const rootFolder = useStore((s) => s.rootFolder);
   const gitBranch = useStore((s) => s.gitBranch);
   const appInfo = useStore((s) => s.appInfo);
   const runOn = useStore((s) => s.runOn);
   const drive = useStore((s) => s.drive);
-  const [menu, setMenu] = useState(null); // null | 'runon' | 'remote'
+  const git = useStore((s) => s.git);
+  const [menu, setMenu] = useState(null); // null | 'runon' | 'repo'
   const [wtName, setWtName] = useState('');
   const wrapRef = useRef(null);
+  const repoRef = useRef(null);
+
+  // Prefer the GitHub repo (from the origin remote); fall back to the folder name.
+  const remoteRepo = (() => {
+    const m = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/.exec(String((git && git.remote) || ''));
+    return m ? m[1] : null;
+  })();
+  const repoLabel = remoteRepo || (rootFolder ? basename(rootFolder) : 'Open folder');
+
+  useEffect(() => {
+    if (menu !== 'repo') return;
+    const onDown = (e) => {
+      if (repoRef.current && !repoRef.current.contains(e.target)) setMenu(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [menu]);
 
   useEffect(() => {
     if (!menu) return;
@@ -240,15 +259,22 @@ function RepoChips() {
 
   return (
     <div className="home-chips">
-      <button
-        className="repo-chip"
-        title={rootFolder || 'Open a folder'}
-        onClick={() => useStore.getState().openFolder()}
-      >
-        <span className="chip-ico">{'\u{1F4C1}'}</span>
-        <span className="chip-text">{rootFolder ? basename(rootFolder) : 'Open folder'}</span>
-        <span className="chip-caret">{'\u2304'}</span>
-      </button>
+      <div className="menu-anchor" ref={repoRef}>
+        <button
+          className="repo-chip"
+          title={remoteRepo ? `GitHub: ${remoteRepo}` : rootFolder || 'Open a repository'}
+          onClick={() => setMenu((m) => (m === 'repo' ? null : 'repo'))}
+        >
+          <span className="chip-ico">{'\u{1F4C1}'}</span>
+          <span className="chip-text">{repoLabel}</span>
+          <span className="chip-caret">{'\u2304'}</span>
+        </button>
+        {menu === 'repo' && (
+          <div className={'dropdown repo-picker' + (docked ? ' up' : '')}>
+            <RepoMenu onClose={() => setMenu(null)} />
+          </div>
+        )}
+      </div>
       <button
         className="repo-chip"
         title={gitBranch ? `Branch: ${gitBranch}` : 'No git branch'}
@@ -1099,7 +1125,7 @@ export default function AgentMain() {
                   ))}
                 </div>
               )}
-              <RepoChips />
+              <RepoChips docked />
               {composer(true)}
               <div className="composer-hint muted small">
                 {agentSettings.submitWithCtrlEnter

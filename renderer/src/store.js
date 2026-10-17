@@ -1070,6 +1070,8 @@ export const useStore = create((set, get) => ({
     });
     if (!opts.silent) get().saveSettings();
     get().loadWorkspaceFiles().catch(() => {});
+    // Fetch git info (incl. the origin remote) so the repo chip can show the GitHub repo.
+    get().loadGit().catch(() => {});
   },
 
   async toggleDir(dirPath) {

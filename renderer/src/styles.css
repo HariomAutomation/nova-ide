@@ -4726,3 +4726,6 @@ input:focus, select:focus, textarea:focus {
   padding: 1px 5px;
   outline: none;
 }
+
+/* repo picker opens upward when the composer is docked at the bottom */
+.repo-picker.up { top: auto; bottom: calc(100% + 6px); }
