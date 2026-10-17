@@ -10,6 +10,7 @@ const { runCommand } = require('./tools/terminal');
 const browserTool = require('./tools/browser');
 const computerTool = require('./tools/computer');
 const checkpoints = require('./tools/checkpoints');
+const gitTool = require('./tools/git');
 const { describeHttpError } = require('./tools/errors');
 const { isWithin } = require('./tools/paths');
 const mcp = require('./mcp');
@@ -675,6 +676,19 @@ ipcMain.handle('addons:toggle', async (_e, { id, enable }) => {
   } catch {}
   return addonsStatus();
 });
+
+/* ------------------------------ source control (git) ------------------------------ */
+
+ipcMain.handle('git:status', async (_e, { cwd }) => gitTool.status(cwd));
+ipcMain.handle('git:diff', async (_e, { cwd, path, staged }) => gitTool.diff(cwd, path, staged));
+ipcMain.handle('git:stage', async (_e, { cwd, paths }) => gitTool.stage(cwd, paths));
+ipcMain.handle('git:unstage', async (_e, { cwd, paths }) => gitTool.unstage(cwd, paths));
+ipcMain.handle('git:commit', async (_e, { cwd, message }) => gitTool.commit(cwd, message));
+ipcMain.handle('git:branches', async (_e, { cwd }) => gitTool.branches(cwd));
+ipcMain.handle('git:checkout', async (_e, { cwd, branch }) => gitTool.checkout(cwd, branch));
+ipcMain.handle('git:push', async (_e, { cwd }) => gitTool.push(cwd));
+ipcMain.handle('git:pull', async (_e, { cwd }) => gitTool.pull(cwd));
+ipcMain.handle('git:log', async (_e, { cwd, limit }) => gitTool.log(cwd, limit));
 
 /* ------------------------------ checkpoints ------------------------------ */
 

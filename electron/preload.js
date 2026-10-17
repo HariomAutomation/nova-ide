@@ -97,6 +97,18 @@ contextBridge.exposeInMainWorld('nova', {
   computerStatus: () => ipcRenderer.invoke('computer:status'),
   computerScreenshot: () => ipcRenderer.invoke('computer:screenshot'),
 
+  // git (source control)
+  gitStatus: (cwd) => ipcRenderer.invoke('git:status', { cwd }),
+  gitDiff: (payload) => ipcRenderer.invoke('git:diff', payload),
+  gitStage: (payload) => ipcRenderer.invoke('git:stage', payload),
+  gitUnstage: (payload) => ipcRenderer.invoke('git:unstage', payload),
+  gitCommit: (payload) => ipcRenderer.invoke('git:commit', payload),
+  gitBranches: (cwd) => ipcRenderer.invoke('git:branches', { cwd }),
+  gitCheckout: (payload) => ipcRenderer.invoke('git:checkout', payload),
+  gitPush: (cwd) => ipcRenderer.invoke('git:push', { cwd }),
+  gitPull: (cwd) => ipcRenderer.invoke('git:pull', { cwd }),
+  gitLog: (payload) => ipcRenderer.invoke('git:log', payload),
+
   // misc
   appInfo: () => ipcRenderer.invoke('app:info'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),

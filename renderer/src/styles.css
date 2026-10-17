@@ -4420,3 +4420,86 @@ input:focus, select:focus, textarea:focus {
 .plus-chev { margin-left: auto; color: var(--muted); font-size: 15px; }
 .plus-footer { border-top: 1px solid var(--border); margin-top: 5px; padding-top: 5px; }
 .plus-empty { padding: 8px 10px; }
+
+/* ------------------------------ source control ------------------------------ */
+.sc-actions { display: flex; align-items: center; gap: 6px; }
+.sc-commit {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px;
+  margin-bottom: 14px;
+}
+.sc-commit .input { flex: 1; }
+.sc-commit .btn { align-self: stretch; }
+.sc-group { margin-bottom: 14px; }
+.sc-group-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 2px 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.sc-row:hover { background: var(--bg-hover); }
+.sc-badge {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: var(--bg-active, rgba(127, 127, 127, 0.14));
+  color: var(--muted);
+}
+.sc-badge.modified { color: #d29922; }
+.sc-badge.added, .sc-badge.untracked { color: #3fb950; }
+.sc-badge.deleted { color: #f06a6a; }
+.sc-badge.renamed { color: #58a6ff; }
+.sc-badge.conflict { color: #f85149; }
+.sc-path {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+}
+.sc-path:hover { text-decoration: underline; }
+.sc-diff { margin-top: 8px; padding: 0; overflow: hidden; }
+.sc-diff-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.sc-diff-body {
+  margin: 0;
+  padding: 10px;
+  max-height: 380px;
+  overflow: auto;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}

@@ -97,7 +97,7 @@ export const useStore = create((set, get) => ({
 
   /* --------------------------------- layout --------------------------------- */
   theme: 'light',
-  mainView: 'agent', // 'agent' | 'editor' | 'search' | 'automations' | 'customize'
+  mainView: 'agent', // 'agent' | 'editor' | 'search' | 'automations' | 'customize' | 'git'
   settingsOpen: false,
   settingsTab: 'models',
   status: '',
@@ -107,6 +107,11 @@ export const useStore = create((set, get) => ({
   sidebarVisible: true,
   chatVisible: false,
   terminalOpen: false,
+
+  /* ---------------------------------- git ---------------------------------- */
+  git: { repo: false, branch: null, upstream: null, ahead: 0, behind: 0, remote: null, files: [], loading: false, error: null },
+  gitMessage: '',
+  gitBusy: false,
 
   /* --------------------------------- search --------------------------------- */
   searchQuery: '',
@@ -481,6 +486,108 @@ export const useStore = create((set, get) => ({
   openCustomize() {
     get().navPush();
     set({ mainView: 'customize' });
+  },
+
+  /* ----------------------------- source control ----------------------------- */
+
+  openSourceControl() {
+    get().navPush();
+    set({ mainView: 'git' });
+    get().loadGit().catch(() => {});
+  },
+
+  setGitMessage: (v) => set({ gitMessage: v }),
+
+  async loadGit() {
+    const { rootFolder } = get();
+    if (!rootFolder) {
+      set({ git: { ...get().git, repo: false, files: [], loading: false, error: null } });
+      return;
+    }
+    set({ git: { ...get().git, loading: true, error: null } });
+    try {
+      const st = (await api().gitStatus(rootFolder)) || {};
+      set({ git: { ...st, loading: false, error: st.error || null } });
+      if (st.repo && st.branch) set({ gitBranch: st.branch });
+    } catch (e) {
+      set({ git: { ...get().git, loading: false, error: String(e.message || e) } });
+    }
+  },
+
+  async gitStage(paths) {
+    const { rootFolder } = get();
+    if (!rootFolder) return;
+    await api().gitStage({ cwd: rootFolder, paths: Array.isArray(paths) ? paths : [paths] });
+    await get().loadGit();
+  },
+
+  async gitUnstage(paths) {
+    const { rootFolder } = get();
+    if (!rootFolder) return;
+    await api().gitUnstage({ cwd: rootFolder, paths: Array.isArray(paths) ? paths : [paths] });
+    await get().loadGit();
+  },
+
+  async gitCommit() {
+    const { rootFolder, gitMessage } = get();
+    if (!rootFolder) return;
+    const msg = String(gitMessage || '').trim();
+    if (!msg) {
+      get().setStatus('Write a commit message first.');
+      return;
+    }
+    set({ gitBusy: true });
+    try {
+      const r = await api().gitCommit({ cwd: rootFolder, message: msg });
+      if (r && r.ok) {
+        set({ gitMessage: '' });
+        get().setStatus('Committed.');
+      } else {
+        get().setStatus(`Commit failed: ${(r && r.error) || 'unknown error'}`);
+      }
+    } finally {
+      set({ gitBusy: false });
+      await get().loadGit();
+    }
+  },
+
+  async gitSwitchBranch(branch) {
+    const { rootFolder } = get();
+    if (!rootFolder || !branch) return;
+    set({ gitBusy: true });
+    try {
+      const r = await api().gitCheckout({ cwd: rootFolder, branch });
+      get().setStatus(r && r.ok ? `Switched to ${branch}` : `Checkout failed: ${(r && r.error) || 'unknown'}`);
+    } finally {
+      set({ gitBusy: false });
+      await get().loadGit();
+    }
+  },
+
+  async gitPush() {
+    const { rootFolder } = get();
+    if (!rootFolder) return;
+    set({ gitBusy: true });
+    try {
+      const r = await api().gitPush(rootFolder);
+      get().setStatus(r && r.ok ? 'Pushed.' : `Push failed: ${(r && r.error) || 'unknown'}`);
+    } finally {
+      set({ gitBusy: false });
+      await get().loadGit();
+    }
+  },
+
+  async gitPull() {
+    const { rootFolder } = get();
+    if (!rootFolder) return;
+    set({ gitBusy: true });
+    try {
+      const r = await api().gitPull(rootFolder);
+      get().setStatus(r && r.ok ? 'Pulled.' : `Pull failed: ${(r && r.error) || 'unknown'}`);
+    } finally {
+      set({ gitBusy: false });
+      await get().loadGit();
+    }
   },
 
   navBack() {

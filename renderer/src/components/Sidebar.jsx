@@ -253,6 +253,12 @@ function ChatHome() {
           <span className="sb-ico">{'\u26A1'}</span> Automations
         </button>
         <button
+          className={'sb-item' + (mainView === 'git' ? ' active' : '')}
+          onClick={() => useStore.getState().openSourceControl()}
+        >
+          <span className="sb-ico">{'\u2387'}</span> Source Control
+        </button>
+        <button
           className={'sb-item' + (mainView === 'customize' ? ' active' : '')}
           onClick={() => useStore.getState().openCustomize()}
         >

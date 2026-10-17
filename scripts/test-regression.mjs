@@ -14,6 +14,7 @@ import { parseWebToolCalls, protocolBlock } from '../electron/gemini-web.js';
 import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage } from '../electron/agent.js';
 import { isWithin } from '../electron/tools/paths.js';
 import computer from '../electron/tools/computer.js';
+import git from '../electron/tools/git.js';
 import {
   isAutomationDue,
   dueAutomations,
@@ -558,6 +559,71 @@ suite.push(
     assert.equal(describeTrigger({ type: 'interval', minutes: 15 }), 'Every 15 min');
     assert.equal(describeTrigger({ type: 'daily', time: '07:30' }), 'Daily at 07:30');
     assert.equal(describeTrigger({ type: 'startup' }), 'On app start');
+  })
+);
+
+/* ----------------------------------- git ----------------------------------- */
+
+suite.push(
+  test('git: parseStatusPorcelain parses branch, tracking and files', () => {
+    const out = git.parseStatusPorcelain(
+      [
+        '## main...origin/main [ahead 1, behind 2]',
+        ' M src/a.js',
+        'M  src/b.js',
+        '?? new.txt',
+        'R  old.js -> renamed.js',
+        ' D gone.js',
+      ].join('\n'),
+    );
+    assert.equal(out.branch, 'main');
+    assert.equal(out.upstream, 'origin/main');
+    assert.equal(out.ahead, 1);
+    assert.equal(out.behind, 2);
+    assert.equal(out.files.length, 5);
+    const byPath = Object.fromEntries(out.files.map((f) => [f.path, f]));
+    assert.equal(byPath['src/a.js'].label, 'modified');
+    assert.equal(byPath['src/a.js'].staged, false);
+    assert.equal(byPath['src/b.js'].staged, true);
+    assert.equal(byPath['new.txt'].label, 'untracked');
+    assert.equal(byPath['new.txt'].staged, false);
+    assert.equal(byPath['renamed.js'].label, 'renamed');
+    assert.equal(byPath['renamed.js'].origPath, 'old.js');
+    assert.equal(byPath['gone.js'].label, 'deleted');
+  })
+);
+
+suite.push(
+  test('git: status / diff / stage / commit round-trip', async () => {
+    const repo = path.join(TEST_DIR, 'git-sc');
+    await fsp.mkdir(repo, { recursive: true });
+    const setup =
+      'git init -q && git config user.email t@t && git config user.name t && ' +
+      'printf "a\\n" > f.txt && git add f.txt && git commit -qm init';
+    const r = await runCommand({ command: setup, cwd: repo });
+    assert.equal(r.code, 0, r.stderr);
+
+    await fsTools.writeFileTool(path.join(repo, 'f.txt'), 'a\nb\n');
+    let st = await git.status(repo);
+    assert.equal(st.repo, true);
+    assert.ok(st.branch, 'branch detected');
+    assert.ok(st.files.some((f) => f.path === 'f.txt' && f.label === 'modified'));
+
+    const d = await git.diff(repo, 'f.txt');
+    assert.match(d.diff, /\+b/);
+
+    await git.stage(repo, ['f.txt']);
+    st = await git.status(repo);
+    assert.ok(st.files.find((f) => f.path === 'f.txt').staged);
+
+    const c = await git.commit(repo, 'add b');
+    assert.equal(c.ok, true, c.error);
+    st = await git.status(repo);
+    assert.equal(st.files.length, 0);
+
+    const log = await git.log(repo, 5);
+    assert.ok(log.commits.length >= 2);
+    assert.match(log.commits[0].subject, /add b/);
   })
 );
 
