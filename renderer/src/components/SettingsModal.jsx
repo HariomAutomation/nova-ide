@@ -445,6 +445,26 @@ function ModelsTab() {
         />
       </Group>
 
+      <Group title="Gemini \u2014 Cloud Code (experimental)">
+        <Row
+          label="Sign in with Google"
+          desc="Antigravity jo backend use karta hai (cloudcode-pa) — aapke Google account / AI Pro se Gemini, bina API key, asli tool calling ke saath. Undocumented API hai: kabhi bhi badal sakta hai."
+          control={<CloudCodeLine />}
+        />
+        <Row
+          label="Setup (ek baar)"
+          desc="Google Cloud Console → OAuth consent screen → Data access me ye scope add karo: https://www.googleapis.com/auth/cloud-platform"
+          control={
+            <button
+              className="btn small"
+              onClick={() => window.nova.openExternal('https://console.cloud.google.com/apis/credentials/consent')}
+            >
+              Open consent screen ↗
+            </button>
+          }
+        />
+      </Group>
+
       <Group title="Add a model">
         <Row
           label="Label"
