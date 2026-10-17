@@ -237,7 +237,7 @@ function RepoChips({ docked }) {
   }, [menu]);
 
   useEffect(() => {
-    if (!menu) return;
+    if (menu !== 'runon') return;
     const onDown = (e) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) setMenu(null);
     };
@@ -290,13 +290,13 @@ function RepoChips({ docked }) {
         <button
           className={'repo-chip' + (runOn === 'cloud' ? ' cloud on' : '')}
           title="Choose where agents run"
-          onClick={() => setMenu((m) => (m ? null : 'runon'))}
+          onClick={() => setMenu((m) => (m === 'runon' ? null : 'runon'))}
         >
           <span className="chip-ico">{runOn === 'cloud' ? '\u2601\uFE0F' : '\u{1F5A5}\uFE0F'}</span>
           {runOn === 'cloud' ? 'Cloud' : 'This Computer'}
           <span className="chip-caret">{'\u2304'}</span>
         </button>
-        {menu && (
+        {menu === 'runon' && (
           <div className="dropdown runon-menu">
             <div className="runon-head">Run on</div>
             <button
