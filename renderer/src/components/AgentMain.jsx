@@ -207,6 +207,47 @@ function SplitIcon() {
   );
 }
 
+function RepoChips() {
+  const rootFolder = useStore((s) => s.rootFolder);
+  const gitBranch = useStore((s) => s.gitBranch);
+  const appInfo = useStore((s) => s.appInfo);
+  return (
+    <div className="home-chips">
+      <button
+        className="repo-chip"
+        title={rootFolder || 'Open a folder'}
+        onClick={() => useStore.getState().openFolder()}
+      >
+        <span className="chip-ico">{'\u{1F4C1}'}</span>
+        <span className="chip-text">{rootFolder ? basename(rootFolder) : 'Open folder'}</span>
+        <span className="chip-caret">{'\u2304'}</span>
+      </button>
+      <button
+        className="repo-chip"
+        title={gitBranch ? `Branch: ${gitBranch}` : 'No git branch'}
+        onClick={() =>
+          useStore.getState().setStatus(gitBranch ? `On branch ${gitBranch}` : 'No git repository here')
+        }
+      >
+        <span className="chip-ico">{'\u2387'}</span>
+        {gitBranch || 'main'}
+        <span className="chip-caret">{'\u2304'}</span>
+      </button>
+      <button
+        className="repo-chip"
+        title={appInfo ? `${appInfo.username}@${appInfo.hostname}` : 'This computer'}
+        onClick={() =>
+          useStore.getState().setStatus(appInfo ? `Running on ${appInfo.username}@${appInfo.hostname}` : 'This computer')
+        }
+      >
+        <span className="chip-ico">{'\u{1F5A5}\uFE0F'}</span>
+        This Computer
+        <span className="chip-caret">{'\u2304'}</span>
+      </button>
+    </div>
+  );
+}
+
 export default function AgentMain() {
   const agentItems = useStore((s) => s.agentItems);
   const agentBusy = useStore((s) => s.agentBusy);
@@ -981,6 +1022,7 @@ export default function AgentMain() {
                   ))}
                 </div>
               )}
+              <RepoChips />
               {composer(true)}
               <div className="composer-hint muted small">
                 {agentSettings.submitWithCtrlEnter
@@ -1000,41 +1042,7 @@ export default function AgentMain() {
                 I can read your code, run commands, browse the web and control this machine — every step needs your
                 approval.
               </p>
-              <div className="home-chips">
-                <button
-                  className="repo-chip"
-                  title={rootFolder || 'Open a folder'}
-                  onClick={() => useStore.getState().openFolder()}
-                >
-                  <span className="chip-ico">{'\u{1F4C1}'}</span>
-                  <span className="chip-text">{rootFolder ? basename(rootFolder) : 'Open folder'}</span>
-                  <span className="chip-caret">{'\u2304'}</span>
-                </button>
-                <button
-                  className="repo-chip"
-                  title={gitBranch ? `Branch: ${gitBranch}` : 'No git branch'}
-                  onClick={() =>
-                    useStore.getState().setStatus(gitBranch ? `On branch ${gitBranch}` : 'No git repository here')
-                  }
-                >
-                  <span className="chip-ico">{'\u2387'}</span>
-                  {gitBranch || 'main'}
-                  <span className="chip-caret">{'\u2304'}</span>
-                </button>
-                <button
-                  className="repo-chip"
-                  title={appInfo ? `${appInfo.username}@${appInfo.hostname}` : 'This computer'}
-                  onClick={() =>
-                    useStore
-                      .getState()
-                      .setStatus(appInfo ? `Running on ${appInfo.username}@${appInfo.hostname}` : 'This computer')
-                  }
-                >
-                  <span className="chip-ico">{'\u{1F5A5}\uFE0F'}</span>
-                  This Computer
-                  <span className="chip-caret">{'\u2304'}</span>
-                </button>
-              </div>
+              <RepoChips />
               {composer(false)}
               <div className="agent-chips">
                 <button className="chip" onClick={() => prefill('Plan how to: ')}>
