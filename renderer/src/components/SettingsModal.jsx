@@ -254,6 +254,18 @@ function ModelsTab() {
           </button>
         )}
         {msg && <span className={msg.type === 'ok' ? 'testline-ok' : 'search-error small'}>{msg.text}</span>}
+        {msg && msg.type === 'err' && /has not been used in project|it is disabled/i.test(msg.text || '') && (
+          <button
+            className="btn small primary"
+            onClick={() => {
+              const proj = (String(msg.text).match(/project[=:\s]+(\d{6,})/) || [])[1];
+              const base = 'https://console.developers.google.com/apis/api/cloudcode-pa.googleapis.com/overview';
+              window.nova.openExternal(proj ? `${base}?project=${proj}` : base);
+            }}
+          >
+            Enable Cloud Code API ↗
+          </button>
+        )}
       </div>
     );
   }
@@ -455,12 +467,24 @@ function ModelsTab() {
           label="Setup (ek baar)"
           desc="1) Google Cloud Console → OAuth consent screen → Data access me ye scope add karo: https://www.googleapis.com/auth/cloud-platform   2) Client secret ek baar Settings → Cloud → Advanced me paste karke Save karo (wahi yahan reuse hoga)."
           control={
-            <button
-              className="btn small"
-              onClick={() => window.nova.openExternal('https://console.cloud.google.com/apis/credentials/consent')}
-            >
-              Open consent screen ↗
-            </button>
+            <div className="input-row">
+              <button
+                className="btn small"
+                onClick={() => window.nova.openExternal('https://console.cloud.google.com/apis/credentials/consent')}
+              >
+                Open consent screen ↗
+              </button>
+              <button
+                className="btn small"
+                onClick={() =>
+                  window.nova.openExternal(
+                    'https://console.developers.google.com/apis/api/cloudcode-pa.googleapis.com/overview'
+                  )
+                }
+              >
+                Enable Cloud Code API ↗
+              </button>
+            </div>
           }
         />
       </Group>
