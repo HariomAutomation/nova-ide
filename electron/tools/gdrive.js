@@ -204,9 +204,16 @@ async function login() {
         }
         const q = url.searchParams;
         if (q.get('error')) {
+          const code = String(q.get('error') || 'error');
+          const friendly =
+            code === 'access_denied'
+              ? 'Google ne sign-in block kiya (access_denied). Ye tab hota hai jab OAuth app "Testing" status me ho aur aapka Google account "Test users" me add na ho. Fix: Google Cloud Console -> APIs & Services -> OAuth consent screen -> Audience -> Test users -> apna email add karo, phir dobara try karo.'
+              : q.get('error_description') || code;
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end('<h2>Nova: sign-in cancel ho gaya. Tab band kar do.</h2>');
-          finish(reject, new Error(q.get('error_description') || q.get('error')));
+          res.end(
+            `<h2>Nova: sign-in nahi hua (${code.replace(/[<>&]/g, '')})</h2><p>${friendly.replace(/</g, '&lt;')}</p>`
+          );
+          finish(reject, new Error(friendly));
           return;
         }
         if (q.get('state') !== state) {

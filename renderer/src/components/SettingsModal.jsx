@@ -1035,6 +1035,20 @@ function CloudTab() {
           </>
         )}
         {msg && <div className={'g-inline g-' + msg.type}>{msg.text}</div>}
+        {msg && msg.type === 'err' && /access_denied|verif/i.test(msg.text || '') && (
+          <Row
+            label="Blocked by Google?"
+            desc="OAuth app 'Testing' me hai to aapka account 'Test users' me hona chahiye."
+            control={
+              <button
+                className="btn small"
+                onClick={() => window.nova.openExternal('https://console.cloud.google.com/apis/credentials/consent')}
+              >
+                Open OAuth consent screen ↗
+              </button>
+            }
+          />
+        )}
       </Group>
 
       {drive.connected && (
