@@ -809,6 +809,10 @@ suite.push(
     assert.match(out, /DAILY quota khatam/);
     assert.match(out, /6h 18m/);            // 22680s -> 6h 18m, not "6h30m1.798"
     assert.match(out, /har "step" = ek API request/);
+    // the API key and the Gemini web app (AI Pro) are different things
+    assert.match(out, /API KEY ka hai/);
+    assert.match(out, /AI Pro API access nahi deta/);
+    assert.match(out, /Groq/);
 
     const zero = JSON.stringify({ error: { code: 429, message: 'Quota exceeded, limit: 0' } });
     const out2 = describeHttpError('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', 429, '', zero);

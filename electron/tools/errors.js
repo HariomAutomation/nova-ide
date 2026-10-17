@@ -54,7 +54,12 @@ function describeHttpError(url, status, statusText, text) {
     if (status === 429) {
       hint +=
         '\n💡 Yaad rakho: agent me har "step" = ek API request, to ek message bhi kai requests le sakta hai. ' +
-        'Preview/experimental models ka free quota bahut chhota (ya 0) hota hai.';
+        'Preview/experimental models ka free quota bahut chhota (ya 0) hota hai.' +
+        '\n💡 Ye quota aapki API KEY ka hai. Gemini ka web app (gemini.google.com) — jo Google AI Pro subscription se ' +
+        'chalta hai — isse alag hai aur chalta rehta hai. AI Pro API access nahi deta: API ke liye AI Studio key ' +
+        'chahiye (free tier ke limits ke saath) ya us project me billing enable karni padegi.' +
+        '\n💡 Free alternative: Groq (console.groq.com) ka free tier kaafi generous hai, aur OpenRouter pe ":free" ' +
+        'models milte hain — dono Nova me Settings → Models se add ho jaate hain.';
     }
     if (status === 401 || status === 403) {
       hint = '\n\n💡 API key / permissions check karo — key sahi hai? us project me Gemini API enabled hai?';
