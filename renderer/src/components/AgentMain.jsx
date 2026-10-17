@@ -624,7 +624,7 @@ export default function AgentMain() {
           {'\uFF0B'}
         </button>
         {plusOpen && (
-          <div className="plus-menu dropdown">
+          <div className={'plus-menu dropdown ' + (docked ? 'up' : 'down')}>
             <input
               className="plus-search"
               placeholder="Search skills, context, chats\u2026"
