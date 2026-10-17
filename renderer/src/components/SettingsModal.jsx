@@ -170,7 +170,9 @@ function GeminiApiLine({ draft, active, setDraft, setActive, commit }) {
   const isGeminiModel = (m) => /generativelanguage\.googleapis\.com/i.test(String(m.baseUrl || ''));
   const gEntry = draft.find(isGeminiModel);
   const [key, setKey] = useState(gEntry ? gEntry.apiKey || '' : '');
-  const [list, setList] = useState([]);
+  const [list, setList] = useState(() =>
+    gEntry && Array.isArray(gEntry.modelIds) ? gEntry.modelIds : []
+  );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -202,13 +204,19 @@ function GeminiApiLine({ draft, active, setDraft, setActive, commit }) {
       const probe = ensureEntry(draft, key);
       const r = await window.nova.listModels({ baseUrl: probe.entry.baseUrl, apiKey: key, auth: 'gemini' });
       const { next, entry } = ensureEntry(draft, key);
-      setDraft(next);
-      setActive(entry.id);
-      commit(next, entry.id);
       if (r && Array.isArray(r.models) && r.models.length) {
+        const withIds = next.map((m) =>
+          m.id === entry.id ? { ...m, modelIds: r.models.slice(0, 500), model: m.model || r.models[0] } : m
+        );
+        setDraft(withIds);
+        setActive(entry.id);
+        commit(withIds, entry.id);
         setList(r.models);
-        setMsg(`${r.models.length} models mile — neeche se ek click me pick karo.`);
+        setMsg(`${r.models.length} models mile — save ho gaye, picker me bhi dikhenge. Ek click me pick karo.`);
       } else {
+        setDraft(next);
+        setActive(entry.id);
+        commit(next, entry.id);
         setMsg(`Error: ${(r && r.error) || 'koi model nahi mila'}`);
       }
     } catch (e) {
@@ -343,6 +351,9 @@ function ModelsTab() {
       model: String(m.model || '').trim(),
       apiKey: m.apiKey || '',
       ...(m.auth ? { auth: m.auth } : {}),
+      // Fetched model ids are remembered so the list survives a restart and the
+      // agent's picker can offer every one of them.
+      ...(Array.isArray(m.modelIds) && m.modelIds.length ? { modelIds: m.modelIds.slice(0, 500) } : {}),
     };
   }
 

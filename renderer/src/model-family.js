@@ -54,3 +54,19 @@ export function latestOf(models) {
   const sorted = [...(Array.isArray(models) ? models : [])].sort((a, b) => versionOf(b) - versionOf(a));
   return sorted[0] || null;
 }
+
+/**
+ * The selectable model ids inside one entry: a fetched list when we have one,
+ * otherwise just the entry's own model.
+ */
+export function variantsOf(m) {
+  if (m && Array.isArray(m.modelIds) && m.modelIds.length) {
+    return m.modelIds.map((id) => ({ id, label: id }));
+  }
+  return [{ id: (m && m.model) || '', label: (m && (m.label || m.model)) || 'model' }];
+}
+
+/** How many rows a family will actually render. */
+export function variantCount(entries) {
+  return (Array.isArray(entries) ? entries : []).reduce((n, m) => n + variantsOf(m).length, 0);
+}

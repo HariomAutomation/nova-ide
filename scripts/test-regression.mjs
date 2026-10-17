@@ -20,7 +20,7 @@ import gh from '../electron/tools/github.js';
 import cloudcode from '../electron/tools/cloudcode.js';
 import voice from '../electron/tools/voice.js';
 import { usableModels, isModelUsable } from '../renderer/src/model-filter.js';
-import { groupModels, latestOf, versionOf } from '../renderer/src/model-family.js';
+import { groupModels, latestOf, versionOf, variantsOf, variantCount } from '../renderer/src/model-family.js';
 import { handle as mcpHandle, askGemini } from './mcp-gemini-web.mjs';
 import * as geminiPw from '../electron/gemini-pw.js';
 import {
@@ -824,6 +824,32 @@ suite.push(
         `${name} must not be nested inside another component`
       );
     }
+  })
+);
+
+/* ------------------------- fetched model variants ------------------------- */
+
+suite.push(
+  test('model picker: a fetched model list becomes selectable rows and is kept', () => {
+    const gemini = {
+      id: 'g',
+      label: 'Gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      apiKey: 'k',
+      model: 'gemini-2.5-flash',
+      modelIds: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest'],
+    };
+    const vs = variantsOf(gemini);
+    assert.equal(vs.length, 3);
+    assert.deepEqual(vs.map((v) => v.id), ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest']);
+    assert.equal(variantCount([gemini]), 3);
+
+    // an entry with no fetched list still offers its own model (by label)
+    const plain = { id: 'p', label: 'DeepSeek', model: 'deepseek-chat' };
+    assert.deepEqual(variantsOf(plain), [{ id: 'deepseek-chat', label: 'DeepSeek' }]);
+    assert.equal(variantCount([plain]), 1);
+    assert.equal(variantCount([gemini, plain]), 4);
+    assert.equal(variantCount([]), 0);
   })
 );
 

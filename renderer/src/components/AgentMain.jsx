@@ -6,7 +6,7 @@ import { basename } from '../timeAgo';
 import ToolCard from './ToolCard';
 import RepoMenu from './RepoMenu';
 import { usableModels as pickUsableModels } from '../model-filter';
-import { groupModels } from '../model-family';
+import { groupModels, variantsOf, variantCount } from '../model-family';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -464,6 +464,16 @@ export default function AgentMain() {
     } catch (e) {
       store.setStatus(`Mic access nahi mila: ${e.message}`);
     }
+  }
+
+  /** Pick a specific model id inside an entry (used for fetched model lists). */
+  function pickVariant(entry, modelId) {
+    const next = models.map((m) => (m.id === entry.id ? { ...m, model: String(modelId) } : m));
+    useStore.getState().setModels(next, entry.id);
+    useStore.getState().saveSettings();
+    setModelMenuOpen(false);
+    setOpenFamily(null);
+    useStore.getState().setStatus(`Active model: ${modelId}`);
   }
 
   function pickModel(m) {
@@ -1053,71 +1063,77 @@ export default function AgentMain() {
                   </button>
                 </div>
               )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 340, overflowY: 'auto' }}>
                 {usableModels.length === 0 && (
                   <div style={{ padding: '8px 10px 12px', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>
                     No working model yet — Settings → Models → Gemini (free API), key daalo aur Fetch models dabao.
                   </div>
                 )}
 
-                {modelFamilies.map((f) => (
-                  <div key={f.key}>
-                    <div className="mm-head">
-                      <span>{f.label}</span>
-                      {f.models.length > 1 && <span className="muted small">{f.models.length} models</span>}
+                {modelFamilies.map((f) => {
+                  const count = variantCount(f.models);
+                  return (
+                    <div key={f.key}>
+                      <div className="mm-head">
+                        <span>{f.label}</span>
+                        {count > 1 && <span className="muted small">{count} models</span>}
+                      </div>
+                      {f.models.flatMap((m) => {
+                        const variants = variantsOf(m);
+                        return variants.map((v) => {
+                          const isSel = m.id === activeModelId && String(m.model || '') === String(v.id);
+                          return (
+                            <button
+                              key={`${m.id}:${v.id}`}
+                              className="dropdown-item"
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 8,
+                                padding: '6px 10px 6px 20px',
+                                background: isSel ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent',
+                              }}
+                              onClick={() => pickVariant(m, v.id)}
+                            >
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                <span style={{ color: isSel ? 'var(--accent, #3d7eff)' : 'transparent', width: 14 }}>
+                                  {'\u2713'}
+                                </span>
+                                <span
+                                  style={{
+                                    fontWeight: isSel ? 600 : 400,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {v.label}
+                                </span>
+                              </span>
+                              {m.tag && (
+                                <span
+                                  style={{
+                                    fontSize: 9.5,
+                                    padding: '2px 6px',
+                                    borderRadius: 4,
+                                    background: m.tag.includes('FREE') ? '#134e2f' : '#2b303c',
+                                    color: m.tag.includes('FREE') ? '#4ade80' : '#9ca3af',
+                                    fontWeight: 600,
+                                    letterSpacing: 0.3,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {m.tag}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        });
+                      })}
                     </div>
-                    {f.models.map((m) => {
-                      const isSel = m.id === activeModelId;
-                      return (
-                        <button
-                          key={m.id}
-                          className="dropdown-item"
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 8,
-                            padding: '6px 10px 6px 20px',
-                            background: isSel ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent',
-                          }}
-                          onClick={() => pickModel(m)}
-                        >
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                            <span style={{ color: isSel ? 'var(--accent, #3d7eff)' : 'transparent', width: 14 }}>
-                              {'\u2713'}
-                            </span>
-                            <span
-                              style={{
-                                fontWeight: isSel ? 600 : 400,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {m.label}
-                            </span>
-                          </span>
-                          {m.tag && (
-                            <span
-                              style={{
-                                fontSize: 9.5,
-                                padding: '2px 6px',
-                                borderRadius: 4,
-                                background: m.tag.includes('FREE') ? '#134e2f' : '#2b303c',
-                                color: m.tag.includes('FREE') ? '#4ade80' : '#9ca3af',
-                                fontWeight: 600,
-                                letterSpacing: 0.3,
-                                flexShrink: 0,
-                              }}
-                            >
-                              {m.tag}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 4, marginTop: 4 }}>
