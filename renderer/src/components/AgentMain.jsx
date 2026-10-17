@@ -6,6 +6,7 @@ import { basename } from '../timeAgo';
 import ToolCard from './ToolCard';
 import RepoMenu from './RepoMenu';
 import { usableModels as pickUsableModels } from '../model-filter';
+import { groupModels } from '../model-family';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -375,6 +376,7 @@ export default function AgentMain() {
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
   const [plusQuery, setPlusQuery] = useState('');
+  const [openFamily, setOpenFamily] = useState(null);
   const taRef = useRef(null);
   const listRef = useRef(null);
   const menuRef = useRef(null);
@@ -391,6 +393,8 @@ export default function AgentMain() {
   // Only models that can actually run: one with an API key, the session-based
   // Gemini Web, or whatever is currently active.
   const usableModels = pickUsableModels(models, activeModelId);
+  const modelFamilies = groupModels(usableModels);
+  const openFam = modelFamilies.find((f) => f.key === openFamily) || null;
   const hiddenModelCount = models.length - usableModels.length;
   const inConversation = agentItems.length > 0 || agentBusy || queued.length > 0;
 
@@ -457,6 +461,14 @@ export default function AgentMain() {
     } catch (e) {
       store.setStatus(`Mic access nahi mila: ${e.message}`);
     }
+  }
+
+  function pickModel(m) {
+    useStore.getState().setModels(models, m.id);
+    useStore.getState().saveSettings();
+    setModelMenuOpen(false);
+    setOpenFamily(null);
+    useStore.getState().setStatus(`Active model: ${m.label}`);
   }
 
   function toggleVoice() {
@@ -1040,53 +1052,79 @@ export default function AgentMain() {
                     No working model yet. Add an API key or sign in with Google (Gemini tab) — Settings → Models.
                   </div>
                 )}
-                {usableModels.map((m) => {
-                  const isSel = m.id === activeModelId;
-                  return (
-                    <button
-                      key={m.id}
-                      className="dropdown-item"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 8,
-                        padding: '7px 10px',
-                        background: isSel ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent',
-                        fontWeight: isSel ? 600 : 400,
-                      }}
-                      onClick={() => {
-                        useStore.getState().setModels(models, m.id);
-                        useStore.getState().saveSettings();
-                        setModelMenuOpen(false);
-                        useStore.getState().setStatus(`Active model: ${m.label}`);
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                        <span style={{ color: isSel ? 'var(--accent, #3d7eff)' : 'transparent', width: 14 }}>✓</span>
-                        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                          {m.label}
+
+                {!openFam &&
+                  modelFamilies.map((f) => {
+                    const cur = f.models.find((m) => m.id === activeModelId);
+                    const single = f.models.length === 1;
+                    return (
+                      <button
+                        key={f.key}
+                        className="dropdown-item"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', background: cur ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent' }}
+                        onClick={() => (single ? pickModel(f.models[0]) : setOpenFamily(f.key))}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                          <span style={{ color: cur ? 'var(--accent, #3d7eff)' : 'transparent', width: 14 }}>✓</span>
+                          <span style={{ fontWeight: cur ? 600 : 400 }}>{f.label}</span>
                         </span>
-                      </div>
-                      {m.tag && (
                         <span
                           style={{
-                            fontSize: 9.5,
-                            padding: '2px 6px',
-                            borderRadius: 4,
-                            background: m.tag.includes('FREE') ? '#134e2f' : '#2b303c',
-                            color: m.tag.includes('FREE') ? '#4ade80' : '#9ca3af',
-                            fontWeight: 600,
-                            letterSpacing: 0.3,
+                            fontSize: 11,
+                            color: 'var(--muted)',
                             flexShrink: 0,
+                            maxWidth: 190,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
                           }}
                         >
-                          {m.tag}
+                          {single ? f.models[0].label : cur ? cur.label : `${f.models.length} models`}
                         </span>
-                      )}
+                      </button>
+                    );
+                  })}
+
+                {openFam && (
+                  <>
+                    <button className="dropdown-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px' }} onClick={() => setOpenFamily(null)}>
+                      <span style={{ color: 'var(--muted)' }}>{'\u2190'}</span>
+                      <span>{openFam.label}</span>
                     </button>
-                  );
-                })}
+                    {openFam.models.map((m) => {
+                      const isSel = m.id === activeModelId;
+                      return (
+                        <button
+                          key={m.id}
+                          className="dropdown-item"
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', paddingLeft: 22, background: isSel ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent' }}
+                          onClick={() => pickModel(m)}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                            <span style={{ color: isSel ? 'var(--accent, #3d7eff)' : 'transparent', width: 14 }}>✓</span>
+                            <span style={{ fontWeight: isSel ? 600 : 400 }}>{m.label}</span>
+                          </span>
+                          {m.tag && (
+                            <span
+                              style={{
+                                fontSize: 9.5,
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                background: m.tag.includes('FREE') ? '#134e2f' : '#2b303c',
+                                color: m.tag.includes('FREE') ? '#4ade80' : '#9ca3af',
+                                fontWeight: 600,
+                                letterSpacing: 0.3,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {m.tag}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
               </div>
 
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 4, marginTop: 4 }}>

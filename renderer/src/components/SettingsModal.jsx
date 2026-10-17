@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
 
 /* --------------------------------- shared UI --------------------------------- */
@@ -322,12 +322,44 @@ function ModelsTab() {
     );
   }
 
-  function update(id, patch) {
-    setDraft((d) => d.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+  const saveTimer = useRef(null);
+
+  function cleanModel(m) {
+    return {
+      id: m.id,
+      label: m.label || m.model || 'Model',
+      baseUrl: String(m.baseUrl || '').trim().replace(/\/+$/, ''),
+      model: String(m.model || '').trim(),
+      apiKey: m.apiKey || '',
+      ...(m.auth ? { auth: m.auth } : {}),
+    };
   }
+
+  /**
+   * Write through to the store (and, debounced, to disk) on every change.
+   * The old draft-only behaviour meant a deleted model came back if you did not
+   * press "Save models" before leaving.
+   */
+  function commit(nextDraft, nextActive) {
+    const cleaned = nextDraft.map(cleanModel);
+    const activeId = nextActive && cleaned.some((m) => m.id === nextActive) ? nextActive : (cleaned[0] && cleaned[0].id) || null;
+    useStore.getState().setModels(cleaned, activeId);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => useStore.getState().saveSettings(), 400);
+  }
+
+  function update(id, patch) {
+    const next = draft.map((m) => (m.id === id ? { ...m, ...patch } : m));
+    setDraft(next);
+    commit(next, active);
+  }
+
   function remove(id) {
-    setDraft((d) => d.filter((m) => m.id !== id));
-    if (active === id) setActive(null);
+    const next = draft.filter((m) => m.id !== id);
+    const nextActive = active === id ? null : active;
+    setDraft(next);
+    setActive(nextActive);
+    commit(next, nextActive);
   }
   function addPreset(preset) {
     const entry = {
@@ -338,8 +370,11 @@ function ModelsTab() {
       apiKey: '',
       ...(preset.auth ? { auth: preset.auth } : {}),
     };
-    setDraft((d) => [...d, entry]);
-    setActive((a) => a ?? entry.id);
+    const next = [...draft, entry];
+    setDraft(next);
+    const nextActive = active ?? entry.id;
+    setActive(nextActive);
+    commit(next, nextActive);
   }
   function addCustom() {
     if (!custom.baseUrl.trim() || !custom.model.trim()) return;
@@ -350,8 +385,11 @@ function ModelsTab() {
       model: custom.model.trim(),
       apiKey: custom.apiKey || '',
     };
-    setDraft((d) => [...d, entry]);
-    setActive((a) => a ?? entry.id);
+    const next = [...draft, entry];
+    setDraft(next);
+    const nextActive = active ?? entry.id;
+    setActive(nextActive);
+    commit(next, nextActive);
     setCustom({ label: 'Custom', baseUrl: '', model: '', apiKey: '' });
   }
 

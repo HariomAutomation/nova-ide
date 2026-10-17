@@ -20,6 +20,7 @@ import gh from '../electron/tools/github.js';
 import cloudcode from '../electron/tools/cloudcode.js';
 import voice from '../electron/tools/voice.js';
 import { usableModels, isModelUsable } from '../renderer/src/model-filter.js';
+import { groupModels, latestOf, versionOf } from '../renderer/src/model-family.js';
 import {
   isAutomationDue,
   dueAutomations,
@@ -801,6 +802,25 @@ suite.push(
 );
 
 /* ------------------------------- model picker ------------------------------- */
+
+suite.push(
+  test('model picker: all Gemini models collapse under one entry, newest first', () => {
+    const models = [
+      { id: 'g1', label: 'Gemini 3.1 Flash Lite', model: 'gemini-3.1-flash-lite', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', apiKey: 'k' },
+      { id: 'g2', label: 'Gemini 3.7 Flash', model: 'gemini-3.7-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', apiKey: 'k' },
+      { id: 'w', label: 'Gemini Web', model: 'gemini-web', auth: 'gemini-web' },
+      { id: 'o', label: 'OpenRouter', model: 'google/gemini-4-argon', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'k' },
+    ];
+    const fams = groupModels(models);
+    assert.deepEqual(fams.map((f) => f.label), ['Gemini', 'OpenRouter']);
+    const gem = fams[0];
+    assert.equal(gem.models.length, 3);
+    assert.equal(gem.models[0].id, 'g2'); // newest first
+    assert.equal(latestOf(gem.models).id, 'g2');
+    assert.ok(versionOf({ model: 'gemini-3.7-flash' }) > versionOf({ model: 'gemini-3.1-flash-lite' }));
+    assert.deepEqual(groupModels([]), []);
+  })
+);
 
 suite.push(
   test('model picker: session providers stay usable without an API key', () => {
