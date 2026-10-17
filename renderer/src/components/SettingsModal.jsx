@@ -234,6 +234,24 @@ function ModelsTab() {
         provider you configure. Agent mode needs a model that supports tool calling (Gemini 3.x, DeepSeek, GPT-4o, Llama 3.x…).
       </p>
 
+      <Group title="Google Gemini (free)">
+        <Row
+          label="Sign in with Google"
+          desc="Use Gemini free with your own Google account — no API key, no Cloud project. Nova drives the Gemini web app with your signed-in session, and the agent keeps all of Nova's tools (files, terminal, browser)."
+          control={
+            <button
+              className="btn primary"
+              onClick={() => {
+                useStore.getState().setMainView('gemini');
+                useStore.getState().setSettingsOpen(false);
+              }}
+            >
+              Open Gemini tab
+            </button>
+          }
+        />
+      </Group>
+
       <Group title="Add a model">
         <Row
           label="Label"

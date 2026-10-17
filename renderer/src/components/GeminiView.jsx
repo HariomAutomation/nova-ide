@@ -59,10 +59,12 @@ export default function GeminiView({ active }) {
 
   useEffect(() => {
     if (!window.nova?.onGeminiSignedIn) return;
-    const unsub = window.nova.onGeminiSignedIn(() => {
+    const unsub = window.nova.onGeminiSignedIn((info) => {
       if (ref.current) {
         ref.current.loadURL('https://gemini.google.com/app');
       }
+      // Signed in with Google -> make Gemini models usable right away.
+      if (!info || info.ok !== false) useStore.getState().ensureGeminiWebModel();
     });
     return unsub;
   }, []);

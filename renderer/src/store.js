@@ -936,6 +936,36 @@ export const useStore = create((set, get) => ({
     }
   },
 
+  /**
+   * After a Google sign-in (Gemini Web), make Gemini models available without
+   * any manual setup: add a gemini-web model if none exists, and make it active.
+   */
+  ensureGeminiWebModel() {
+    const models = get().models || [];
+    const existing = models.find((m) => m.auth === 'gemini-web');
+    if (existing) {
+      if (get().activeModelId !== existing.id) get().setModels(models, existing.id);
+      get().saveSettings();
+      get().setStatus('Google account connected — Gemini (free) is active.');
+      return existing.id;
+    }
+    const id = crypto.randomUUID();
+    const entry = {
+      id,
+      label: 'Gemini (Google account)',
+      baseUrl: '',
+      model: 'gemini-web',
+      apiKey: '',
+      auth: 'gemini-web',
+      tag: 'FREE',
+      category: 'Google Gemini',
+    };
+    get().setModels([...models, entry], id);
+    get().saveSettings();
+    get().setStatus('Google account connected — Gemini (free) added and active.');
+    return id;
+  },
+
   setModels: (models, activeModelId) =>
     set((s) => ({
       models,
