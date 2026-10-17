@@ -115,7 +115,7 @@ export const useStore = create((set, get) => ({
   runOn: 'local', // 'local' | 'cloud' — where agent turns are meant to run
 
   /* -------------------------------- memory -------------------------------- */
-  memory: { notes: [], path: null, loading: false },
+  memory: { notes: [], path: null, account: 'local', loading: false },
 
   /* --------------------------------- cloud --------------------------------- */
   drive: { connected: false, email: null, hasClient: false, loading: false, files: [], error: null, query: '' },
@@ -440,7 +440,7 @@ export const useStore = create((set, get) => ({
     set({ memory: { ...get().memory, loading: true } });
     try {
       const r = (await api().memoryList()) || {};
-      set({ memory: { notes: r.notes || [], path: r.path || null, loading: false } });
+      set({ memory: { notes: r.notes || [], path: r.path || null, account: r.account || 'local', loading: false } });
     } catch (e) {
       set({ memory: { ...get().memory, loading: false } });
       get().setStatus(`Memory load failed: ${e.message}`);
@@ -478,6 +478,22 @@ export const useStore = create((set, get) => ({
       get().pushMemoryToCloud().catch(() => {});
     } catch (e) {
       get().setStatus(`Memory clear failed: ${e.message}`);
+    }
+  },
+
+  /** Point memory at the signed-in account (email) or the local namespace. */
+  async applyMemoryAccount() {
+    const st = get().drive || {};
+    const account = st.connected && st.email ? st.email : 'local';
+    try {
+      const r = await api().memorySetAccount(account);
+      if (r && r.notes) {
+        set({
+          memory: { notes: r.notes, path: r.path || null, account: r.account || account, loading: false },
+        });
+      }
+    } catch (e) {
+      get().setStatus(`Memory account switch failed: ${e.message}`);
     }
   },
 
@@ -532,6 +548,9 @@ export const useStore = create((set, get) => ({
     try {
       const st = (await api().gdriveStatus()) || {};
       set({ drive: { ...get().drive, ...st, error: null } });
+      // Memory is per user: switch namespace when the account changes.
+      const key = st.connected && st.email ? st.email : 'local';
+      if (key !== get().memory.account) await get().applyMemoryAccount();
     } catch (e) {
       set({ drive: { ...get().drive, error: String(e.message || e) } });
     }
@@ -553,7 +572,8 @@ export const useStore = create((set, get) => ({
       }
       set({ drive: { ...get().drive, ...r.status } });
       get().setStatus(`Cloud connected${r.status.email ? `: ${r.status.email}` : ''}.`);
-      // Memory is per Google account: pull it down now that we are signed in.
+      // Switch to this user's memory namespace, then pull it down.
+      await get().applyMemoryAccount();
       await get().pullMemoryFromCloud().catch(() => {});
       await get().loadDriveFiles();
       return { ok: true };
@@ -566,6 +586,8 @@ export const useStore = create((set, get) => ({
   async driveSignOut() {
     const r = await api().gdriveLogout();
     set({ drive: { ...get().drive, ...r.status, files: [] } });
+    // Back to the local namespace so this user's memory is not left showing.
+    await get().applyMemoryAccount();
     get().setStatus('Cloud disconnected.');
   },
 

@@ -677,7 +677,8 @@ suite.push(
 
     const l = await memory.list();
     assert.equal(l.notes.length, 2);
-    assert.match(l.path, /memory\.json$/);
+    assert.match(l.path, /memory[\\/]local\.json$/);
+    assert.equal(l.account, 'local');
 
     const txt = await memory.memoryText();
     assert.match(txt, /TypeScript/);
@@ -693,6 +694,28 @@ suite.push(
 
     assert.equal(memory.normalizeText('  a\n\n   b  '), 'a b');
     assert.equal((await memory.add('   ')).error, 'Note is empty.');
+  })
+);
+
+suite.push(
+  test('memory: each account gets its own namespace', async () => {
+    const memory = (await import('../electron/tools/memory.js')).default;
+    await memory.setAccount('local');
+    await memory.clear();
+    await memory.add('local note', 'user');
+
+    const alice = await memory.setAccount('alice@example.com');
+    assert.equal(alice.account, 'alice@example.com');
+    assert.equal(alice.notes.length, 0, 'fresh namespace for a new account');
+    await memory.add('alice note', 'user');
+    assert.equal((await memory.list()).notes.length, 1);
+
+    const back = await memory.setAccount('local');
+    assert.equal(back.notes.length, 1);
+    assert.match(back.notes[0].text, /local note/);
+
+    assert.equal(memory.sanitizeAccount('Bob@Example.com'), 'bob@example.com');
+    assert.equal(memory.sanitizeAccount(''), 'local');
   })
 );
 

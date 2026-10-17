@@ -18,9 +18,48 @@ const crypto = require('node:crypto');
 const fsp = require('node:fs/promises');
 
 const CONFIG_DIR = process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
-const MEMORY_PATH = path.join(CONFIG_DIR, 'memory.json');
+const MEMORY_DIR = path.join(CONFIG_DIR, 'memory');
+const LEGACY_PATH = path.join(CONFIG_DIR, 'memory.json');
 const MAX_NOTES = 500;
 const MAX_TEXT = 4000;
+
+// Memory is namespaced per user. When someone signs in with Google the account
+// becomes the namespace (their email), so different users on the same machine
+// get entirely separate memory and notes. Signed out -> the "local" namespace.
+let currentAccount = 'local';
+
+function sanitizeAccount(key) {
+  const k = String(key == null ? '' : key).trim().toLowerCase();
+  if (!k) return 'local';
+  return k.replace(/[^a-z0-9._@+-]/g, '_').slice(0, 120);
+}
+
+function accountPath(account) {
+  return path.join(MEMORY_DIR, `${sanitizeAccount(account || currentAccount)}.json`);
+}
+
+function getAccount() {
+  return currentAccount;
+}
+
+/** Switch the active memory namespace (email on sign-in, 'local' on sign-out). */
+async function setAccount(key) {
+  currentAccount = sanitizeAccount(key);
+  // One-time migration: fold the pre-account memory.json into "local".
+  if (currentAccount === 'local') {
+    try {
+      await fsp.access(accountPath('local'));
+    } catch {
+      try {
+        const legacy = await fsp.readFile(LEGACY_PATH, 'utf8');
+        await fsp.mkdir(MEMORY_DIR, { recursive: true });
+        await fsp.writeFile(accountPath('local'), legacy, 'utf8');
+        await fsp.rename(LEGACY_PATH, LEGACY_PATH + '.migrated').catch(() => {});
+      } catch {}
+    }
+  }
+  return list();
+}
 
 function normalizeText(t) {
   return String(t == null ? '' : t)
@@ -31,7 +70,7 @@ function normalizeText(t) {
 
 async function readAll() {
   try {
-    const raw = await fsp.readFile(MEMORY_PATH, 'utf8');
+    const raw = await fsp.readFile(accountPath(), 'utf8');
     const j = JSON.parse(raw);
     const notes = Array.isArray(j && j.notes) ? j.notes : [];
     return { notes: notes.filter((n) => n && typeof n.text === 'string' && n.text.trim()) };
@@ -41,13 +80,13 @@ async function readAll() {
 }
 
 async function writeAll(notes) {
-  await fsp.mkdir(CONFIG_DIR, { recursive: true });
-  await fsp.writeFile(MEMORY_PATH, JSON.stringify({ notes }, null, 2), 'utf8');
+  await fsp.mkdir(MEMORY_DIR, { recursive: true });
+  await fsp.writeFile(accountPath(), JSON.stringify({ notes }, null, 2), 'utf8');
 }
 
 async function list() {
   const { notes } = await readAll();
-  return { path: MEMORY_PATH, notes };
+  return { path: accountPath(), account: currentAccount, notes };
 }
 
 async function add(text, source) {
@@ -57,7 +96,7 @@ async function add(text, source) {
   const note = { id: crypto.randomUUID(), text: body, source: source || 'user', createdAt: Date.now() };
   const next = [note, ...notes].slice(0, MAX_NOTES);
   await writeAll(next);
-  return { ok: true, note, notes: next, path: MEMORY_PATH };
+  return { ok: true, note, notes: next, path: accountPath(), account: currentAccount };
 }
 
 async function update(id, patch) {
@@ -91,7 +130,7 @@ async function setNotes(notes) {
       createdAt: n.createdAt || Date.now(),
     }));
   await writeAll(clean);
-  return { ok: true, notes: clean, path: MEMORY_PATH };
+  return { ok: true, notes: clean, path: accountPath(), account: currentAccount };
 }
 
 async function clear() {
@@ -113,4 +152,4 @@ async function memoryText(maxChars = 6000, maxNotes = 80) {
   return lines.join('\n').slice(0, maxChars);
 }
 
-module.exports = { list, add, update, remove, setNotes, clear, memoryText, normalizeText, MEMORY_PATH, CONFIG_DIR };
+module.exports = { list, add, update, remove, setNotes, clear, setAccount, getAccount, sanitizeAccount, memoryText, normalizeText, MEMORY_DIR, CONFIG_DIR };

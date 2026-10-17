@@ -109,6 +109,7 @@ contextBridge.exposeInMainWorld('nova', {
   memoryUpdate: (payload) => ipcRenderer.invoke('memory:update', payload),
   memoryRemove: (id) => ipcRenderer.invoke('memory:remove', { id }),
   memorySet: (notes) => ipcRenderer.invoke('memory:set', { notes }),
+  memorySetAccount: (account) => ipcRenderer.invoke('memory:setAccount', { account }),
   memoryClear: () => ipcRenderer.invoke('memory:clear'),
 
   // cloud (google drive, read-only)

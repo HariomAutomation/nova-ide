@@ -25,8 +25,9 @@ export default function MemoryPage() {
         <div>
           <h1>Memory</h1>
           <p className="muted">
-            Notes the agent reads at the start of every turn — for every model — so it knows the context before you say
-            anything.
+            {memory.account && memory.account !== 'local'
+              ? `Memory for ${memory.account} — notes the agent reads at the start of every turn, for every model.`
+              : 'Local memory (not signed in). Each Google account keeps its own separate memory and notes — sign in to switch to yours.'}
           </p>
         </div>
         <div className="sc-actions">

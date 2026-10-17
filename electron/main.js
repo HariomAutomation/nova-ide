@@ -719,6 +719,7 @@ ipcMain.handle('memory:add', async (_e, { text, source }) => memory.add(text, so
 ipcMain.handle('memory:update', async (_e, { id, patch }) => memory.update(id, patch));
 ipcMain.handle('memory:remove', async (_e, { id }) => memory.remove(id));
 ipcMain.handle('memory:set', async (_e, { notes }) => memory.setNotes(notes));
+ipcMain.handle('memory:setAccount', async (_e, { account }) => memory.setAccount(account));
 ipcMain.handle('memory:clear', async () => memory.clear());
 
 /* ------------------------------ cloud (google drive) ------------------------------ */
