@@ -5,6 +5,7 @@ import { useStore } from '../store';
 import { basename } from '../timeAgo';
 import ToolCard from './ToolCard';
 import RepoMenu from './RepoMenu';
+import { usableModels as pickUsableModels } from '../model-filter';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -386,9 +387,7 @@ export default function AgentMain() {
   const activeModel = models.find((m) => m.id === activeModelId) || null;
   // Only models that can actually run: one with an API key, the session-based
   // Gemini Web, or whatever is currently active.
-  const usableModels = models.filter(
-    (m) => m.id === activeModelId || m.auth === 'gemini-web' || String(m.apiKey || '').trim().length > 0
-  );
+  const usableModels = pickUsableModels(models, activeModelId);
   const hiddenModelCount = models.length - usableModels.length;
   const inConversation = agentItems.length > 0 || agentBusy || queued.length > 0;
 
@@ -1064,38 +1063,6 @@ export default function AgentMain() {
   return (
     <div className="agent-main">
       <div className={'agent-topbar' + (inConversation ? '' : ' home')}>
-        <button
-          className="repo-chip"
-          title={rootFolder || 'Open a folder'}
-          onClick={() => useStore.getState().openFolder()}
-        >
-          <span className="chip-ico">{'\u{1F4C1}'}</span>
-          <span className="chip-text">{rootFolder ? basename(rootFolder) : 'Open folder'}</span>
-        </button>
-        {gitBranch && (
-          <button
-            className="repo-chip"
-            title={`Branch: ${gitBranch}`}
-            onClick={() => useStore.getState().setStatus(`On branch ${gitBranch}`)}
-          >
-            <span className="chip-ico">{'\u2387'}</span>
-            {gitBranch}
-            <span className="chip-caret">{'\u2304'}</span>
-          </button>
-        )}
-        <button
-          className="repo-chip"
-          title={appInfo ? `${appInfo.username}@${appInfo.hostname}` : 'This computer'}
-          onClick={() =>
-            useStore
-              .getState()
-              .setStatus(appInfo ? `Running on ${appInfo.username}@${appInfo.hostname} (${appInfo.os})` : 'This computer')
-          }
-        >
-          <span className="chip-ico">{'\u{1F5A5}\uFE0F'}</span>
-          This Computer
-          <span className="chip-caret">{'\u2304'}</span>
-        </button>
         <div className="spacer" />
         {inConversation && (
           <button
