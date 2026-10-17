@@ -364,16 +364,48 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey }
     // native function calling, so we ask it (in-prompt) to reply with a JSON
     // tool_calls object and translate that into the agent's tool loop.
     const sys = messages.find((m) => m && m.role === 'system');
-    const text = await geminiWeb.prompt({
-      threadKey: `agent:${threadKey || 'default'}`,
-      system: sys && typeof sys.content === 'string' ? sys.content : '',
-      messages,
-      tools,
-      onDelta,
-      signal,
-    });
+    const system = sys && typeof sys.content === 'string' ? sys.content : '';
+    const key = `agent:${threadKey || 'default'}`;
+    const text = await geminiWeb.prompt({ threadKey: key, system, messages, tools, onDelta, signal });
     const toolCalls = geminiWeb.parseWebToolCalls(text);
     if (toolCalls) return { content: '', toolCalls };
+
+    // The web model often answers in prose first, which would end the turn with
+    // no tool ever running (the agent looks like it "did nothing"). Nudge it
+    // once for the protocol JSON before accepting a plain answer.
+    const hasTools = Array.isArray(tools) && tools.length > 0;
+    if (hasTools && !(signal && signal.aborted)) {
+      const nudge = [
+        ...messages,
+        { role: 'assistant', content: text },
+        {
+          role: 'user',
+          content:
+            'NOVA PROTOCOL: that reply was prose. Reply with ONLY one JSON object — {"tool_calls":[{"name":"<tool>","arguments":{...}}]} to act, or {"final":true,"content":"<answer>"} if the task is truly finished. No other text.',
+        },
+      ];
+      try {
+        const text2 = await geminiWeb.prompt({ threadKey: key, system, messages: nudge, tools, signal });
+        const tc2 = geminiWeb.parseWebToolCalls(text2);
+        if (tc2) return { content: '', toolCalls: tc2 };
+        const fin = (() => {
+          const str = String(text2 || '').trim();
+          const a = str.indexOf('{');
+          const b = str.lastIndexOf('}');
+          if (a < 0 || b <= a) return null;
+          try {
+            const j = JSON.parse(str.slice(a, b + 1));
+            return j && j.final && typeof j.content === 'string' ? j.content : null;
+          } catch {
+            return null;
+          }
+        })();
+        if (fin) return { content: fin, toolCalls: [] };
+        return { content: text2 || text, toolCalls: [] };
+      } catch {
+        return { content: text, toolCalls: [] };
+      }
+    }
     return { content: text, toolCalls: [] };
   }
 
