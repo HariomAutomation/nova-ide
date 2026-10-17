@@ -120,7 +120,7 @@ const PRESETS = [
     baseUrl: '',
     model: 'gemini-web',
     auth: 'gemini-web',
-    hint: 'Jugaad provider: Nova ke 🌐 Gemini tab ka web app automate karta hai — aapka Google account / Pro subscription brain banta hai, aur agent Nova ke saare tools (files, terminal, browser, MCP) chala sakta hai. Pehle sidebar me Gemini kholke sign in karo. ⚠️ Web UI automation — Google ToS gray area, rate-limit/CAPTCHA possible.',
+    hint: 'Nova ke 🌐 Gemini tab ka web app automate karta hai — aapka Google account brain banta hai (Google AI Pro ho to Pro models + higher limits isi session me), aur agent Nova ke saare tools (files, terminal, browser, MCP) chala sakta hai. Pehle sidebar me Gemini kholke sign in karo. ⚠️ Web UI automation — Google ToS gray area, rate-limit/CAPTCHA possible.',
   },
   {
     id: 'openrouter',
@@ -237,7 +237,7 @@ function ModelsTab() {
       <Group title="Google Gemini (free)">
         <Row
           label="Sign in with Google"
-          desc="Use Gemini free with your own Google account — no API key, no Cloud project. Nova drives the Gemini web app with your signed-in session, and the agent keeps all of Nova's tools (files, terminal, browser)."
+          desc="Use Gemini with your own Google account — no API key, no Cloud project. Nova drives the Gemini web app with your signed-in session, and the agent keeps all of Nova's tools (files, terminal, browser). Google AI Pro ho to isi session me Pro models aur zyada limits milte hain."
           control={
             <button
               className="btn primary"
