@@ -123,14 +123,6 @@ const PRESETS = [
     hint: 'Free AI Studio key pe chalne wala fast Flash model — verified working. Quota khatam ho to gemini-3.1-flash-lite / gemini-3.5-flash try karo.',
   },
   {
-    id: 'cloudcode',
-    label: 'Gemini (Google account \u00B7 Cloud Code)',
-    baseUrl: '',
-    model: 'gemini-3-pro-preview',
-    auth: 'cloudcode',
-    hint: 'EXPERIMENTAL: Google Antigravity jo backend use karta hai (cloudcode-pa) — aapke Google account / AI Pro se Gemini, bina API key, asli function calling ke saath. Undocumented API hai: kabhi bhi badal sakta hai, ToS grey area.',
-  },
-  {
     id: 'openrouter',
     label: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
@@ -165,6 +157,108 @@ const PRESETS = [
   { id: 'lmstudio', label: 'LM Studio (local)', baseUrl: 'http://localhost:1234/v1', model: 'local-model' },
 ];
 
+/**
+ * Free Gemini API: paste a key, fetch the models, pick one.
+ *
+ * Defined at module level on purpose. A component declared inside ModelsTab is a
+ * NEW component type on every parent render, so React remounts it and throws
+ * away its state mid-request - which made "Fetch models" look like it did
+ * nothing.
+ */
+function GeminiApiLine({ draft, active, setDraft, setActive, commit }) {
+  const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
+  const isGeminiModel = (m) => /generativelanguage\.googleapis\.com/i.test(String(m.baseUrl || ''));
+  const gEntry = draft.find(isGeminiModel);
+  const [key, setKey] = useState(gEntry ? gEntry.apiKey || '' : '');
+  const [list, setList] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  /** Find (or create) the Gemini entry; returns the updated draft + entry. */
+  function ensureEntry(currentDraft, nextKey) {
+    let entry = currentDraft.find(isGeminiModel);
+    let next;
+    if (!entry) {
+      entry = {
+        id: crypto.randomUUID(),
+        label: 'Gemini',
+        baseUrl: GEMINI_BASE,
+        model: 'gemini-flash-latest',
+        apiKey: nextKey || '',
+      };
+      next = [...currentDraft, entry];
+    } else {
+      next = currentDraft.map((m) => (m.id === entry.id ? { ...m, apiKey: nextKey ?? m.apiKey } : m));
+    }
+    return { next, entry };
+  }
+
+  async function fetchModels() {
+    setBusy(true);
+    setMsg('');
+    // Do the network call FIRST: committing to the store re-renders the parent,
+    // and we want the result in hand before that happens.
+    try {
+      const probe = ensureEntry(draft, key);
+      const r = await window.nova.listModels({ baseUrl: probe.entry.baseUrl, apiKey: key, auth: 'gemini' });
+      const { next, entry } = ensureEntry(draft, key);
+      setDraft(next);
+      setActive(entry.id);
+      commit(next, entry.id);
+      if (r && Array.isArray(r.models) && r.models.length) {
+        setList(r.models);
+        setMsg(`${r.models.length} models mile — neeche se ek click me pick karo.`);
+      } else {
+        setMsg(`Error: ${(r && r.error) || 'koi model nahi mila'}`);
+      }
+    } catch (e) {
+      setMsg(`Error: ${String((e && e.message) || e)}`);
+    }
+    setBusy(false);
+  }
+
+  function pick(id) {
+    const { next, entry } = ensureEntry(draft, key);
+    const withModel = next.map((m) => (m.id === entry.id ? { ...m, model: id } : m));
+    setDraft(withModel);
+    setActive(entry.id);
+    commit(withModel, entry.id);
+    setMsg(`Model set: ${id} (active)`);
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', minWidth: 0 }}>
+      <div className="input-row">
+        <input
+          className="input"
+          style={{ width: 300 }}
+          type="password"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="AIza… (AI Studio key)"
+        />
+        <button className="btn small primary" disabled={busy} onClick={fetchModels}>
+          {busy ? 'Fetching…' : 'Fetch models'}
+        </button>
+      </div>
+      {list.length > 0 && (
+        <div className="preset-row" style={{ maxHeight: 150, overflowY: 'auto' }}>
+          {list.map((id) => (
+            <button
+              key={id}
+              className={'btn small' + (gEntry && gEntry.model === id ? ' primary' : '')}
+              onClick={() => pick(id)}
+            >
+              {id}
+            </button>
+          ))}
+        </div>
+      )}
+      {msg && <span className="muted small">{msg}</span>}
+    </div>
+  );
+}
+
 function ModelsTab() {
   const models = useStore((s) => s.models);
   const activeModelId = useStore((s) => s.activeModelId);
@@ -174,196 +268,6 @@ function ModelsTab() {
   const [modelOpts, setModelOpts] = useState({}); // cardId -> [model ids] fetched from the endpoint
   const [tests, setTests] = useState({}); // cardId -> {state:'testing'|'ok'|'fail', msg, count}
   const [showList, setShowList] = useState({}); // cardId -> bool (show all fetched versions)
-
-  /** Free Gemini API: paste a key, fetch the models, pick one. */
-  function GeminiApiLine() {
-    const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
-    const isGeminiModel = (m) => /generativelanguage\.googleapis\.com/i.test(String(m.baseUrl || ''));
-    const gEntry = draft.find(isGeminiModel);
-    const [key, setKey] = useState(gEntry ? gEntry.apiKey || '' : '');
-    const [list, setList] = useState([]);
-    const [busy, setBusy] = useState(false);
-    const [msg, setMsg] = useState('');
-
-    /** Find (or create) the Gemini entry and apply the key. */
-    function ensureEntry(nextKey) {
-      let entry = draft.find(isGeminiModel);
-      let next;
-      if (!entry) {
-        entry = {
-          id: crypto.randomUUID(),
-          label: 'Gemini',
-          baseUrl: GEMINI_BASE,
-          model: 'gemini-flash-latest',
-          apiKey: nextKey || '',
-        };
-        next = [...draft, entry];
-      } else {
-        next = draft.map((m) => (m.id === entry.id ? { ...m, apiKey: nextKey ?? m.apiKey } : m));
-      }
-      setDraft(next);
-      return { next, entry };
-    }
-
-    async function fetchModels() {
-      setBusy(true);
-      setMsg('');
-      try {
-        const { next, entry } = ensureEntry(key);
-        setActive(entry.id);
-        commit(next, entry.id);
-        const r = await window.nova.listModels({ baseUrl: entry.baseUrl, apiKey: key, auth: 'gemini' });
-        if (r && Array.isArray(r.models) && r.models.length) {
-          setList(r.models);
-          setMsg(`${r.models.length} models mile — neeche se ek click me pick karo.`);
-        } else {
-          setMsg(`Error: ${(r && r.error) || 'koi model nahi mila'}`);
-        }
-      } catch (e) {
-        setMsg(String((e && e.message) || e));
-      }
-      setBusy(false);
-    }
-
-    function pick(id) {
-      const { next, entry } = ensureEntry(key);
-      const withModel = next.map((m) => (m.id === entry.id ? { ...m, model: id } : m));
-      setDraft(withModel);
-      setActive(entry.id);
-      commit(withModel, entry.id);
-      setMsg(`Model set: ${id} (active)`);
-    }
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', minWidth: 0 }}>
-        <div className="input-row">
-          <input
-            className="input"
-            style={{ width: 300 }}
-            type="password"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            placeholder="AIza… (AI Studio key)"
-          />
-          <button className="btn small primary" disabled={busy} onClick={fetchModels}>
-            {busy ? 'Fetching\u2026' : 'Fetch models'}
-          </button>
-        </div>
-        {list.length > 0 && (
-          <div className="preset-row" style={{ maxHeight: 150, overflowY: 'auto' }}>
-            {list.map((id) => (
-              <button
-                key={id}
-                className={'btn small' + (gEntry && gEntry.model === id ? ' primary' : '')}
-                onClick={() => pick(id)}
-              >
-                {id}
-              </button>
-            ))}
-          </div>
-        )}
-        {msg && <span className="muted small">{msg}</span>}
-      </div>
-    );
-  }
-
-  /** Sign-in / status row for the experimental Cloud Code provider. */
-  function CloudCodeLine() {
-    const [st, setSt] = useState(null);
-    const [busy, setBusy] = useState(false);
-    const [msg, setMsg] = useState(null);
-
-    useEffect(() => {
-      window.nova
-        .cloudcodeStatus()
-        .then(setSt)
-        .catch(() => {});
-    }, []);
-
-    async function signIn() {
-      setBusy(true);
-      setMsg(null);
-      try {
-        const r = await window.nova.cloudcodeLogin();
-        if (r && r.ok) {
-          setSt(r.status);
-          setMsg({ type: 'ok', text: `Connected \u2713 ${(r.status && r.status.email) || ''}` });
-        } else {
-          setMsg({ type: 'err', text: (r && r.error) || 'sign-in failed' });
-        }
-      } catch (e) {
-        setMsg({ type: 'err', text: String(e.message || e) });
-      } finally {
-        setBusy(false);
-      }
-    }
-
-    async function signOut() {
-      const r = await window.nova.cloudcodeLogout();
-      setSt(r && r.status);
-      setMsg(null);
-    }
-
-    async function fetchModels() {
-      const r = await window.nova.cloudcodeModels();
-      if (r && r.models && r.models.length) {
-        setModelOpts((o) => ({ ...o, cloudcode: r.models }));
-        setMsg({ type: 'ok', text: `${r.models.length} models found` });
-      } else {
-        setMsg({ type: 'err', text: (r && r.error) || 'no models returned' });
-      }
-    }
-
-    return (
-      <div className="cc-line">
-        <span className={st && st.connected ? 'testline-ok' : 'muted small'}>
-          {st
-            ? st.connected
-              ? `connected \u00B7 ${st.email || ''}${st.project ? ` \u00B7 ${st.project}` : ''}`
-              : 'not connected'
-            : '…'}
-        </span>
-        {st && st.connected ? (
-          <>
-            <button className="btn small" onClick={fetchModels}>
-              Fetch models
-            </button>
-            <button
-              className="btn small"
-              title="Cloud Code Private API is not in the public Library - use this direct link"
-              onClick={() => {
-                const base = 'https://console.developers.google.com/apis/api/cloudcode-pa.googleapis.com/overview';
-                const proj = st.project || st.projectNumber;
-                window.nova.openExternal(proj ? `${base}?project=${encodeURIComponent(proj)}` : base);
-              }}
-            >
-              Enable Cloud Code API ↗
-            </button>
-            <button className="btn small" onClick={signOut}>
-              Sign out
-            </button>
-          </>
-        ) : (
-          <button className="btn small primary" disabled={busy} onClick={signIn}>
-            {busy ? 'Opening browser…' : 'Sign in with Google'}
-          </button>
-        )}
-        {msg && <span className={msg.type === 'ok' ? 'testline-ok' : 'search-error small'}>{msg.text}</span>}
-        {msg && msg.type === 'err' && /has not been used in project|it is disabled/i.test(msg.text || '') && (
-          <button
-            className="btn small primary"
-            onClick={() => {
-              const proj = (String(msg.text).match(/project[=:\s]+(\d{6,})/) || [])[1];
-              const base = 'https://console.developers.google.com/apis/api/cloudcode-pa.googleapis.com/overview';
-              window.nova.openExternal(proj ? `${base}?project=${proj}` : base);
-            }}
-          >
-            Enable Cloud Code API ↗
-          </button>
-        )}
-      </div>
-    );
-  }
 
   /** Test / Fetch control shown under each model card. */
   function TestLine({ id }) {
@@ -557,48 +461,7 @@ function ModelsTab() {
               click me pick ho jayenge.
             </>
           }
-          control={<GeminiApiLine />}
-        />
-      </Group>
-
-      <Group title="Gemini — Cloud Code (experimental)">
-        <Row
-          label="Sign in with Google"
-          desc="Antigravity jo backend use karta hai (cloudcode-pa) — aapke Google account / AI Pro se Gemini, bina API key, asli tool calling ke saath. Undocumented API hai: kabhi bhi badal sakta hai."
-          control={<CloudCodeLine />}
-        />
-        <Row
-          label="Setup (ek baar)"
-          desc="1) Google Cloud Console → OAuth consent screen → Data access me ye scope add karo: https://www.googleapis.com/auth/cloud-platform   2) Client secret ek baar Settings → Cloud → Advanced me paste karke Save karo (wahi yahan reuse hoga)."
-          control={
-            <div className="input-row">
-              <button
-                className="btn small"
-                onClick={() => window.nova.openExternal('https://console.cloud.google.com/apis/credentials/consent')}
-              >
-                Open consent screen ↗
-              </button>
-              <button
-                className="btn small"
-                onClick={() =>
-                  window.nova.openExternal(
-                    'https://console.developers.google.com/apis/api/cloudcode-pa.googleapis.com/overview'
-                  )
-                }
-              >
-                Enable Cloud Code API ↗
-              </button>
-            </div>
-          }
-        />
-        <Row
-          label="Enable nahi ho raha?"
-          desc="Ye private API Google sabko nahi deta. Agar enable na ho, to ise chhod do aur AI Studio ki FREE key se Gemini chalao (neeche Add a model → Gemini, ya quick-add). Key path supported hai aur asli tool-calling deta hai."
-          control={
-            <button className="btn small" onClick={() => window.nova.openExternal('https://aistudio.google.com/apikey')}>
-              Get AI Studio key ↗
-            </button>
-          }
+          control={<GeminiApiLine draft={draft} active={active} setDraft={setDraft} setActive={setActive} commit={commit} />}
         />
       </Group>
 
@@ -695,24 +558,6 @@ function ModelsTab() {
                 Model: <b>gemini-web</b> — web UI automation. Agent mode me tools JSON-protocol se chalte hain (files,
                 terminal, browser, MCP sab available).
               </div>
-            </div>
-          ) : m.auth === 'cloudcode' ? (
-            <div className="model-grid">
-              <div className="muted small" style={{ paddingTop: 2, lineHeight: 1.5 }}>
-                <b>EXPERIMENTAL.</b> Google Antigravity jo backend use karta hai (cloudcode-pa) — aapke Google account /
-                AI Pro se Gemini, <b>bina API key</b>, asli tool calling ke saath. Ye ek undocumented internal API hai:
-                kabhi bhi badal sakta hai, aur ToS grey area hai.
-              </div>
-              <label>
-                Model
-                <input
-                  className="input"
-                  value={m.model}
-                  onChange={(e) => update(m.id, { model: e.target.value })}
-                  placeholder="gemini-3-pro-preview"
-                />
-              </label>
-              <CloudCodeLine />
             </div>
           ) : (
           <div className="model-grid">

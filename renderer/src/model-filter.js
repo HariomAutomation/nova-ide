@@ -5,10 +5,11 @@
  * provider (Gemini Web, Cloud Code - they authenticate through a sign-in, not
  * an API key), or when it has an API key.
  */
-export const SESSION_AUTHS = ['cloudcode'];
+export const SESSION_AUTHS = [];
 
-// The Gemini web-app provider is retired: its models are hidden everywhere.
-export const RETIRED_AUTHS = ['gemini-web'];
+// Retired providers: their models are hidden everywhere (the Gemini web app and
+// the experimental Cloud Code backend both went away).
+export const RETIRED_AUTHS = ['gemini-web', 'cloudcode'];
 
 export function isModelUsable(m, activeModelId) {
   if (!m) return false;

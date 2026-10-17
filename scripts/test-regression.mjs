@@ -803,6 +803,30 @@ suite.push(
   })
 );
 
+/* --------------------------- renderer structure --------------------------- */
+
+suite.push(
+  test('renderer: stateful sub-views are module-level, not nested components', () => {
+    // A component declared INSIDE another component is a new type on every
+    // parent render, so React remounts it and its state is thrown away
+    // mid-request. That is what made "Fetch models" appear to do nothing.
+    const src = fs.readFileSync(
+      path.join(ROOT_DIR, 'renderer', 'src', 'components', 'SettingsModal.jsx'),
+      'utf8'
+    );
+    for (const name of ['GeminiApiLine']) {
+      assert.ok(
+        new RegExp(`^function ${name}\\(`, 'm').test(src),
+        `${name} must be declared at module level`
+      );
+      assert.ok(
+        !new RegExp(`^\\s+function ${name}\\(`, 'm').test(src),
+        `${name} must not be nested inside another component`
+      );
+    }
+  })
+);
+
 /* ------------------------------- model picker ------------------------------- */
 
 suite.push(
@@ -825,29 +849,29 @@ suite.push(
 );
 
 suite.push(
-  test('model picker: session providers stay usable without an API key', () => {
+  test('model picker: only keyed models show; retired providers are hidden', () => {
     const models = [
       { id: 'a', label: 'A' }, // no key -> hidden
       { id: 'b', label: 'B', apiKey: 'sk-1' }, // key -> shown
       { id: 'c', label: 'C', auth: 'gemini-web' }, // retired -> hidden
-      { id: 'd', label: 'D', auth: 'cloudcode' }, // session -> shown
+      { id: 'd', label: 'D', auth: 'cloudcode' }, // retired -> hidden
     ];
     assert.deepEqual(
       usableModels(models, null).map((m) => m.id),
-      ['b', 'd']
+      ['b']
     );
     // the active model is always kept, even without a key
     assert.deepEqual(
       usableModels(models, 'a').map((m) => m.id),
-      ['a', 'b', 'd']
+      ['a', 'b']
     );
     // a retired provider never shows, even when it is the active one
     assert.deepEqual(
       usableModels(models, 'c').map((m) => m.id),
-      ['b', 'd']
+      ['b']
     );
     assert.equal(isModelUsable({ id: 'x', apiKey: '   ' }, null), false);
-    assert.equal(isModelUsable({ id: 'y', auth: 'cloudcode' }, null), true);
+    assert.equal(isModelUsable({ id: 'y', auth: 'cloudcode' }, null), false);
     assert.equal(isModelUsable({ id: 'z', auth: 'gemini-web' }, null), false);
   })
 );
