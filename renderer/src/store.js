@@ -28,55 +28,9 @@ const DEFAULT_AGENT_SETTINGS = {
   extraInstructions: '',
 };
 
-export const DEFAULT_INTEGRATED_MODELS = [
-  {
-    id: 'gemini-3.7-flash',
-    label: 'Gemini 3.7 Flash',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-3.7-flash',
-    apiKey: '',
-    tag: 'FREE ✅',
-    category: 'Google Gemini',
-  },
-  {
-    id: 'gemini-3.1-flash-lite',
-    label: 'Gemini 3.1 Flash Lite',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-3.1-flash-lite',
-    apiKey: '',
-    tag: 'FREE FAST',
-    category: 'Google Gemini',
-  },
-  {
-    id: 'gemini-3.5-flash',
-    label: 'Gemini 3.5 Flash',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-3.5-flash',
-    apiKey: '',
-    tag: 'FREE TIER',
-    category: 'Google Gemini',
-  },
-  {
-    id: 'gemini-web',
-    label: 'Gemini Web (Google Account)',
-    baseUrl: '',
-    model: 'gemini-web',
-    apiKey: '',
-    auth: 'gemini-web',
-    tag: 'FREE WEB',
-    category: 'Google Gemini',
-  },
-  {
-    id: 'opencode-zen',
-    label: 'OpenCode Zen (your key)',
-    baseUrl: 'https://opencode.ai/zen/v1',
-    model: 'beam-free',
-    apiKey: '',
-    tag: 'BYOK',
-    category: 'Free Models',
-    hint: 'Apni opencode.ai console key daalo, phir "Test connection" dabao — Zen ke andar ke saare models list hoke dikhenge, jitna chahe pick karo.',
-  },
-];
+// Nova ships NO models by default. The user adds their own (custom endpoint or a
+// quick-add preset). This keeps the model picker empty and uncluttered on first run.
+export const DEFAULT_INTEGRATED_MODELS = [];
 
 const MAX_CHATS = 25;
 
@@ -571,31 +525,7 @@ export const useStore = create((set, get) => ({
       }
     }
 
-    // Migration: drop models whose IDs no longer exist upstream (e.g. OpenCode Zen
-    // rotates its free-tier list) and the default "junk " paid crowd — Nova ships
-    // a lean list (Gemini free family + OpenCode Zen). Keys of removed entries are
-    // parked in keyVault so re-adding a preset restores them automatically.
-    const DEAD_MODELS = new Set([
-      'deepseek-v4-flash-free', 'qwen3.6-plus-free', 'minimax-m3-free',
-      'glm-4.6-fw-free', 'kimi-k2-free',
-    ]);
-    const JUNK_IDS = new Set([
-      'deepseek-v3', 'deepseek-r1', 'groq-llama-3.3-70b',
-      'openrouter-claude-3.7-sonnet', 'openrouter-claude-3.5-sonnet',
-      'openai-gpt-4o', 'openai-gpt-4o-mini',
-      'gemini-4-argon', 'gemini-3.8-flash', 'ollama-qwen-coder',
-    ]);
-    let migrated = false;
-    const filtered = [];
-    for (const m of models) {
-      if (DEAD_MODELS.has(m.model) || JUNK_IDS.has(m.id)) {
-        migrated = true;
-        const h = hostOf(m.baseUrl || '');
-        if (m.apiKey && h) keyVault[h] = m.apiKey;
-        continue;
-      }
-      filtered.push(m);
-    }
+    const filtered = models;
 
     const activeModelId = s.activeModelId && filtered.some((m) => m.id === s.activeModelId)
       ? s.activeModelId
@@ -618,7 +548,6 @@ export const useStore = create((set, get) => ({
       .catch(() => {});
     get().loadSkills().catch(() => {});
     get().loadMcpStatus().catch(() => {});
-    if (migrated) get().saveSettings(); // persist trimmed list + parked keys once
     if (s.lastFolder) {
       await get().openFolder(s.lastFolder, { silent: true });
     }

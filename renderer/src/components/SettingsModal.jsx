@@ -509,6 +509,67 @@ function ModelsTab() {
         {gMsg && <div className={'g-inline g-' + gMsg.type}>{gMsg.text}</div>}
       </Group>
 
+      <Group title="Add a model">
+        <Row
+          label="Label"
+          desc="A short name shown in the model picker."
+          control={
+            <input
+              className="input"
+              style={{ width: 260 }}
+              value={custom.label}
+              onChange={(e) => setCustom({ ...custom, label: e.target.value })}
+              placeholder="My model"
+            />
+          }
+        />
+        <Row
+          label="Base URL"
+          desc="Any OpenAI-compatible endpoint, e.g. https://api.deepseek.com/v1"
+          control={
+            <input
+              className="input"
+              style={{ width: 360 }}
+              value={custom.baseUrl}
+              onChange={(e) => setCustom({ ...custom, baseUrl: e.target.value })}
+              placeholder="https://api.example.com/v1"
+            />
+          }
+        />
+        <Row
+          label="Model"
+          desc="Model id. Use Test to list what the endpoint offers."
+          control={modelInput('custom', custom.model, (e) => setCustom({ ...custom, model: e.target.value }), 'model-id')}
+        />
+        <Row
+          label="API key"
+          desc="Stored locally, only ever sent to this provider."
+          control={
+            <input
+              className="input"
+              style={{ width: 300 }}
+              type="password"
+              value={custom.apiKey}
+              onChange={(e) => setCustom({ ...custom, apiKey: e.target.value })}
+              placeholder="sk-… (optional)"
+            />
+          }
+        />
+        <Row
+          label=""
+          desc=""
+          control={
+            <div className="input-row">
+              <button className="btn primary small" disabled={!custom.baseUrl.trim() || !custom.model.trim()} onClick={addCustom}>
+                Add model
+              </button>
+              <TestLine id="custom" />
+            </div>
+          }
+        />
+      </Group>
+
+      <div className="quickadd-label">Or quick-add a provider</div>
       <div className="preset-row">
         {PRESETS.map((p) => (
           <button key={p.id} className="btn small" title={p.hint} onClick={() => addPreset(p)}>
@@ -517,7 +578,7 @@ function ModelsTab() {
         ))}
       </div>
 
-      {draft.length === 0 && <p className="muted">No models yet. Click a preset above.</p>}
+      {draft.length === 0 && <p className="muted">No models yet — add one above, or quick-add a provider.</p>}
 
       {draft.map((m) => (
         <div key={m.id} className={'model-card' + (active === m.id ? ' active' : '')}>
@@ -567,36 +628,6 @@ function ModelsTab() {
           <TestLine id={m.id} />
         </div>
       ))}
-
-      <div className="model-card">
-        <div className="model-card-head">
-          <span className="muted">Custom endpoint</span>
-        </div>
-        <div className="model-grid">
-          <label>
-            Label
-            <input className="input" value={custom.label} onChange={(e) => setCustom({ ...custom, label: e.target.value })} />
-          </label>
-          <label>
-            Base URL
-            <input className="input" value={custom.baseUrl} onChange={(e) => setCustom({ ...custom, baseUrl: e.target.value })} placeholder="http://host:port/v1" />
-          </label>
-          <label>
-            Model
-            {modelInput('custom', custom.model, (e) => setCustom({ ...custom, model: e.target.value }), 'model-id')}
-          </label>
-          <label>
-            API Key
-            <input className="input" type="password" value={custom.apiKey} onChange={(e) => setCustom({ ...custom, apiKey: e.target.value })} placeholder="sk-… (optional)" />
-          </label>
-        </div>
-        <div className="model-card-actions">
-          <button className="btn" onClick={addCustom}>
-            Add
-          </button>
-          <TestLine id="custom" />
-        </div>
-      </div>
 
       <div className="modal-footer-inline">
         <button className="btn primary" onClick={save}>

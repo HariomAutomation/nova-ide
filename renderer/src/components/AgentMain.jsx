@@ -636,6 +636,11 @@ export default function AgentMain() {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {models.length === 0 && (
+                  <div style={{ padding: '8px 10px 12px', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                    No models yet. Add your own endpoint — any OpenAI-compatible provider works.
+                  </div>
+                )}
                 {models.map((m) => {
                   const isSel = m.id === activeModelId;
                   return (
