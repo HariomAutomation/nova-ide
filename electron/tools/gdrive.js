@@ -89,6 +89,8 @@ async function status() {
     clientId: cfg.clientId || null,
     connected: !!cfg.refreshToken,
     email: cfg.email || null,
+    name: cfg.name || null,
+    picture: cfg.picture || null,
     scope: SCOPE,
   };
 }
@@ -110,6 +112,8 @@ async function logout() {
   const cfg = await readConfig();
   delete cfg.refreshToken;
   delete cfg.email;
+  delete cfg.name;
+  delete cfg.picture;
   await writeConfig(cfg);
   accessCache = { token: null, exp: 0 };
   return status();
@@ -205,13 +209,22 @@ async function login() {
         const redirectUri = `http://127.0.0.1:${server.address().port}/oauth2callback`;
         const tokens = await exchangeCode(cfg, q.get('code'), redirectUri, verifier);
 
-        let email = null;
+        let profile = {};
         try {
           const ui = await fetch(USERINFO_URL, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
-          if (ui.ok) email = (await ui.json()).email || null;
+          if (ui.ok) {
+            const j = await ui.json();
+            profile = { email: j.email || null, name: j.name || null, picture: j.picture || null };
+          }
         } catch {}
 
-        const next = { ...cfg, refreshToken: tokens.refresh_token || cfg.refreshToken, email };
+        const next = {
+          ...cfg,
+          refreshToken: tokens.refresh_token || cfg.refreshToken,
+          email: profile.email || cfg.email || null,
+          name: profile.name || cfg.name || null,
+          picture: profile.picture || cfg.picture || null,
+        };
         await writeConfig(next);
         accessCache = { token: tokens.access_token, exp: Date.now() + (tokens.expires_in || 3600) * 1000 - 60000 };
 

@@ -4743,3 +4743,7 @@ input:focus, select:focus, textarea:focus {
   background: var(--bg-input, var(--panel));
   animation: novaFadeUp 0.2s ease both;
 }
+
+/* avatar image (Google account) */
+img.avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }
+img.avatar.sm { width: 22px; height: 22px; }

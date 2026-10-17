@@ -158,6 +158,7 @@ function ChatHome() {
   const navHistory = useStore((s) => s.navHistory);
   const navFwd = useStore((s) => s.navFwd);
   const gitBranch = useStore((s) => s.gitBranch);
+  const drive = useStore((s) => s.drive);
 
   const [chatMenu, setChatMenu] = useState(null); // { id, x, y, pinned }
   const [editingId, setEditingId] = useState(null);
@@ -407,9 +408,25 @@ function ChatHome() {
       )}
 
       <div className="sb-account">
-        <span className="avatar">{(userName[0] || 'N').toUpperCase()}</span>
-        <span className="sb-chat-title">{userName}</span>
-        <span className="plan">Nova Free</span>
+        {drive && drive.connected ? (
+          <>
+            {drive.picture ? (
+              <img className="avatar" src={drive.picture} alt="" referrerPolicy="no-referrer" />
+            ) : (
+              <span className="avatar">{((drive.name || drive.email || 'G')[0] || 'G').toUpperCase()}</span>
+            )}
+            <span className="sb-chat-title" title={drive.email || ''}>
+              {drive.name || drive.email || 'Google account'}
+            </span>
+            <span className="plan">Google</span>
+          </>
+        ) : (
+          <>
+            <span className="avatar">{(userName[0] || 'N').toUpperCase()}</span>
+            <span className="sb-chat-title">{userName}</span>
+            <span className="plan">Nova Free</span>
+          </>
+        )}
         <button
           className="btn-icon"
           title="Settings (Ctrl+,)"

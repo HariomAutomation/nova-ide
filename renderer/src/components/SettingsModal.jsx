@@ -923,8 +923,18 @@ function CloudTab() {
       <Group title="Google Drive">
         <Row
           label="Status"
-          desc={drive.connected ? `Connected${drive.email ? `: ${drive.email}` : ''}` : 'Not connected'}
-          control={<span className={'cz-dot ' + (drive.connected ? 'ok' : '')} />}
+          desc={
+            drive.connected
+              ? `Connected${drive.name ? ` as ${drive.name}` : ''}${drive.email ? ` \u00B7 ${drive.email}` : ''}`
+              : 'Not connected'
+          }
+          control={
+            drive.connected && drive.picture ? (
+              <img className="avatar sm" src={drive.picture} alt="" referrerPolicy="no-referrer" />
+            ) : (
+              <span className={'cz-dot ' + (drive.connected ? 'ok' : '')} />
+            )
+          }
         />
         <Row
           label="Sign in"

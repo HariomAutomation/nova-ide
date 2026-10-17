@@ -28,6 +28,8 @@ export default function App() {
     useStore.getState().loadSettings().then(() => {
       // Automations with a startup/interval/daily trigger fire from here.
       useStore.getState().startAutomationScheduler();
+      // Load the signed-in Google account (if any) so its details show in the UI.
+      useStore.getState().loadDrive().catch(() => {});
     });
   }, []);
 
