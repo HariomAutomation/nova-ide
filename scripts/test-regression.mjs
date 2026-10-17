@@ -25,6 +25,7 @@ import {
 } from '../renderer/src/automation-schedule.js';
 import { getHeuristicCompletion } from '../renderer/src/completion-heuristics.js';
 
+const ROOT_DIR = process.cwd();
 const TEST_DIR = path.join(os.tmpdir(), 'nova-regression-' + Date.now());
 await fsp.mkdir(TEST_DIR, { recursive: true });
 
@@ -732,6 +733,41 @@ suite.push(
     assert.equal(typeof st.connected, 'boolean');
     assert.match(st.configPath, /github\.json$/);
     assert.equal((await gh.save('   ')).error, 'Token required');
+  })
+);
+
+/* ------------------------------ renderer sanity ------------------------------ */
+
+suite.push(
+  test('renderer: no undefined JSX component references (would white-screen a view)', () => {
+    // A component used in JSX but never defined throws at render time and, with
+    // no error boundary, blanks the whole window. Catch that statically.
+    const root = path.join(ROOT_DIR, 'renderer', 'src');
+    const files = [];
+    (function walk(d) {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (/\.(jsx|js)$/.test(e.name)) files.push(p);
+      }
+    })(root);
+
+    const missing = [];
+    for (const f of files) {
+      const src = fs.readFileSync(f, 'utf8');
+      const used = new Set([...src.matchAll(/<([A-Z][A-Za-z0-9_]*)[\s/>]/g)].map((m) => m[1]));
+      for (const name of used) {
+        // Placeholders like <CURSOR> inside prompt strings are all-caps; real
+        // components are PascalCase.
+        if (!/[a-z]/.test(name)) continue;
+        const defined =
+          new RegExp(`(function|class)\\s+${name}\\b`).test(src) ||
+          new RegExp(`(const|let|var)\\s+${name}\\b`).test(src) ||
+          new RegExp(`import[^;]*\\b${name}\\b[^;]*from`).test(src);
+        if (!defined) missing.push(`${name} <- ${path.relative(ROOT_DIR, f)}`);
+      }
+    }
+    assert.deepEqual(missing, [], `undefined JSX components: ${missing.join(', ')}`);
   })
 );
 

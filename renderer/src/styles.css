@@ -4793,3 +4793,7 @@ img.avatar.sm { width: 22px; height: 22px; }
   font: inherit;
   text-decoration: underline;
 }
+
+/* model card test row */
+.testline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0 2px; }
+.testline-ok { font-size: 11.5px; color: #4ade80; }

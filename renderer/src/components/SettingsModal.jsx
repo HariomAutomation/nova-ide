@@ -167,6 +167,70 @@ function ModelsTab() {
   const [tests, setTests] = useState({}); // cardId -> {state:'testing'|'ok'|'fail', msg, count}
   const [showList, setShowList] = useState({}); // cardId -> bool (show all fetched versions)
 
+  /** Test / Fetch control shown under each model card. */
+  function TestLine({ id }) {
+    const t = tests[id];
+    const entry = id === 'custom' ? custom : draft.find((m) => m.id === id);
+    const busy = !!t && t.state === 'testing';
+
+    async function run() {
+      if (!entry) return;
+      const baseUrl = String(entry.baseUrl || '').trim();
+      if (!baseUrl) {
+        setTests((st) => ({ ...st, [id]: { state: 'fail', msg: 'Base URL daalo pehle.' } }));
+        return;
+      }
+      setTests((st) => ({ ...st, [id]: { state: 'testing' } }));
+      try {
+        const r = await window.nova.testModel({
+          baseUrl,
+          apiKey: entry.apiKey || '',
+          model: entry.model || '',
+          auth: entry.auth,
+        });
+        if (r && r.chatOk) {
+          setTests((st) => ({ ...st, [id]: { state: 'ok', msg: `works \u00B7 ${r.chatModel || entry.model}` } }));
+        } else {
+          setTests((st) => ({ ...st, [id]: { state: 'fail', msg: (r && r.error) || 'connection failed' } }));
+        }
+      } catch (e) {
+        setTests((st) => ({ ...st, [id]: { state: 'fail', msg: String(e.message || e) } }));
+      }
+    }
+
+    async function fetchList() {
+      if (!entry) return;
+      try {
+        const r = await window.nova.listModels({
+          baseUrl: String(entry.baseUrl || '').trim(),
+          apiKey: entry.apiKey || '',
+        });
+        const list = (r && (r.models || r.data)) || [];
+        const ids = list.map((m) => (typeof m === 'string' ? m : m && (m.id || m.name))).filter(Boolean);
+        setModelOpts((o) => ({ ...o, [id]: ids }));
+        setTests((st) => ({
+          ...st,
+          [id]: ids.length ? { state: 'ok', msg: `${ids.length} models found` } : { state: 'fail', msg: (r && r.error) || 'no models returned' },
+        }));
+      } catch (e) {
+        setTests((st) => ({ ...st, [id]: { state: 'fail', msg: String(e.message || e) } }));
+      }
+    }
+
+    return (
+      <div className="testline">
+        <button className="btn small" disabled={busy} onClick={run}>
+          {busy ? 'Testing\u2026' : 'Test connection'}
+        </button>
+        <button className="btn small" onClick={fetchList} title="Fetch the model ids this endpoint offers">
+          Fetch models
+        </button>
+        {t && t.state === 'ok' && <span className="testline-ok">{t.msg}</span>}
+        {t && t.state === 'fail' && <span className="search-error small">{t.msg}</span>}
+      </div>
+    );
+  }
+
   function update(id, patch) {
     setDraft((d) => d.map((m) => (m.id === id ? { ...m, ...patch } : m)));
   }
