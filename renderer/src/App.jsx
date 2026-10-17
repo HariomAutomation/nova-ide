@@ -14,6 +14,7 @@ import GeminiView from './components/GeminiView';
 import ChatPanel from './components/ChatPanel';
 import TerminalPanel from './components/TerminalPanel';
 import SettingsModal from './components/SettingsModal';
+import ErrorBoundary from './components/ErrorBoundary';
 import StatusBar from './components/StatusBar';
 
 export default function App() {
@@ -98,8 +99,13 @@ export default function App() {
     <div className="app">
       <MenuBar />
       <div className="main-row">
-        {sidebarVisible && <Sidebar />}
+        {sidebarVisible && (
+          <ErrorBoundary title="Sidebar hit an error">
+            <Sidebar />
+          </ErrorBoundary>
+        )}
         <div className="center-col">
+          <ErrorBoundary title="This view hit an error">
           {mainView === 'agent' && <AgentMain />}
           {mainView === 'editor' && <EditorArea />}
           {mainView === 'search' && <SearchPage />}
@@ -111,12 +117,17 @@ export default function App() {
           {/* Always mounted (hidden when inactive) so the sign-in session and
               the agent's driver keep working across views. */}
           <GeminiView active={mainView === 'gemini'} />
+          </ErrorBoundary>
         </div>
         {chatVisible && <ChatPanel />}
       </div>
       {terminalOpen && <TerminalPanel />}
       <StatusBar />
-      {settingsOpen && <SettingsModal />}
+      {settingsOpen && (
+        <ErrorBoundary title="Settings hit an error">
+          <SettingsModal />
+        </ErrorBoundary>
+      )}
     </div>
   );
 }

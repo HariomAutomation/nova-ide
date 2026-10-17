@@ -384,6 +384,12 @@ export default function AgentMain() {
   const voiceBaseRef = useRef('');
 
   const activeModel = models.find((m) => m.id === activeModelId) || null;
+  // Only models that can actually run: one with an API key, the session-based
+  // Gemini Web, or whatever is currently active.
+  const usableModels = models.filter(
+    (m) => m.id === activeModelId || m.auth === 'gemini-web' || String(m.apiKey || '').trim().length > 0
+  );
+  const hiddenModelCount = models.length - usableModels.length;
   const inConversation = agentItems.length > 0 || agentBusy || queued.length > 0;
 
   /** Voice input: Web Speech API, live transcript into the composer. */
@@ -945,16 +951,30 @@ export default function AgentMain() {
                 >
                   Choose Model
                 </span>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{models.length} integrated</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{usableModels.length} ready</span>
               </div>
 
+              {hiddenModelCount > 0 && (
+                <div style={{ padding: '6px 10px 2px', fontSize: 11, color: 'var(--muted)' }}>
+                  {hiddenModelCount} model{hiddenModelCount > 1 ? 's' : ''} hidden (no key) —{' '}
+                  <button
+                    className="linklike"
+                    onClick={() => {
+                      setModelMenuOpen(false);
+                      useStore.getState().setSettingsOpen(true, 'models');
+                    }}
+                  >
+                    manage models
+                  </button>
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {models.length === 0 && (
+                {usableModels.length === 0 && (
                   <div style={{ padding: '8px 10px 12px', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                    No models yet. Add your own endpoint — any OpenAI-compatible provider works.
+                    No working model yet. Add an API key or sign in with Google (Gemini tab) — Settings → Models.
                   </div>
                 )}
-                {models.map((m) => {
+                {usableModels.map((m) => {
                   const isSel = m.id === activeModelId;
                   return (
                     <button

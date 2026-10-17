@@ -4758,3 +4758,38 @@ img.avatar.sm { width: 22px; height: 22px; }
   0%, 100% { box-shadow: 0 0 0 0 rgba(229, 72, 77, 0.55); }
   50% { box-shadow: 0 0 0 6px rgba(229, 72, 77, 0); }
 }
+
+/* error boundary */
+.err-boundary {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 28px;
+  background: var(--bg);
+  color: var(--text);
+}
+.err-boundary-title { font-size: 14px; font-weight: 600; }
+.err-boundary-msg {
+  max-width: 100%;
+  overflow: auto;
+  font-size: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  white-space: pre-wrap;
+}
+
+/* inline text button */
+.linklike {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent, #3d7eff);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
