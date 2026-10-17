@@ -16,6 +16,7 @@ import { isWithin } from '../electron/tools/paths.js';
 import computer from '../electron/tools/computer.js';
 import git from '../electron/tools/git.js';
 import gdrive from '../electron/tools/gdrive.js';
+import gh from '../electron/tools/github.js';
 import {
   isAutomationDue,
   dueAutomations,
@@ -716,6 +717,21 @@ suite.push(
 
     assert.equal(memory.sanitizeAccount('Bob@Example.com'), 'bob@example.com');
     assert.equal(memory.sanitizeAccount(''), 'local');
+  })
+);
+
+/* ---------------------------------- github ---------------------------------- */
+
+suite.push(
+  test('github: exposes the API and validates tokens without hitting the network', async () => {
+    process.env.NOVA_CONFIG_DIR = path.join(TEST_DIR, 'nova-home');
+    for (const fn of ['status', 'save', 'logout', 'listRepos', 'clone', 'whoami']) {
+      assert.equal(typeof gh[fn], 'function', `${fn} missing`);
+    }
+    const st = await gh.status();
+    assert.equal(typeof st.connected, 'boolean');
+    assert.match(st.configPath, /github\.json$/);
+    assert.equal((await gh.save('   ')).error, 'Token required');
   })
 );
 

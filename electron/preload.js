@@ -103,6 +103,13 @@ contextBridge.exposeInMainWorld('nova', {
   gitWorktreeAdd: (payload) => ipcRenderer.invoke('git:worktreeAdd', payload),
   gitWorktreeList: (cwd) => ipcRenderer.invoke('git:worktreeList', { cwd }),
 
+  // github
+  githubStatus: () => ipcRenderer.invoke('github:status'),
+  githubSave: (token) => ipcRenderer.invoke('github:save', { token }),
+  githubLogout: () => ipcRenderer.invoke('github:logout'),
+  githubRepos: (query) => ipcRenderer.invoke('github:repos', { query }),
+  githubClone: (payload) => ipcRenderer.invoke('github:clone', payload),
+
   // memory (long-term notes)
   memoryList: () => ipcRenderer.invoke('memory:list'),
   memoryAdd: (payload) => ipcRenderer.invoke('memory:add', payload),

@@ -114,6 +114,9 @@ export const useStore = create((set, get) => ({
   gitBusy: false,
   runOn: 'local', // 'local' | 'cloud' — where agent turns are meant to run
 
+  /* -------------------------------- github -------------------------------- */
+  github: { connected: false, login: null, repos: [], loading: false, error: null },
+
   /* -------------------------------- memory -------------------------------- */
   memory: { notes: [], path: null, account: 'local', loading: false },
 
@@ -426,6 +429,59 @@ export const useStore = create((set, get) => ({
     get().navPush();
     set({ mainView: 'git' });
     get().loadGit().catch(() => {});
+  },
+
+  /* ------------------------------ github ------------------------------ */
+
+  async loadGithub() {
+    try {
+      const st = (await api().githubStatus()) || {};
+      set({ github: { ...get().github, ...st, error: null } });
+    } catch (e) {
+      set({ github: { ...get().github, error: String(e.message || e) } });
+    }
+  },
+
+  async saveGithubToken(token) {
+    const r = await api().githubSave(token);
+    if (r && r.error) {
+      set({ github: { ...get().github, error: r.error } });
+      get().setStatus(`GitHub: ${r.error}`);
+      return false;
+    }
+    set({ github: { ...get().github, ...r, error: null } });
+    get().setStatus(`GitHub connected${r.login ? `: ${r.login}` : ''}.`);
+    await get().loadGithubRepos('');
+    return true;
+  },
+
+  async githubLogout() {
+    const r = await api().githubLogout();
+    set({ github: { ...get().github, ...r, repos: [], error: null } });
+    get().setStatus('GitHub disconnected.');
+  },
+
+  async loadGithubRepos(query) {
+    set({ github: { ...get().github, loading: true, error: null } });
+    try {
+      const r = (await api().githubRepos(query)) || {};
+      set({ github: { ...get().github, loading: false, repos: r.repos || [], error: r.error || null } });
+    } catch (e) {
+      set({ github: { ...get().github, loading: false, error: String(e.message || e) } });
+    }
+  },
+
+  /** Clone a GitHub repo into ~/nova-repos and open it as the workspace. */
+  async cloneRepo(repo) {
+    if (!repo || !repo.cloneUrl) return;
+    get().setStatus(`Cloning ${repo.fullName}…`);
+    const r = await api().githubClone({ cloneUrl: repo.cloneUrl, name: repo.name });
+    if (r && r.ok) {
+      get().setStatus(`Cloned ${repo.fullName} → ${r.path}`);
+      await get().openFolder(r.path);
+    } else {
+      get().setStatus(`Clone failed: ${(r && r.error) || 'unknown error'}`);
+    }
   },
 
   /* ------------------------------- memory ------------------------------- */

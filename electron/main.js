@@ -13,6 +13,7 @@ const checkpoints = require('./tools/checkpoints');
 const gitTool = require('./tools/git');
 const gdrive = require('./tools/gdrive');
 const memory = require('./tools/memory');
+const ghTool = require('./tools/github');
 const { describeHttpError } = require('./tools/errors');
 const { isWithin } = require('./tools/paths');
 const mcp = require('./mcp');
@@ -711,6 +712,20 @@ ipcMain.handle('git:pull', async (_e, { cwd }) => gitTool.pull(cwd));
 ipcMain.handle('git:log', async (_e, { cwd, limit }) => gitTool.log(cwd, limit));
 ipcMain.handle('git:worktreeAdd', async (_e, { cwd, path: dir, branch }) => gitTool.worktreeAdd(cwd, dir, branch));
 ipcMain.handle('git:worktreeList', async (_e, { cwd }) => gitTool.worktreeList(cwd));
+
+/* ------------------------------ github ------------------------------ */
+
+ipcMain.handle('github:status', async () => ghTool.status());
+ipcMain.handle('github:save', async (_e, { token }) => ghTool.save(token));
+ipcMain.handle('github:logout', async () => ghTool.logout());
+ipcMain.handle('github:repos', async (_e, { query }) => {
+  try {
+    return await ghTool.listRepos(query);
+  } catch (e) {
+    return { error: String((e && e.message) || e), repos: [] };
+  }
+});
+ipcMain.handle('github:clone', async (_e, { cloneUrl, name }) => ghTool.clone(cloneUrl, name));
 
 /* ------------------------------ memory ------------------------------ */
 

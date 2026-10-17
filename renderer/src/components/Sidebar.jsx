@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
 import { iconForLanguage, langFromPath } from '../languages';
 import { timeAgo, basename } from '../timeAgo';
@@ -94,74 +95,134 @@ function FilesView() {
 
 /* --------------------------------- getting started --------------------------------- */
 
-function GettingStarted() {
-  const models = useStore((s) => s.models);
-  const rootFolder = useStore((s) => s.rootFolder);
-  const usedAgent = useStore((s) => s.usedAgent);
+function RepoPicker() {
+  const github = useStore((s) => s.github);
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [token, setToken] = useState('');
+  const ref = useRef(null);
 
-  const steps = [
-    {
-      key: 'model',
-      label: 'Add a model',
-      done: models.length > 0,
-      action: () => useStore.getState().setSettingsOpen(true, 'models'),
-      cta: 'Add a model\u2026',
-      icon: '\u26A1',
-    },
-    {
-      key: 'folder',
-      label: 'Open a project folder',
-      done: !!rootFolder,
-      action: () => useStore.getState().openFolder(),
-      cta: 'Open a folder\u2026',
-      icon: '\u{1F4C1}',
-    },
-    {
-      key: 'agent',
-      label: 'Give the agent a task',
-      done: usedAgent,
-      action: () => useStore.getState().focusComposer(),
-      cta: 'Ask the agent',
-      icon: '\u2728',
-    },
-  ];
-  const doneCount = steps.filter((st) => st.done).length;
-  const next = steps.find((st) => !st.done);
+  useEffect(() => {
+    useStore.getState().loadGithub();
+  }, []);
 
-  const r = 7;
-  const c = 2 * Math.PI * r;
-  const frac = doneCount / steps.length;
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (open && github.connected && github.repos.length === 0 && !github.loading) {
+      useStore.getState().loadGithubRepos('');
+    }
+  }, [open, github.connected]);
+
+  async function connect() {
+    const ok = await useStore.getState().saveGithubToken(token);
+    if (ok) setToken('');
+  }
 
   return (
-    <div className="getting-started">
-      <div className="gs-head">
-        <svg className="gs-ring" width="18" height="18" viewBox="0 0 18 18">
-          <circle cx="9" cy="9" r={r} fill="none" stroke="var(--gs-track)" strokeWidth="2.5" />
-          <circle
-            cx="9"
-            cy="9"
-            r={r}
-            fill="none"
-            stroke="var(--accent, #3d7eff)"
-            strokeWidth="2.5"
-            strokeDasharray={c}
-            strokeDashoffset={c * (1 - frac)}
-            strokeLinecap="round"
-            transform="rotate(-90 9 9)"
-          />
-        </svg>
-        <span className="gs-title">Getting Started</span>
-        <div className="spacer" />
-        <span className="gs-count">
-          {doneCount}/{steps.length}
-          {doneCount === steps.length ? ' \u2713' : ''}
-        </span>
-      </div>
-      {next && (
-        <button className="gs-cta" onClick={next.action} title={next.label}>
-          <span className="gs-cta-ico">{next.icon}</span>
-          {next.cta}
-        </button>
+    <div className="menu-anchor" ref={ref}>
+      <button
+        className="btn-icon tiny"
+        title="Connect GitHub or open a repository"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="folder-plus">+</span>
+      </button>
+      {open && (
+        <div className="dropdown repo-picker">
+          <div className="rp-head">Repositories</div>
+          {!github.connected ? (
+            <div className="rp-connect">
+              <div className="rp-desc muted small">Connect GitHub to browse and clone your repositories.</div>
+              <input
+                className="input"
+                type="password"
+                placeholder="Personal access token (ghp_…)"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+              />
+              <div className="input-row">
+                <button className="btn small primary" disabled={!token.trim()} onClick={connect}>
+                  Connect GitHub
+                </button>
+                <button
+                  className="btn small"
+                  onClick={() => {
+                    setOpen(false);
+                    useStore.getState().openFolder();
+                  }}
+                >
+                  Open local folder…
+                </button>
+              </div>
+              <div className="rp-hint muted small">
+                GitHub → Settings → Developer settings → Personal access tokens → <b>repo</b> scope.
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="rp-search">
+                <input
+                  className="input"
+                  placeholder={`Repos for ${github.login || 'you'}…`}
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') useStore.getState().loadGithubRepos(q);
+                  }}
+                />
+                <button className="btn-icon" title="Refresh" onClick={() => useStore.getState().loadGithubRepos(q)}>
+                  {'\u21BB'}
+                </button>
+              </div>
+              <div className="rp-list">
+                {github.loading && <div className="rp-empty muted small">Loading…</div>}
+                {github.error && <div className="rp-empty search-error small">{github.error}</div>}
+                {!github.loading && !github.error && github.repos.length === 0 && (
+                  <div className="rp-empty muted small">No repositories found.</div>
+                )}
+                {github.repos.map((r) => (
+                  <button
+                    key={r.fullName}
+                    className="rp-row"
+                    title={r.fullName}
+                    onClick={() => {
+                      setOpen(false);
+                      useStore.getState().cloneRepo(r);
+                    }}
+                  >
+                    <span className="rp-ico">{r.private ? '\u{1F512}' : '\u{1F4E6}'}</span>
+                    <span className="rp-text">
+                      <span className="rp-name">{r.fullName}</span>
+                      {r.description && <span className="rp-desc muted">{r.description}</span>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="rp-foot">
+                <button
+                  className="btn small"
+                  onClick={() => {
+                    setOpen(false);
+                    useStore.getState().openFolder();
+                  }}
+                >
+                  Open local folder…
+                </button>
+                <button className="btn small" onClick={() => useStore.getState().githubLogout()}>
+                  Disconnect
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   );
@@ -293,13 +354,7 @@ function ChatHome() {
         >
           {'\u21C5'}
         </button>
-        <button
-          className="btn-icon tiny"
-          title="Open a folder (Ctrl+O)"
-          onClick={() => useStore.getState().openFolder()}
-        >
-          <span className="folder-plus">+</span>
-        </button>
+        <RepoPicker />
       </div>
 
       <div className="sb-repos">
@@ -346,7 +401,6 @@ function ChatHome() {
         ))}
       </div>
 
-      <GettingStarted />
 
       <div className="sb-account">
         <span className="avatar">{(userName[0] || 'N').toUpperCase()}</span>
