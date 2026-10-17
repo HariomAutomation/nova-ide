@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld('nova', {
   mcpStatus: () => ipcRenderer.invoke('mcp:status'),
   mcpReload: () => ipcRenderer.invoke('mcp:reload'),
   addonsStatus: () => ipcRenderer.invoke('addons:status'),
-  addonsToggle: (id, enable) => ipcRenderer.invoke('addons:toggle', { id, enable }),
+  addonsToggle: (id, enable, url) => ipcRenderer.invoke('addons:toggle', { id, enable, url }),
   restoreCheckpoint: (agentId) => ipcRenderer.invoke('checkpoint:restore', { agentId }),
   // settings
   getSettings: () => ipcRenderer.invoke('settings:get'),

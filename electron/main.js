@@ -606,6 +606,19 @@ const ADDONS = {
       exposeTools: 'auto',
     },
   },
+  penpot: {
+    name: 'Penpot \u2014 design \u2194 code',
+    description:
+      'Free & open-source design tool (no paywall). Reads the Penpot page you have focused so the agent can turn designs into code. Remote MCP: paste the URL from Penpot \u2192 Your account \u2192 Integrations \u2192 MCP Server. Local MCP: run `npx @penpot/mcp@latest` and load the plugin, then use the default URL.',
+    site: 'https://penpot.app/penpot-vs-figma',
+    needsUrl: true,
+    defaultUrl: 'http://localhost:4401/mcp',
+    server: {
+      command: 'npx',
+      args: ['-y', 'mcp-remote', 'http://localhost:4401/mcp', '--allow-http'],
+      exposeTools: 'auto',
+    },
+  },
 };
 
 async function readMcpConfig() {
@@ -646,6 +659,9 @@ async function addonsStatus() {
         toolCount: enabled && lv && lv.tools ? lv.tools.length : 0,
         bridge: enabled && lv ? !!lv.bridge : false,
         error: enabled && lv ? lv.error : null,
+        needsUrl: !!a.needsUrl,
+        defaultUrl: a.defaultUrl || null,
+        url: (servers[id] && servers[id].penpotUrl) || null,
       };
     }),
   };
@@ -653,13 +669,26 @@ async function addonsStatus() {
 
 ipcMain.handle('addons:status', async () => addonsStatus());
 
-ipcMain.handle('addons:toggle', async (_e, { id, enable }) => {
+ipcMain.handle('addons:toggle', async (_e, { id, enable, url }) => {
   const addon = ADDONS[id];
   if (!addon) return { error: 'Unknown addon' };
   const cfg = await readMcpConfig();
   if (!cfg.mcpServers || typeof cfg.mcpServers !== 'object') cfg.mcpServers = {};
-  if (enable) cfg.mcpServers[id] = { ...addon.server };
-  else delete cfg.mcpServers[id];
+  if (enable) {
+    const server = JSON.parse(JSON.stringify(addon.server));
+    if (addon.needsUrl) {
+      const u = String(url || addon.defaultUrl || '').trim();
+      if (!u) {
+        return { error: 'Is addon ke liye MCP server URL chahiye (Penpot -> Your account -> Integrations -> MCP Server se copy karo).' };
+      }
+      // Nova's MCP client speaks stdio; mcp-remote proxies stdio -> HTTP/SSE.
+      server.args = ['-y', 'mcp-remote', u, '--allow-http'];
+      server.penpotUrl = u;
+    }
+    cfg.mcpServers[id] = server;
+  } else {
+    delete cfg.mcpServers[id];
+  }
   await writeMcpConfig(cfg);
   try {
     await mcp.reload();

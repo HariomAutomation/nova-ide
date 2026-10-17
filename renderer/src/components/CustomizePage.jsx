@@ -28,6 +28,7 @@ export default function CustomizePage() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('All');
   const [showNew, setShowNew] = useState(false);
+  const [addonUrls, setAddonUrls] = useState({});
   const [newName, setNewName] = useState('');
 
   useEffect(() => {
@@ -124,6 +125,15 @@ export default function CustomizePage() {
                     </span>
                   </div>
                   <div className="cz-row-desc muted">{a.error || a.description}</div>
+                  {a.needsUrl && (
+                    <input
+                      className="input cz-row-url"
+                      placeholder={a.defaultUrl || "MCP server URL"}
+                      value={addonUrls[a.id] !== undefined ? addonUrls[a.id] : a.url || a.defaultUrl || ""}
+                      onChange={(e) => setAddonUrls((m) => ({ ...m, [a.id]: e.target.value }))}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
                 </div>
                 <a
                   className="cz-row-time muted small"
@@ -143,7 +153,7 @@ export default function CustomizePage() {
                   title={a.enabled ? 'Disable addon' : 'Enable addon'}
                   onClick={(e) => {
                     e.stopPropagation();
-                    useStore.getState().toggleAddon(a.id, !a.enabled);
+                    useStore.getState().toggleAddon(a.id, !a.enabled, addonUrls[a.id]);
                   }}
                 >
                   <span className="knob" />

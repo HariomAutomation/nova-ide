@@ -339,9 +339,9 @@ export const useStore = create((set, get) => ({
     }
   },
 
-  async toggleAddon(id, enable) {
+  async toggleAddon(id, enable, url) {
     try {
-      const r = await api().addonsToggle(id, enable);
+      const r = await api().addonsToggle(id, enable, url);
       if (r && r.error) {
         get().setStatus(r.error);
         return;

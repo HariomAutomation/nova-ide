@@ -46,8 +46,10 @@ The agent is an autonomous loop with real tools:
 
 ### Free upgrades Cursor charges for (v0.3)
 - **MCP client + one-click Addons** — Customize → *Featured Addons*: **REA** (Reverse Engineer
-  Anything — Ghidra/Frida/decompile/memory, 207 tools) and **LeanToken** (token-bounded repo
-  exploration, 9 tools). Any other stdio MCP server: `~/.nova-ide/mcp.json`. **Bridge mode**:
+  Anything — Ghidra/Frida/decompile/memory, 207 tools), **LeanToken** (token-bounded repo
+  exploration, 9 tools) and **Penpot** (free/open-source design tool — read the focused Penpot page
+  and turn designs into code; paste the MCP URL from Penpot → Integrations → MCP Server, or use the
+  local server). Any other stdio MCP server: `~/.nova-ide/mcp.json`. **Bridge mode**:
   servers with 40+ tools don't bloat every request — the agent discovers them with
   `mcp_list_tools` and calls them by exact name, so context (and cost) stays small.
 - **Web search & fetch** — `web_search` (DuckDuckGo, no API key) and `web_fetch` built in.

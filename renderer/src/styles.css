@@ -4629,3 +4629,10 @@ input:focus, select:focus, textarea:focus {
 }
 .cloud-row:hover { background: var(--bg-hover); }
 .cloud-ico { width: 18px; text-align: center; flex-shrink: 0; }
+
+/* addon URL field (e.g. Penpot MCP server) */
+.cz-row-url {
+  margin-top: 6px;
+  max-width: 460px;
+  font-size: 12px;
+}
