@@ -381,8 +381,11 @@ export default function AgentMain() {
   const modelMenuRef = useRef(null);
   const plusRef = useRef(null);
   const [listening, setListening] = useState(false);
+  const [recording, setRecording] = useState(false);
   const recRef = useRef(null);
   const voiceBaseRef = useRef('');
+  const mediaRef = useRef(null);
+  const chunksRef = useRef([]);
 
   const activeModel = models.find((m) => m.id === activeModelId) || null;
   // Only models that can actually run: one with an API key, the session-based
@@ -392,13 +395,77 @@ export default function AgentMain() {
   const inConversation = agentItems.length > 0 || agentBusy || queued.length > 0;
 
   /** Voice input: Web Speech API, live transcript into the composer. */
+  function b64FromBuffer(buf) {
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    const CH = 0x8000;
+    for (let i = 0; i < bytes.length; i += CH) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+    }
+    return btoa(bin);
+  }
+
+  /** Record a clip (MediaRecorder) and transcribe it via the configured provider. */
+  async function toggleRecording() {
+    const store = useStore.getState();
+    if (recording) {
+      try {
+        mediaRef.current && mediaRef.current.stop();
+      } catch {}
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data && e.data.size) chunksRef.current.push(e.data);
+      };
+      mr.onstop = async () => {
+        setRecording(false);
+        try {
+          stream.getTracks().forEach((t) => t.stop());
+        } catch {}
+        const blob = new Blob(chunksRef.current, { type: mr.mimeType || 'audio/webm' });
+        if (!blob.size) {
+          store.setStatus('Voice: kuch record nahi hua.');
+          return;
+        }
+        store.setStatus('Transcribe kar raha hoon…');
+        try {
+          const buf = await blob.arrayBuffer();
+          const r = await window.nova.voiceTranscribe({
+            base64: b64FromBuffer(buf),
+            mimeType: blob.type || 'audio/webm',
+            settings: useStore.getState().voiceSettings,
+          });
+          if (r && r.text) {
+            const t = String(r.text).trim();
+            setInput((prev) => (prev ? prev.replace(/\s+$/, '') + ' ' : '') + t);
+            store.setStatus('Voice → text ✓');
+          } else {
+            store.setStatus(`Voice: ${(r && r.error) || 'transcription failed'}`);
+          }
+        } catch (e) {
+          store.setStatus(`Voice: ${e.message}`);
+        }
+      };
+      mediaRef.current = mr;
+      mr.start();
+      setRecording(true);
+      store.setStatus('Recording… bolna band karke mic dobara dabao.');
+    } catch (e) {
+      store.setStatus(`Mic access nahi mila: ${e.message}`);
+    }
+  }
+
   function toggleVoice() {
     const store = useStore.getState();
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-      store.setStatus(
-        'Voice input is build me available nahi hai — Electron me Google ka speech key bundled nahi hota. Type karke use karo.'
-      );
+      // Electron ships no Google speech key, so the built-in recogniser is
+      // usually missing. Record the clip and transcribe it instead.
+      toggleRecording();
       return;
     }
     if (listening && recRef.current) {
@@ -1049,8 +1116,8 @@ export default function AgentMain() {
           </button>
         ) : (
           <button
-            className={'run-btn' + (listening ? ' listening' : '')}
-            title={listening ? 'Stop listening' : 'Voice input'}
+            className={'run-btn' + (listening || recording ? ' listening' : '')}
+            title={listening ? 'Stop listening' : recording ? 'Stop recording & transcribe' : 'Voice input'}
             onClick={toggleVoice}
           >
             <MicIcon />

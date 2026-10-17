@@ -542,6 +542,7 @@ function ModelsTab() {
 
 function AgentsTab() {
   const agentSettings = useStore((s) => s.agentSettings);
+  const vs = useStore((s) => s.voiceSettings);
   const models = useStore((s) => s.models);
   const activeModelId = useStore((s) => s.activeModelId);
 
@@ -626,6 +627,75 @@ function AgentsTab() {
                 patch({ approveModeTransitions: v });
                 useStore.getState().setStatus('Plan/Debug modes are coming soon in Nova');
               }}
+            />
+          }
+        />
+      </Group>
+
+      <Group title="Voice input">
+        <Row
+          label="How it works"
+          desc="Mic pehle Chromium ka built-in recognition try karta hai. Agar wo network error de (Electron me Google speech key nahi hoti), Nova clip record karke neeche wale provider se transcribe karta hai."
+          control={<span className="cz-dot" />}
+        />
+        <Row
+          label="Provider"
+          desc="Auto = Whisper endpoint (agar base URL diya ho), warna Gemini."
+          control={
+            <select
+              className="select"
+              value={vs.provider || 'auto'}
+              onChange={(e) => {
+                useStore.getState().patchVoiceSettings({ provider: e.target.value });
+                useStore.getState().saveSettings();
+              }}
+            >
+              <option value="auto">Auto</option>
+              <option value="gemini">Gemini (AI Studio key)</option>
+              <option value="openai">Whisper endpoint (OpenAI / Groq / …)</option>
+            </select>
+          }
+        />
+        <Row
+          label="Base URL"
+          desc="Whisper provider ke liye, e.g. https://api.groq.com/openai/v1"
+          control={
+            <input
+              className="input"
+              style={{ width: 320 }}
+              value={vs.baseUrl || ''}
+              onChange={(e) => useStore.getState().patchVoiceSettings({ baseUrl: e.target.value })}
+              onBlur={() => useStore.getState().saveSettings()}
+              placeholder="https://api.groq.com/openai/v1"
+            />
+          }
+        />
+        <Row
+          label="API key"
+          desc="Gemini (AI Studio) ya aapke Whisper provider ki key. Locally store hoti hai."
+          control={
+            <input
+              className="input"
+              style={{ width: 300 }}
+              type="password"
+              value={vs.apiKey || ''}
+              onChange={(e) => useStore.getState().patchVoiceSettings({ apiKey: e.target.value })}
+              onBlur={() => useStore.getState().saveSettings()}
+              placeholder="…"
+            />
+          }
+        />
+        <Row
+          label="Model"
+          desc="e.g. gemini-3.7-flash · whisper-large-v3 · whisper-1"
+          control={
+            <input
+              className="input"
+              style={{ width: 240 }}
+              value={vs.model || ''}
+              onChange={(e) => useStore.getState().patchVoiceSettings({ model: e.target.value })}
+              onBlur={() => useStore.getState().saveSettings()}
+              placeholder="whisper-large-v3"
             />
           }
         />

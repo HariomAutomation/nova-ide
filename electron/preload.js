@@ -103,6 +103,9 @@ contextBridge.exposeInMainWorld('nova', {
   gitWorktreeAdd: (payload) => ipcRenderer.invoke('git:worktreeAdd', payload),
   gitWorktreeList: (cwd) => ipcRenderer.invoke('git:worktreeList', { cwd }),
 
+  // voice input (fallback transcription when the built-in recogniser fails)
+  voiceTranscribe: (payload) => ipcRenderer.invoke('voice:transcribe', payload),
+
   // cloud code (experimental — Gemini via the Google Antigravity backend)
   cloudcodeStatus: () => ipcRenderer.invoke('cloudcode:status'),
   cloudcodeLogin: () => ipcRenderer.invoke('cloudcode:login'),

@@ -15,6 +15,7 @@ const gdrive = require('./tools/gdrive');
 const memory = require('./tools/memory');
 const ghTool = require('./tools/github');
 const cloudcode = require('./tools/cloudcode');
+const voice = require('./tools/voice');
 const { describeHttpError } = require('./tools/errors');
 const { isWithin } = require('./tools/paths');
 const mcp = require('./mcp');
@@ -743,6 +744,16 @@ ipcMain.handle('git:pull', async (_e, { cwd }) => gitTool.pull(cwd));
 ipcMain.handle('git:log', async (_e, { cwd, limit }) => gitTool.log(cwd, limit));
 ipcMain.handle('git:worktreeAdd', async (_e, { cwd, path: dir, branch }) => gitTool.worktreeAdd(cwd, dir, branch));
 ipcMain.handle('git:worktreeList', async (_e, { cwd }) => gitTool.worktreeList(cwd));
+
+/* ------------------------------ voice input ------------------------------ */
+
+ipcMain.handle('voice:transcribe', async (_e, payload) => {
+  try {
+    return await voice.transcribe(payload || {});
+  } catch (e) {
+    return { error: String((e && e.message) || e) };
+  }
+});
 
 /* ------------------------------ cloud code (experimental) ------------------------------ */
 

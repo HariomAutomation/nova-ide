@@ -18,6 +18,8 @@ import git from '../electron/tools/git.js';
 import gdrive from '../electron/tools/gdrive.js';
 import gh from '../electron/tools/github.js';
 import cloudcode from '../electron/tools/cloudcode.js';
+import voice from '../electron/tools/voice.js';
+import { usableModels, isModelUsable } from '../renderer/src/model-filter.js';
 import {
   isAutomationDue,
   dueAutomations,
@@ -774,6 +776,51 @@ suite.push(
     assert.equal(decls[0].functionDeclarations[0].parameters.additionalProperties, undefined);
     assert.equal(cloudcode.toFunctionDeclarations([]), undefined);
     assert.equal(typeof cloudcode.generate, 'function');
+  })
+);
+
+/* ----------------------------------- voice ----------------------------------- */
+
+suite.push(
+  test('voice: guards empty audio and missing configuration (no network)', async () => {
+    assert.equal(typeof voice.transcribe, 'function');
+    const b64 = Buffer.from('x').toString('base64');
+
+    const empty = await voice.transcribe({ base64: '' });
+    assert.match(empty.error, /koi audio nahi mila/);
+
+    const noCfg = await voice.transcribe({ base64: b64, settings: {} });
+    assert.match(noCfg.error, /Settings .* Voice/);
+
+    const geminiNoKey = await voice.transcribe({ base64: b64, settings: { provider: 'gemini' } });
+    assert.match(geminiNoKey.error, /API key/);
+
+    const badBase = await voice.transcribe({ base64: b64, settings: { provider: 'openai', baseUrl: 'nope' } });
+    assert.match(badBase.error, /base URL/);
+  })
+);
+
+/* ------------------------------- model picker ------------------------------- */
+
+suite.push(
+  test('model picker: session providers stay usable without an API key', () => {
+    const models = [
+      { id: 'a', label: 'A' }, // no key -> hidden
+      { id: 'b', label: 'B', apiKey: 'sk-1' }, // key -> shown
+      { id: 'c', label: 'C', auth: 'gemini-web' }, // session -> shown
+      { id: 'd', label: 'D', auth: 'cloudcode' }, // session -> shown
+    ];
+    assert.deepEqual(
+      usableModels(models, null).map((m) => m.id),
+      ['b', 'c', 'd']
+    );
+    // the active model is always kept, even without a key
+    assert.deepEqual(
+      usableModels(models, 'a').map((m) => m.id),
+      ['a', 'b', 'c', 'd']
+    );
+    assert.equal(isModelUsable({ id: 'x', apiKey: '   ' }, null), false);
+    assert.equal(isModelUsable({ id: 'y', auth: 'cloudcode' }, null), true);
   })
 );
 

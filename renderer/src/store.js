@@ -131,6 +131,7 @@ export const useStore = create((set, get) => ({
   /* --------------------------------- settings --------------------------------- */
   agentSettings: { ...DEFAULT_AGENT_SETTINGS },
   browserSettings: { headless: true },
+  voiceSettings: { provider: 'auto', baseUrl: '', apiKey: '', model: '' },
 
   /* --------------------------- customization / mcp --------------------------- */
   workspaceFiles: [],
@@ -153,6 +154,7 @@ export const useStore = create((set, get) => ({
   setTerminalOpen: (v) => set({ terminalOpen: v }),
   patchAgentSettings: (patch) => set({ agentSettings: { ...get().agentSettings, ...patch } }),
   patchBrowserSettings: (patch) => set({ browserSettings: { ...get().browserSettings, ...patch } }),
+  patchVoiceSettings: (patch) => set({ voiceSettings: { ...get().voiceSettings, ...patch } }),
 
   applyRunMode(mode) {
     const presets = {
@@ -978,6 +980,7 @@ export const useStore = create((set, get) => ({
       activeModelId,
       agentSettings: { ...DEFAULT_AGENT_SETTINGS, ...(s.agentSettings || {}) },
       browserSettings: { headless: true, ...(s.browserSettings || {}) },
+      voiceSettings: { provider: 'auto', baseUrl: '', apiKey: '', model: '', ...(s.voiceSettings || {}) },
       theme: ['light', 'dark', 'anime'].includes(s.theme) ? s.theme : 'anime',
       runOn: s.runOn === 'cloud' ? 'cloud' : 'local',
       chats: Array.isArray(s.chats) ? s.chats.slice(0, MAX_CHATS) : [],
@@ -1001,7 +1004,7 @@ export const useStore = create((set, get) => ({
   },
 
   async saveSettings() {
-    const { models, activeModelId, rootFolder, agentSettings, browserSettings, theme, chats, automations, usedAgent, keyVault, runOn } =
+    const { models, activeModelId, rootFolder, agentSettings, browserSettings, voiceSettings, theme, chats, automations, usedAgent, keyVault, runOn } =
       get();
     try {
       await api().setSettings({
@@ -1010,6 +1013,7 @@ export const useStore = create((set, get) => ({
         lastFolder: rootFolder,
         agentSettings,
         browserSettings,
+        voiceSettings,
         theme,
         usedAgent,
         keyVault,
