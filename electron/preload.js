@@ -108,6 +108,9 @@ contextBridge.exposeInMainWorld('nova', {
   githubSave: (token) => ipcRenderer.invoke('github:save', { token }),
   githubLogout: () => ipcRenderer.invoke('github:logout'),
   githubRepos: (query) => ipcRenderer.invoke('github:repos', { query }),
+  githubSaveClientId: (clientId) => ipcRenderer.invoke('github:saveClientId', { clientId }),
+  githubDeviceStart: () => ipcRenderer.invoke('github:deviceStart'),
+  githubDevicePoll: (deviceCode) => ipcRenderer.invoke('github:devicePoll', { deviceCode }),
   githubClone: (payload) => ipcRenderer.invoke('github:clone', payload),
 
   // memory (long-term notes)

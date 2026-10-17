@@ -455,6 +455,36 @@ export const useStore = create((set, get) => ({
     return true;
   },
 
+  /** Start GitHub device-flow sign-in; returns the code to show the user. */
+  async githubSignIn() {
+    const r = await api().githubDeviceStart();
+    if (!r || r.error) {
+      get().setStatus(`GitHub: ${(r && r.error) || 'unknown error'}`);
+      return null;
+    }
+    get().setStatus(`GitHub sign-in: browser me code ${r.userCode} daalo…`);
+    return r;
+  },
+
+  /** Wait for the user to approve in the browser, then store the token. */
+  async githubPollSignIn(deviceCode) {
+    const r = await api().githubDevicePoll(deviceCode);
+    if (r && r.ok) {
+      set({ github: { ...get().github, ...r.status, error: null } });
+      get().setStatus(`GitHub connected${r.status.login ? `: ${r.status.login}` : ''}.`);
+      await get().loadGithubRepos('');
+      return true;
+    }
+    get().setStatus(`GitHub sign-in failed: ${(r && r.error) || 'unknown'}`);
+    return false;
+  },
+
+  async saveGithubClientId(clientId) {
+    const st = await api().githubSaveClientId(clientId);
+    set({ github: { ...get().github, ...st } });
+    return st;
+  },
+
   async githubLogout() {
     const r = await api().githubLogout();
     set({ github: { ...get().github, ...r, repos: [], error: null } });

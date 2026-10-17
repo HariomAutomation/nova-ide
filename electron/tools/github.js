@@ -13,6 +13,10 @@ const os = require('node:os');
 const fsp = require('node:fs/promises');
 const { execFile } = require('node:child_process');
 
+// A build can ship a GitHub OAuth App client ID (public for the device flow) so
+// "Sign in with GitHub" is one click. Otherwise the user pastes their own once.
+const DEFAULT_CLIENT_ID = process.env.NOVA_GITHUB_CLIENT_ID || '';
+
 function configDir() {
   return process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
 }
@@ -52,7 +56,94 @@ async function api(pathname) {
 
 async function status() {
   const c = await readCfg();
-  return { connected: !!c.token, login: c.login || null, configPath: configPath() };
+  return {
+    connected: !!c.token,
+    login: c.login || null,
+    configPath: configPath(),
+    clientId: c.clientId || null,
+    hasClientId: !!(c.clientId || DEFAULT_CLIENT_ID),
+    builtinClient: !c.clientId && !!DEFAULT_CLIENT_ID,
+  };
+}
+
+async function saveClientId(clientId) {
+  const id = String(clientId || '').trim();
+  const c = await readCfg();
+  if (id) c.clientId = id;
+  else delete c.clientId;
+  await writeCfg(c);
+  return status();
+}
+
+async function clientId() {
+  const c = await readCfg();
+  return c.clientId || DEFAULT_CLIENT_ID;
+}
+
+/**
+ * GitHub device flow (no client secret needed): start returns a user code and
+ * a verification URL; the user approves in the browser and poll() picks up the
+ * token automatically.
+ */
+async function deviceStart() {
+  const id = await clientId();
+  if (!id) {
+    return { error: 'Ek baar GitHub OAuth App ka client ID daalo (Advanced me), phir sign-in one-click ho jayega.' };
+  }
+  const res = await fetch('https://github.com/login/device/code', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: id, scope: 'repo read:user' }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || !j.device_code) {
+    return { error: j.error_description || `GitHub HTTP ${res.status}` };
+  }
+  return {
+    userCode: j.user_code,
+    verificationUri: j.verification_uri || 'https://github.com/login/device',
+    deviceCode: j.device_code,
+    interval: j.interval || 5,
+  };
+}
+
+async function devicePoll(deviceCode) {
+  const id = await clientId();
+  if (!id || !deviceCode) return { error: 'Sign-in session missing.' };
+  const deadline = Date.now() + 15 * 60 * 1000;
+  let interval = 5;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, interval * 1000));
+    const res = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: id,
+        device_code: deviceCode,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (j.access_token) {
+      const c = await readCfg();
+      c.token = j.access_token;
+      delete c.login;
+      await writeCfg(c);
+      try {
+        const me = await whoami();
+        c.login = me.login;
+        await writeCfg(c);
+      } catch {}
+      return { ok: true, status: await status() };
+    }
+    if (j.error === 'authorization_pending') continue;
+    if (j.error === 'slow_down') {
+      interval += 5;
+      continue;
+    }
+    if (j.error) return { error: j.error_description || j.error };
+  }
+  return { error: 'Timed out waiting for GitHub authorization.' };
 }
 
 async function whoami() {
@@ -124,4 +215,4 @@ async function clone(cloneUrl, name) {
   });
 }
 
-module.exports = { status, save, logout, whoami, listRepos, clone, configPath };
+module.exports = { status, save, saveClientId, deviceStart, devicePoll, logout, whoami, listRepos, clone, configPath };

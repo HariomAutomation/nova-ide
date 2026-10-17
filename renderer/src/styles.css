@@ -4729,3 +4729,17 @@ input:focus, select:focus, textarea:focus {
 
 /* repo picker opens upward when the composer is docked at the bottom */
 .repo-picker.up { top: auto; bottom: calc(100% + 6px); }
+
+/* github device-flow code */
+.rp-code {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-align: center;
+  padding: 10px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-input, var(--panel));
+  animation: novaFadeUp 0.2s ease both;
+}

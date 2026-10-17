@@ -732,6 +732,17 @@ ipcMain.handle('git:worktreeList', async (_e, { cwd }) => gitTool.worktreeList(c
 ipcMain.handle('github:status', async () => ghTool.status());
 ipcMain.handle('github:save', async (_e, { token }) => ghTool.save(token));
 ipcMain.handle('github:logout', async () => ghTool.logout());
+ipcMain.handle('github:saveClientId', async (_e, { clientId }) => ghTool.saveClientId(clientId));
+ipcMain.handle('github:deviceStart', async () => {
+  const r = await ghTool.deviceStart();
+  if (r && r.verificationUri) {
+    try {
+      shell.openExternal(r.verificationUri);
+    } catch {}
+  }
+  return r;
+});
+ipcMain.handle('github:devicePoll', async (_e, { deviceCode }) => ghTool.devicePoll(deviceCode));
 ipcMain.handle('github:repos', async (_e, { query }) => {
   try {
     return await ghTool.listRepos(query);
