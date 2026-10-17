@@ -379,9 +379,75 @@ export default function AgentMain() {
   const menuRef = useRef(null);
   const modelMenuRef = useRef(null);
   const plusRef = useRef(null);
+  const [listening, setListening] = useState(false);
+  const recRef = useRef(null);
+  const voiceBaseRef = useRef('');
 
   const activeModel = models.find((m) => m.id === activeModelId) || null;
   const inConversation = agentItems.length > 0 || agentBusy || queued.length > 0;
+
+  /** Voice input: Web Speech API, live transcript into the composer. */
+  function toggleVoice() {
+    const store = useStore.getState();
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      store.setStatus(
+        'Voice input is build me available nahi hai — Electron me Google ka speech key bundled nahi hota. Type karke use karo.'
+      );
+      return;
+    }
+    if (listening && recRef.current) {
+      try {
+        recRef.current.stop();
+      } catch {}
+      setListening(false);
+      return;
+    }
+    let rec;
+    try {
+      rec = new SR();
+    } catch (e) {
+      store.setStatus(`Voice input start nahi hua: ${e.message}`);
+      return;
+    }
+    rec.lang = navigator.language || 'en-IN';
+    rec.continuous = false;
+    rec.interimResults = true;
+    voiceBaseRef.current = input ? input.replace(/\s+$/, '') + ' ' : '';
+    let finalText = '';
+    rec.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i += 1) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalText += t;
+        else interim += t;
+      }
+      setInput((voiceBaseRef.current + finalText + interim).replace(/\s+/g, ' '));
+    };
+    rec.onerror = (e) => {
+      setListening(false);
+      const code = (e && e.error) || 'error';
+      store.setStatus(
+        code === 'not-allowed' || code === 'service-not-allowed'
+          ? 'Mic permission deny ho gaya — system settings me Nova ko microphone allow karo.'
+          : code === 'network'
+            ? 'Speech service reach nahi hua (Electron build me Google speech key nahi hoti).'
+            : code === 'no-speech'
+              ? 'Kuch suna nahi — dobara try karo.'
+              : `Voice input error: ${code}`
+      );
+    };
+    rec.onend = () => setListening(false);
+    try {
+      rec.start();
+      recRef.current = rec;
+      setListening(true);
+      store.setStatus('Sun raha hoon… bolna shuru karo.');
+    } catch (e) {
+      setListening(false);
+      store.setStatus(`Voice input start nahi hua: ${e.message}`);
+    }
+  }
 
   useEffect(() => {
     if (!modelMenuOpen) return;
@@ -964,9 +1030,9 @@ export default function AgentMain() {
           </button>
         ) : (
           <button
-            className="run-btn"
-            title="Voice input (coming soon)"
-            onClick={() => useStore.getState().setStatus('Voice input is coming soon in Nova')}
+            className={'run-btn' + (listening ? ' listening' : '')}
+            title={listening ? 'Stop listening' : 'Voice input'}
+            onClick={toggleVoice}
           >
             <MicIcon />
           </button>

@@ -140,6 +140,14 @@ function startWebhookServer() {
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
 
+  // Voice input needs the microphone; grant media explicitly so it is never
+  // denied by the default permission handler.
+  try {
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(permission === 'media' || permission === 'clipboard-read' || permission === 'clipboard-sanitized-write' || permission === 'fullscreen' || permission === 'notifications' || permission === 'mediaKeySystem');
+    });
+  } catch {}
+
   startWebhookServer();
 
   try {
