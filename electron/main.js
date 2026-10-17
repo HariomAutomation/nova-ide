@@ -621,6 +621,19 @@ const ADDONS = {
       exposeTools: 'auto',
     },
   },
+  eraser: {
+    name: 'Eraser \u2014 diagrams as code',
+    description:
+      'Diagram-as-code: create and edit architecture, flow and sequence diagrams from the agent. Uses Eraser\u2019s remote MCP server; mcp-remote handles the OAuth sign-in on first use.',
+    site: 'https://app.eraser.io/all',
+    needsUrl: true,
+    defaultUrl: 'https://app.eraser.io/api/mcp',
+    server: {
+      command: 'npx',
+      args: ['-y', 'mcp-remote', 'https://app.eraser.io/api/mcp'],
+      exposeTools: 'auto',
+    },
+  },
 };
 
 async function readMcpConfig() {
@@ -663,7 +676,7 @@ async function addonsStatus() {
         error: enabled && lv ? lv.error : null,
         needsUrl: !!a.needsUrl,
         defaultUrl: a.defaultUrl || null,
-        url: (servers[id] && servers[id].penpotUrl) || null,
+        url: (servers[id] && (servers[id].mcpUrl || servers[id].penpotUrl)) || null,
       };
     }),
   };
@@ -681,11 +694,12 @@ ipcMain.handle('addons:toggle', async (_e, { id, enable, url }) => {
     if (addon.needsUrl) {
       const u = String(url || addon.defaultUrl || '').trim();
       if (!u) {
-        return { error: 'Is addon ke liye MCP server URL chahiye (Penpot -> Your account -> Integrations -> MCP Server se copy karo).' };
+        return { error: 'Is addon ke liye MCP server URL chahiye.' };
       }
       // Nova's MCP client speaks stdio; mcp-remote proxies stdio -> HTTP/SSE.
-      server.args = ['-y', 'mcp-remote', u, '--allow-http'];
-      server.penpotUrl = u;
+      // --allow-http is only needed for plain http:// endpoints.
+      server.args = ['-y', 'mcp-remote', u, ...(u.startsWith('http://') ? ['--allow-http'] : [])];
+      server.mcpUrl = u;
     }
     cfg.mcpServers[id] = server;
   } else {
