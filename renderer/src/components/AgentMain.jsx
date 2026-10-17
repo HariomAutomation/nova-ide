@@ -396,6 +396,9 @@ export default function AgentMain() {
   const modelFamilies = groupModels(usableModels);
   const openFam = modelFamilies.find((f) => f.key === openFamily) || null;
   const hiddenModelCount = models.length - usableModels.length;
+  const hiddenModelNames = models
+    .filter((m) => !usableModels.some((u) => u.id === m.id))
+    .map((m) => m.label || m.model || 'model');
   const inConversation = agentItems.length > 0 || agentBusy || queued.length > 0;
 
   /** Voice input: Web Speech API, live transcript into the composer. */
@@ -1033,8 +1036,12 @@ export default function AgentMain() {
               </div>
 
               {hiddenModelCount > 0 && (
-                <div style={{ padding: '6px 10px 2px', fontSize: 11, color: 'var(--muted)' }}>
-                  {hiddenModelCount} model{hiddenModelCount > 1 ? 's' : ''} hidden (no key) —{' '}
+                <div
+                  style={{ padding: '6px 10px 2px', fontSize: 11, color: 'var(--muted)' }}
+                  title={hiddenModelNames.join(', ')}
+                >
+                  {hiddenModelCount} hidden (no key): {hiddenModelNames.slice(0, 2).join(', ')}
+                  {hiddenModelCount > 2 ? ` +${hiddenModelCount - 2}` : ''} —{' '}
                   <button
                     className="linklike"
                     onClick={() => {
@@ -1053,56 +1060,42 @@ export default function AgentMain() {
                   </div>
                 )}
 
-                {!openFam &&
-                  modelFamilies.map((f) => {
-                    const cur = f.models.find((m) => m.id === activeModelId);
-                    const single = f.models.length === 1;
-                    return (
-                      <button
-                        key={f.key}
-                        className="dropdown-item"
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', background: cur ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent' }}
-                        onClick={() => (single ? pickModel(f.models[0]) : setOpenFamily(f.key))}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                          <span style={{ color: cur ? 'var(--accent, #3d7eff)' : 'transparent', width: 14 }}>✓</span>
-                          <span style={{ fontWeight: cur ? 600 : 400 }}>{f.label}</span>
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: 'var(--muted)',
-                            flexShrink: 0,
-                            maxWidth: 190,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {single ? f.models[0].label : cur ? cur.label : `${f.models.length} models`}
-                        </span>
-                      </button>
-                    );
-                  })}
-
-                {openFam && (
-                  <>
-                    <button className="dropdown-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px' }} onClick={() => setOpenFamily(null)}>
-                      <span style={{ color: 'var(--muted)' }}>{'\u2190'}</span>
-                      <span>{openFam.label}</span>
-                    </button>
-                    {openFam.models.map((m) => {
+                {modelFamilies.map((f) => (
+                  <div key={f.key}>
+                    <div className="mm-head">
+                      <span>{f.label}</span>
+                      {f.models.length > 1 && <span className="muted small">{f.models.length} models</span>}
+                    </div>
+                    {f.models.map((m) => {
                       const isSel = m.id === activeModelId;
                       return (
                         <button
                           key={m.id}
                           className="dropdown-item"
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', paddingLeft: 22, background: isSel ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent' }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 8,
+                            padding: '6px 10px 6px 20px',
+                            background: isSel ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent',
+                          }}
                           onClick={() => pickModel(m)}
                         >
                           <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                            <span style={{ color: isSel ? 'var(--accent, #3d7eff)' : 'transparent', width: 14 }}>✓</span>
-                            <span style={{ fontWeight: isSel ? 600 : 400 }}>{m.label}</span>
+                            <span style={{ color: isSel ? 'var(--accent, #3d7eff)' : 'transparent', width: 14 }}>
+                              {'\u2713'}
+                            </span>
+                            <span
+                              style={{
+                                fontWeight: isSel ? 600 : 400,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {m.label}
+                            </span>
                           </span>
                           {m.tag && (
                             <span
@@ -1123,8 +1116,8 @@ export default function AgentMain() {
                         </button>
                       );
                     })}
-                  </>
-                )}
+                  </div>
+                ))}
               </div>
 
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 4, marginTop: 4 }}>
