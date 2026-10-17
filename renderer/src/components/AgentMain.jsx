@@ -222,15 +222,19 @@ export default function AgentMain() {
   const workspaceFiles = useStore((s) => s.workspaceFiles);
   const queued = useStore((s) => s.queued);
   const agentTodos = useStore((s) => s.agentTodos);
+  const skills = useStore((s) => s.skills);
 
   const [input, setInput] = useState('');
   const [popup, setPopup] = useState(null); // { type: 'file'|'cmd', start, query, index }
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [plusQuery, setPlusQuery] = useState('');
   const taRef = useRef(null);
   const listRef = useRef(null);
   const menuRef = useRef(null);
   const modelMenuRef = useRef(null);
+  const plusRef = useRef(null);
 
   const activeModel = models.find((m) => m.id === activeModelId) || null;
   const inConversation = agentItems.length > 0 || agentBusy || queued.length > 0;
@@ -286,6 +290,37 @@ export default function AgentMain() {
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [menuOpen]);
+
+  // Close the "+" menu on outside click.
+  useEffect(() => {
+    if (!plusOpen) return;
+    const onDown = (e) => {
+      if (plusRef.current && !plusRef.current.contains(e.target)) setPlusOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [plusOpen]);
+
+  // Rows for the Cursor-style "+" menu: actions, then the user's skills, all
+  // filtered by the little search box.
+  const plusRows = useMemo(() => {
+    const q = plusQuery.trim().toLowerCase();
+    const actions = [
+      { id: 'plan', icon: '\u{1F9ED}', title: 'Plan', desc: 'Generate an implementation plan', run: () => { prefill('Plan this before coding: '); setPlusOpen(false); } },
+      { id: 'debug', icon: '\u{1F41E}', title: 'Debug', desc: 'Pinpoint the root cause of an issue', run: () => { prefill('Debug this issue: '); setPlusOpen(false); } },
+      { id: 'ask', icon: '\u{1F4AC}', title: 'Ask', desc: 'Answer questions without making edits', run: () => { prefill('Answer this without changing any files: '); setPlusOpen(false); } },
+      { id: 'multitask', icon: '\u26A1', title: 'Multitask', desc: 'Orchestrate multiple subagents in parallel', run: () => { useStore.getState().setStatus('Multitask is coming soon in Nova'); setPlusOpen(false); } },
+    ];
+    const skillRows = (skills || []).map((sk) => ({
+      id: 'skill-' + (sk.id || sk.name),
+      icon: '\u{1F9E9}',
+      title: sk.name,
+      desc: sk.description || 'Skill',
+      run: () => { prefill(`Use the "${sk.name}" skill: `); setPlusOpen(false); },
+    }));
+    const all = [...actions, ...skillRows];
+    return q ? all.filter((r) => (r.title + ' ' + r.desc).toLowerCase().includes(q)) : all;
+  }, [plusQuery, skills]);
 
   const fileMatches = useMemo(() => {
     if (!popup || popup.type !== 'file') return [];
@@ -580,9 +615,77 @@ export default function AgentMain() {
         </div>
       )}
       <div className="agent-composer-bar">
-        <button className="icon-chip" title="Attach files" onClick={attach}>
+        <div className="menu-anchor" ref={plusRef}>
+        <button
+          className={'icon-chip' + (plusOpen ? ' on' : '')}
+          title="Add context, skills or files"
+          onClick={() => setPlusOpen((v) => !v)}
+        >
           {'\uFF0B'}
         </button>
+        {plusOpen && (
+          <div className="plus-menu dropdown">
+            <input
+              className="plus-search"
+              placeholder="Search skills, context, chats\u2026"
+              value={plusQuery}
+              onChange={(e) => setPlusQuery(e.target.value)}
+              autoFocus
+            />
+            <div className="plus-list">
+              {plusRows.map((r) => (
+                <button
+                  key={r.id}
+                  className="plus-row"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    r.run();
+                  }}
+                >
+                  <span className="plus-ico">{r.icon}</span>
+                  <span className="plus-text">
+                    <span className="plus-title">{r.title}</span>
+                    <span className="plus-desc muted">{r.desc}</span>
+                  </span>
+                </button>
+              ))}
+              {plusRows.length === 0 && <div className="plus-empty muted small">No matches</div>}
+            </div>
+            <div className="plus-footer">
+              <button
+                className="plus-row"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setPlusOpen(false);
+                  attach();
+                }}
+              >
+                <span className="plus-ico">{'\u{1F4CE}'}</span>
+                <span className="plus-text">
+                  <span className="plus-title">Files</span>
+                  <span className="plus-desc muted">Attach files from disk</span>
+                </span>
+                <span className="plus-chev">{'\u203A'}</span>
+              </button>
+              <button
+                className="plus-row"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setPlusOpen(false);
+                  useStore.getState().setSettingsOpen(true, 'mcp');
+                }}
+              >
+                <span className="plus-ico">{'\u{1F50C}'}</span>
+                <span className="plus-text">
+                  <span className="plus-title">MCP</span>
+                  <span className="plus-desc muted">Connected MCP servers</span>
+                </span>
+                <span className="plus-chev">{'\u203A'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+        </div>
         <div className="menu-anchor" ref={modelMenuRef} style={{ position: 'relative' }}>
           <button
             className={`model-chip ${modelMenuOpen ? 'on' : ''}`}
