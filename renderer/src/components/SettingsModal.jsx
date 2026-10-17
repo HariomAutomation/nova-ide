@@ -89,7 +89,15 @@ function GeneralTab() {
           label="Terminal"
           desc="Run commands and watch output."
           control={
-            <button className="btn small" onClick={() => useStore.getState().setTerminalOpen(true)}>
+            <button
+              className="btn small"
+              onClick={() => {
+                // Close Settings first - its overlay covers the terminal panel,
+                // so opening it behind the modal looked like nothing happened.
+                useStore.getState().setSettingsOpen(false);
+                useStore.getState().setTerminalOpen(true);
+              }}
+            >
               Open Terminal
             </button>
           }
