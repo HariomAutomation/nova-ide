@@ -30,7 +30,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', ['dark', 'anime'].includes(theme) ? theme : 'light');
   }, [theme]);
 
   useEffect(() => {

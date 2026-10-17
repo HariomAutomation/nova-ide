@@ -699,7 +699,7 @@ export const useStore = create((set, get) => ({
       activeModelId,
       agentSettings: { ...DEFAULT_AGENT_SETTINGS, ...(s.agentSettings || {}) },
       browserSettings: { headless: true, ...(s.browserSettings || {}) },
-      theme: s.theme === 'dark' ? 'dark' : 'light',
+      theme: ['light', 'dark', 'anime'].includes(s.theme) ? s.theme : 'anime',
       chats: Array.isArray(s.chats) ? s.chats.slice(0, MAX_CHATS) : [],
       automations: (Array.isArray(s.automations) ? s.automations : []).slice(0, 50).map((a) => ({
         ...a,

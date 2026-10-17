@@ -211,6 +211,11 @@ function RepoChips() {
   const rootFolder = useStore((s) => s.rootFolder);
   const gitBranch = useStore((s) => s.gitBranch);
   const appInfo = useStore((s) => s.appInfo);
+  const google = useStore((s) => s.google);
+  useEffect(() => {
+    useStore.getState().loadGoogle().catch(() => {});
+  }, []);
+  const cloudOn = !!(google && google.connected);
   return (
     <div className="home-chips">
       <button
@@ -242,6 +247,24 @@ function RepoChips() {
       >
         <span className="chip-ico">{'\u{1F5A5}\uFE0F'}</span>
         This Computer
+        <span className="chip-caret">{'\u2304'}</span>
+      </button>
+      <button
+        className={'repo-chip cloud' + (cloudOn ? ' on' : '')}
+        title={
+          cloudOn
+            ? `Cloud connected \u2014 ${google.email || 'Google account'}`
+            : 'Connect Google to use cloud models (Vertex AI)'
+        }
+        onClick={() =>
+          cloudOn
+            ? useStore.getState().setStatus(`Cloud connected: ${google.email || 'Google account'}`)
+            : useStore.getState().setSettingsOpen(true, 'models')
+        }
+      >
+        <span className="chip-ico">{'\u2601\uFE0F'}</span>
+        Cloud
+        <span className={'cloud-dot' + (cloudOn ? ' on' : '')} />
         <span className="chip-caret">{'\u2304'}</span>
       </button>
     </div>

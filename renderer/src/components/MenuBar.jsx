@@ -107,10 +107,11 @@ export default function MenuBar() {
           { label: 'Toggle Terminal', hint: 'Ctrl+`', action: () => store.getState().setTerminalOpen(!store.getState().terminalOpen) },
           { sep: true },
           {
-            label: `Theme: ${theme === 'light' ? 'Light' : 'Dark'}`,
+            label: `Theme: ${theme === 'anime' ? 'Anime \u2726' : theme === 'dark' ? 'Dark' : 'Light'}`,
             action: () => {
               const s = store.getState();
-              s.setTheme(s.theme === 'light' ? 'dark' : 'light');
+              const next = s.theme === 'light' ? 'dark' : s.theme === 'dark' ? 'anime' : 'light';
+              s.setTheme(next);
             },
           },
         ]}
