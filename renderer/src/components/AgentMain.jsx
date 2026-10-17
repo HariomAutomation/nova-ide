@@ -6,7 +6,7 @@ import { basename } from '../timeAgo';
 import ToolCard from './ToolCard';
 import RepoMenu from './RepoMenu';
 import { usableModels as pickUsableModels, RETIRED_AUTHS } from '../model-filter';
-import { groupModels, variantsOf, variantCount } from '../model-family';
+import { groupModels, variantsOf, variantCount, pickerMaxHeight } from '../model-family';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -374,6 +374,9 @@ export default function AgentMain() {
   const [popup, setPopup] = useState(null); // { type: 'file'|'cmd', start, query, index }
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  // The picker opens upward from the composer, so its height has to fit the
+  // space above it or the top of the list is clipped off-screen.
+  const [modelMenuMax, setModelMenuMax] = useState(420);
   const [plusOpen, setPlusOpen] = useState(false);
   const [plusQuery, setPlusQuery] = useState('');
   const [openFamily, setOpenFamily] = useState(null);
@@ -998,7 +1001,13 @@ export default function AgentMain() {
           <button
             className={`model-chip ${modelMenuOpen ? 'on' : ''}`}
             title="Switch AI model (Click to select)"
-            onClick={() => setModelMenuOpen(!modelMenuOpen)}
+            onClick={() => {
+              if (!modelMenuOpen) {
+                const el = modelMenuRef.current;
+                if (el) setModelMenuMax(pickerMaxHeight(el.getBoundingClientRect().top));
+              }
+              setModelMenuOpen(!modelMenuOpen);
+            }}
           >
             <span style={{ fontSize: 13, marginRight: 2 }}>⚡</span>
             {activeModel ? activeModel.label : 'Select Model…'}
@@ -1016,8 +1025,10 @@ export default function AgentMain() {
                 top: 'auto',
                 minWidth: 320,
                 maxWidth: 400,
-                maxHeight: 460,
-                overflowY: 'auto',
+                maxHeight: modelMenuMax,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
                 padding: '6px',
                 zIndex: 150,
               }}
@@ -1064,7 +1075,17 @@ export default function AgentMain() {
                   </button>
                 </div>
               )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 340, overflowY: 'auto' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  // header + hidden-count + footer take roughly 120px
+                  maxHeight: Math.max(140, modelMenuMax - 120),
+                  overflowY: 'auto',
+                  minHeight: 0,
+                }}
+              >
                 {usableModels.length === 0 && (
                   <div style={{ padding: '8px 10px 12px', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>
                     No working model yet — Settings → Models → Gemini (free API), key daalo aur Fetch models dabao.

@@ -70,3 +70,14 @@ export function variantsOf(m) {
 export function variantCount(entries) {
   return (Array.isArray(entries) ? entries : []).reduce((n, m) => n + variantsOf(m).length, 0);
 }
+
+/**
+ * The picker opens upward from the composer, so its height must fit the space
+ * above it — otherwise the top of the list is clipped off-screen.
+ * @param {number} anchorTop distance from the viewport top to the chip
+ */
+export function pickerMaxHeight(anchorTop, min = 220, max = 460) {
+  const t = Number(anchorTop);
+  if (!Number.isFinite(t)) return max;
+  return Math.max(min, Math.min(max, Math.round(t - 24)));
+}

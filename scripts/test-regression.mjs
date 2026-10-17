@@ -20,7 +20,7 @@ import gh from '../electron/tools/github.js';
 import cloudcode from '../electron/tools/cloudcode.js';
 import voice from '../electron/tools/voice.js';
 import { usableModels, isModelUsable } from '../renderer/src/model-filter.js';
-import { groupModels, latestOf, versionOf, variantsOf, variantCount } from '../renderer/src/model-family.js';
+import { groupModels, latestOf, versionOf, variantsOf, variantCount, pickerMaxHeight } from '../renderer/src/model-family.js';
 import { handle as mcpHandle, askGemini } from './mcp-gemini-web.mjs';
 import * as geminiPw from '../electron/gemini-pw.js';
 import {
@@ -824,6 +824,21 @@ suite.push(
         `${name} must not be nested inside another component`
       );
     }
+  })
+);
+
+/* --------------------------- picker geometry --------------------------- */
+
+suite.push(
+  test('model picker: its height fits the space above the composer', () => {
+    // plenty of room -> the normal cap
+    assert.equal(pickerMaxHeight(700), 460);
+    // near the top -> shrink, so the list top is never clipped
+    assert.equal(pickerMaxHeight(300), 276);
+    // never collapse to nothing
+    assert.equal(pickerMaxHeight(10), 220);
+    assert.equal(pickerMaxHeight(NaN), 460);
+    assert.equal(pickerMaxHeight(undefined), 460);
   })
 );
 
