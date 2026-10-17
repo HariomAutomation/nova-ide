@@ -1013,11 +1013,19 @@ function CloudTab() {
             />
             <Row
               label=""
-              desc=""
+              desc="Client ID banao → Console kholo → APIs & Services → Credentials → Create credentials → OAuth client ID → Desktop app."
               control={
-                <button className="btn small" onClick={save}>
-                  Save client ID
-                </button>
+                <div className="input-row">
+                  <button className="btn small" onClick={save}>
+                    Save client ID
+                  </button>
+                  <button
+                    className="btn small"
+                    onClick={() => window.nova.openExternal('https://console.cloud.google.com/apis/credentials')}
+                  >
+                    Create credentials ↗
+                  </button>
+                </div>
               }
             />
           </>

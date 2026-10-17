@@ -161,13 +161,16 @@ export default function RepoMenu({ onClose }) {
                 >
                   Save client ID
                 </button>
-                <button className="btn small" onClick={openLocal}>
-                  Open local folder…
+                <button
+                  className="btn small"
+                  onClick={() => window.nova.openExternal('https://github.com/settings/applications/new')}
+                >
+                  Create OAuth App ↗
                 </button>
               </div>
               <div className="rp-hint muted small">
-                GitHub → Settings → Developer settings → <b>OAuth Apps</b> → New OAuth App. Device flow needs only the
-                client ID (no secret, no callback URL).
+                "Create OAuth App" kholo → Application name kuch bhi → Homepage URL kuch bhi → <b>Register</b> → client ID
+                copy karke upar paste karo. (Device flow me secret/callback ki zaroorat nahi.)
               </div>
             </>
           )}
