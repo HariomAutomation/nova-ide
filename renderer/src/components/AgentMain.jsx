@@ -221,6 +221,7 @@ export default function AgentMain() {
   const attachedFiles = useStore((s) => s.attachedFiles);
   const workspaceFiles = useStore((s) => s.workspaceFiles);
   const queued = useStore((s) => s.queued);
+  const agentTodos = useStore((s) => s.agentTodos);
 
   const [input, setInput] = useState('');
   const [popup, setPopup] = useState(null); // { type: 'file'|'cmd', start, query, index }
@@ -374,7 +375,7 @@ export default function AgentMain() {
     else applyCommand(opt);
   }
 
-  function send() {
+  async function send() {
     const text = input.trim();
     if (!text) return;
     if (!activeModel) {
@@ -398,6 +399,26 @@ export default function AgentMain() {
     const contextParts = [];
     if (mentions.length) {
       contextParts.push(`Files referenced with @ by the user: ${mentions.slice(0, 20).join(', ')}`);
+      // Cursor parity: an @-mention actually attaches the file's contents, so the
+      // agent starts from the real code instead of having to read it first.
+      const picked = mentions.slice(0, 8);
+      const parts = [];
+      for (const p of picked) {
+        try {
+          const r = await window.nova.readFile(p);
+          if (r && typeof r.content === 'string' && !r.binary && !r.truncated) {
+            parts.push(`--- ${p} ---\n${r.content.slice(0, 6000)}`);
+          } else {
+            const why = r && r.binary ? 'binary file' : r && r.truncated ? 'too large to attach' : 'unreadable';
+            parts.push(`--- ${p} --- (not attached: ${why})`);
+          }
+        } catch {
+          parts.push(`--- ${p} --- (could not read)`);
+        }
+      }
+      if (parts.length) {
+        contextParts.push('Contents of @-mentioned files (already attached for you):\n\n' + parts.join('\n\n'));
+      }
     }
     if (specialTags.includes('git')) {
       contextParts.push('User tagged @git: inspect git status / diff commands if needed.');
@@ -834,6 +855,24 @@ export default function AgentMain() {
               )}
             </div>
             <div className="agent-dock">
+              {agentTodos.length > 0 && (
+                <div className="agent-todos">
+                  <div className="agent-todos-head">
+                    Tasks{' '}
+                    <span className="muted">
+                      {agentTodos.filter((t) => t.status === 'done').length}/{agentTodos.length}
+                    </span>
+                  </div>
+                  {agentTodos.map((t, i) => (
+                    <div key={i} className={'todo-row ' + (t.status || 'pending')}>
+                      <span className="todo-mark">
+                        {t.status === 'done' ? '✓' : t.status === 'in_progress' ? '◐' : '○'}
+                      </span>
+                      <span className="todo-text">{t.text}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {composer(true)}
               <div className="composer-hint muted small">
                 {agentSettings.submitWithCtrlEnter

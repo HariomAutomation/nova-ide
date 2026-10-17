@@ -9,6 +9,7 @@ const computer = require('./tools/computer');
 const web = require('./tools/web');
 const checkpoints = require('./tools/checkpoints');
 const { describeHttpError } = require('./tools/errors');
+const { isWithin } = require('./tools/paths');
 const mcp = require('./mcp');
 const googleAuth = require('./google-auth');
 const geminiWeb = require('./gemini-web');
@@ -170,18 +171,67 @@ const TOOL_DEFS = [
     name: 'computer_use',
     category: 'computer',
     description:
-      'Control the user desktop: screenshot (full screen), move, click, type, key. Requires a system input tool; returns an error with setup hints when unavailable.',
+      'Control the user desktop. Actions: screenshot, move, click, double_click, right_click, drag, scroll, type, key, wait. After an input action a fresh screenshot is returned automatically so you can see the result and decide the next step. Requires a system input tool; returns an error with setup hints when unavailable.',
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['screenshot', 'move', 'click', 'type', 'key'] },
-        x: { type: 'integer' },
-        y: { type: 'integer' },
+        action: {
+          type: 'string',
+          enum: ['screenshot', 'move', 'click', 'double_click', 'right_click', 'drag', 'scroll', 'type', 'key', 'wait'],
+        },
+        x: { type: 'integer', description: 'Screen x in pixels.' },
+        y: { type: 'integer', description: 'Screen y in pixels.' },
+        to_x: { type: 'integer', description: 'Drag end x.' },
+        to_y: { type: 'integer', description: 'Drag end y.' },
         text: { type: 'string' },
-        key: { type: 'string' },
-        button: { type: 'integer' },
+        key: { type: 'string', description: 'e.g. Return, Tab, ctrl+a' },
+        button: { type: 'integer', description: '1 left (default), 2 middle, 3 right.' },
+        direction: { type: 'string', enum: ['up', 'down', 'left', 'right'], description: 'Scroll direction (default down).' },
+        amount: { type: 'integer', description: 'Scroll wheel clicks (default 3).' },
+        ms: { type: 'integer', description: 'Wait duration in milliseconds (for action "wait").' },
+        return_screenshot: { type: 'boolean', description: 'Capture a fresh screenshot after the action (default true).' },
       },
       required: ['action'],
+    },
+  },
+  {
+    name: 'todo_write',
+    category: 'read',
+    description:
+      'Maintain a short task list for the current job so progress stays visible. Pass the FULL list each call — it replaces the previous one. Use it for multi-step work: keep exactly one item in_progress, and mark items done as you finish them.',
+    parameters: {
+      type: 'object',
+      properties: {
+        todos: {
+          type: 'array',
+          description: 'The complete task list, in order.',
+          items: {
+            type: 'object',
+            properties: {
+              text: { type: 'string', description: 'Short imperative description.' },
+              status: { type: 'string', enum: ['pending', 'in_progress', 'done'] },
+            },
+            required: ['text'],
+          },
+        },
+      },
+      required: ['todos'],
+    },
+  },
+  {
+    name: 'code_lineage',
+    category: 'read',
+    description:
+      'Show the git history (lineage) of a file, or of a line range within it: which commits last touched those lines, when, and by whom. Requires the file to be inside a git repository.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path (absolute, or relative to the workspace).' },
+        start_line: { type: 'integer', description: 'Optional 1-based first line of a range.' },
+        end_line: { type: 'integer', description: 'Optional 1-based last line of a range.' },
+        max: { type: 'integer', description: 'Max commits to show (default 20).' },
+      },
+      required: ['path'],
     },
   },
 ];
@@ -192,6 +242,26 @@ function sanitizeName(s) {
   return String(s || '')
     .replace(/[^a-zA-Z0-9_-]/g, '_')
     .slice(0, 40);
+}
+
+/** Quote a string for safe use as a single shell argument. */
+function shq(s) {
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+}
+
+/** Normalise a todo_write payload into a bounded, well-formed list. */
+function normalizeTodos(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .slice(0, 50)
+    .map((t) => {
+      const text = String((t && t.text) || '').trim().slice(0, 200);
+      if (!text) return null;
+      const status =
+        t && t.status === 'done' ? 'done' : t && t.status === 'in_progress' ? 'in_progress' : 'pending';
+      return { text, status };
+    })
+    .filter(Boolean);
 }
 
 /**
@@ -243,6 +313,7 @@ function newSession(agentId) {
     abort: new AbortController(),
     pending: new Map(), // callId -> resolve
     running: false,
+    todos: [],
   };
   sessions.set(agentId, s);
   return s;
@@ -306,70 +377,101 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey }
     headers['X-Title'] = 'Nova IDE';
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    signal,
-    body: JSON.stringify({
+  async function streamOnce(msgs, sendTools) {
+    const body = {
       model: config.model,
-      messages,
-      tools,
-      tool_choice: 'auto',
+      messages: msgs,
       stream: true,
       temperature: config.temperature ?? 0.2,
-    }),
-  });
+    };
+    if (sendTools) {
+      body.tools = tools;
+      body.tool_choice = 'auto';
+    }
 
-  if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => '');
-    throw new Error(describeHttpError(url, res.status, res.statusText, text));
-  }
+    const res = await fetch(url, { method: 'POST', headers, signal, body: JSON.stringify(body) });
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => '');
+      const err = new Error(describeHttpError(url, res.status, res.statusText, text));
+      err.status = res.status;
+      err.body = text;
+      throw err;
+    }
 
-  const decoder = new TextDecoder();
-  let buf = '';
-  let content = '';
-  const toolAcc = new Map();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let content = '';
+    const toolAcc = new Map();
 
-  for await (const chunk of res.body) {
-    buf += decoder.decode(chunk, { stream: true });
-    let idx;
-    while ((idx = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, idx).trim();
-      buf = buf.slice(idx + 1);
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (data === '[DONE]') break;
-      let j;
-      try {
-        j = JSON.parse(data);
-      } catch {
-        continue;
-      }
-      if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
-      const delta = j.choices && j.choices[0] && j.choices[0].delta;
-      if (!delta) continue;
-      if (delta.content) {
-        content += delta.content;
-        if (onDelta) onDelta(delta.content);
-      }
-      if (delta.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          const i = tc.index ?? 0;
-          const cur = toolAcc.get(i) || { id: '', name: '', args: '' };
-          if (tc.id) cur.id = tc.id;
-          if (tc.function && tc.function.name) cur.name += tc.function.name;
-          if (tc.function && tc.function.arguments) cur.args += tc.function.arguments;
-          toolAcc.set(i, cur);
+    for await (const chunk of res.body) {
+      buf += decoder.decode(chunk, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') break;
+        let j;
+        try {
+          j = JSON.parse(data);
+        } catch {
+          continue;
+        }
+        if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
+        const delta = j.choices && j.choices[0] && j.choices[0].delta;
+        if (!delta) continue;
+        if (delta.content) {
+          content += delta.content;
+          if (onDelta) onDelta(delta.content);
+        }
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const i = tc.index ?? 0;
+            const cur = toolAcc.get(i) || { id: '', name: '', args: '' };
+            if (tc.id) cur.id = tc.id;
+            if (tc.function && tc.function.name) cur.name += tc.function.name;
+            if (tc.function && tc.function.arguments) cur.args += tc.function.arguments;
+            toolAcc.set(i, cur);
+          }
         }
       }
     }
+
+    const toolCalls = [...toolAcc.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([i, t]) => ({ id: t.id || `call_${i}_${Date.now()}`, name: t.name, argsRaw: t.args }));
+
+    return { content, toolCalls };
   }
 
-  const toolCalls = [...toolAcc.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([i, t]) => ({ id: t.id || `call_${i}_${Date.now()}`, name: t.name, argsRaw: t.args }));
+  const haveTools = Array.isArray(tools) && tools.length > 0;
+  try {
+    return await streamOnce(messages, haveTools);
+  } catch (e) {
+    if (signal && signal.aborted) throw e;
 
-  return { content, toolCalls };
+    // Fallback for models/endpoints that reject native tool calling (very
+    // common on free tiers): retry WITHOUT the `tools` parameter and hand the
+    // model the same tool surface as a prompt protocol — the trick the Gemini
+    // Web provider already uses — then parse its JSON reply back into tool
+    // calls. Guarded so a working setup never takes this path.
+    const status = Number(e && e.status) || 0;
+    const bodyText = String((e && e.body) || '');
+    const toolsRejected = haveTools && status >= 400 && status < 500 && /tool|function/i.test(bodyText);
+    if (!toolsRejected) throw e;
+
+    const proto = geminiWeb.protocolBlock(tools);
+    const msgs = messages.slice();
+    const sysIdx = msgs.findIndex((m) => m && m.role === 'system' && typeof m.content === 'string');
+    if (sysIdx >= 0) msgs[sysIdx] = { ...msgs[sysIdx], content: msgs[sysIdx].content + '\n\n' + proto };
+    else msgs.unshift({ role: 'system', content: proto });
+
+    const r = await streamOnce(msgs, false);
+    const calls = geminiWeb.parseWebToolCalls(r.content);
+    if (calls) return { content: '', toolCalls: calls };
+    return { content: r.content, toolCalls: [] };
+  }
 }
 
 /* ------------------------------ tool execution ------------------------------ */
@@ -381,6 +483,39 @@ async function snapshotFor(ctx, p) {
   } catch {
     /* checkpoints are best-effort */
   }
+}
+
+/**
+ * `code_lineage` — git history for a file or a line range (Cursor parity).
+ * Exported so it can be unit-tested without spinning up the whole agent loop.
+ */
+async function codeLineage(args, ctx = {}) {
+  const p = args && args.path;
+  if (!p) return { text: 'Error: path is required.', ok: false };
+  const cwd = ctx.workspaceRoot || process.cwd();
+  const abs = path.isAbsolute(p) ? p : path.join(cwd, p);
+  const rel = isWithin(cwd, abs) ? path.relative(cwd, abs) : abs;
+  const max = Math.max(1, Math.min(Number(args.max) || 20, 100));
+  const s = Number(args.start_line);
+  const e = Number(args.end_line);
+  const hasRange = Number.isFinite(s) && s > 0;
+  const end = hasRange && Number.isFinite(e) && e >= s ? e : s;
+
+  const cmd = hasRange
+    ? `git log --no-color -L ${s},${end}:${shq(rel)}`
+    : `git log --no-color -n ${max} --date=short --pretty=format:'%h %ad %an  %s' -- ${shq(rel)}`;
+
+  const r = await runCommand({ command: cmd, cwd, timeoutMs: 30000 });
+  const out = (r.stdout || '').trim();
+  if (!out) {
+    const why = (r.stderr || '').trim().slice(0, 300);
+    return {
+      text: `No git history for ${rel}${why ? ` (${why})` : ''}. Is the file committed and inside a git repo?`,
+      ok: false,
+    };
+  }
+  const label = hasRange ? ` (lines ${s}-${end})` : '';
+  return { text: `Lineage of ${rel}${label}:\n${truncate(out, 6000)}`, ok: true };
 }
 
 async function executeTool(name, args, ctx) {
@@ -468,8 +603,32 @@ async function executeTool(name, args, ctx) {
         const dataUrl = await fileToDataUrl(r.file);
         return { text: `Desktop screenshot saved: ${r.file} (method: ${r.method})`, image: dataUrl, imagePath: r.file };
       }
-      await computer.inputAction(args.action, args);
-      return { text: `computer_use ${args.action} done` };
+
+      const ms = Math.max(0, Math.min(Number(args.ms) || 1000, 30000));
+      if (args.action === 'wait') {
+        await new Promise((res) => setTimeout(res, ms));
+      } else {
+        await computer.inputAction(args.action, args);
+      }
+
+      const size = await computer.screenSize().catch(() => null);
+      const head = `computer_use ${args.action} done${
+        args.action === 'wait' ? ` (waited ${ms}ms)` : ''
+      }${size ? ` — screen ${size.width}x${size.height}` : ''}`;
+
+      // Observe loop: hand the model a fresh screenshot so it can verify the
+      // effect of its action before deciding the next one (opt out with
+      // return_screenshot:false).
+      if (args.return_screenshot !== false) {
+        try {
+          const r = await computer.screenshotToFile(artifactsDir);
+          const dataUrl = await fileToDataUrl(r.file);
+          return { text: `${head}\nFresh screenshot attached (${r.method}).`, image: dataUrl, imagePath: r.file };
+        } catch (e) {
+          return { text: `${head}\n(screenshot after action failed: ${e.message})` };
+        }
+      }
+      return { text: head };
     }
     case 'web_search': {
       const r = await web.webSearch(args.query, args.count);
@@ -504,6 +663,22 @@ async function executeTool(name, args, ctx) {
         );
       }
       return { text: chunks.join('\n\n') };
+    }
+    case 'todo_write': {
+      const todos = normalizeTodos(args.todos);
+      if (ctx.session) ctx.session.todos = todos;
+      const open = todos.filter((t) => t.status !== 'done').length;
+      const body = todos
+        .map((t) => `${t.status === 'done' ? '[x]' : t.status === 'in_progress' ? '[~]' : '[ ]'} ${t.text}`)
+        .join('\n');
+      return {
+        text: `Task list updated (${todos.length} item${todos.length === 1 ? '' : 's'}, ${open} open):\n${body || '(empty)'}`,
+        ok: true,
+        todos,
+      };
+    }
+    case 'code_lineage': {
+      return await codeLineage(args, { workspaceRoot });
     }
     default: {
       if (name.startsWith('mcp__')) {
@@ -593,9 +768,11 @@ async function buildSystemPrompt({ workspaceRoot, settings }) {
     '- Use tools to inspect reality. Never claim you did something without tool output.',
     '- Read files before editing them. Prefer edit_file over write_file for small changes.',
     '- Use list_dir and grep_search to find relevant files instead of guessing paths.',
+    '- For a task with several steps, call todo_write to keep a visible task list, updating it as you go.',
+    '- Use code_lineage to see who last changed a file or a line range (git history).',
     '- For commands, use run_terminal_cmd. Prefer non-interactive commands (-y flags, no pagers).',
     '- The browser tool drives a real Chromium page. Use open before click/fill/text/screenshot.',
-    '- computer_use controls the actual desktop; screenshots are full-screen.',
+    '- computer_use drives the real desktop (screenshot, move, click, double_click, right_click, drag, scroll, type, key, wait); a fresh screenshot comes back after each action, so screenshot → act → look at the result.',
     '- web_search and web_fetch are available for looking things up on the internet.',
     '- After finishing the task, reply with a short summary of what changed and any caveats.',
     '- If the task needs more information, ask a concise question instead of guessing.',
@@ -651,6 +828,32 @@ function truncate(text, max = 20000) {
 }
 
 /**
+ * Keep long agent sessions affordable.
+ *
+ * Every tool result is replayed to the model on every subsequent step, so a
+ * 20-step run re-sends ~20 large tool outputs on the final call. Rather than
+ * dropping messages (which would orphan an assistant `tool_calls` from its
+ * `tool` reply and make the provider reject the request), we keep the system
+ * prompt and the most recent turns verbatim and collapse the *content* of older
+ * tool outputs to a short placeholder. Pairing stays valid; the token cost of
+ * the transcript stops growing linearly with the step count.
+ */
+function compactMessages(messages, { keepRecent = 16, placeholder = '[older tool output omitted to save context]' } = {}) {
+  if (!Array.isArray(messages) || messages.length <= keepRecent + 1) return messages;
+  const cutoff = messages.length - keepRecent;
+  return messages.map((m, i) => {
+    if (!m || i === 0 || i >= cutoff) return m; // system prompt + recent window untouched
+    if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 200) {
+      return { ...m, content: placeholder };
+    }
+    if (m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 2000) {
+      return { ...m, content: m.content.slice(0, 2000) + '\n[...truncated]' };
+    }
+    return m;
+  });
+}
+
+/**
  * Run the agent loop for one user turn.
  * send(event) pushes {type, ...} events to the renderer.
  */
@@ -686,8 +889,7 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
 
   const withinWorkspace = (p) => {
     if (!workspaceRoot || !p || typeof p !== 'string') return false;
-    const rel = path.relative(workspaceRoot, p);
-    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    return isWithin(workspaceRoot, p);
   };
 
   try {
@@ -701,7 +903,7 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
 
       const { content, toolCalls } = await callModel({
         config,
-        messages: session.messages,
+        messages: compactMessages(session.messages),
         tools: schemas,
         signal,
         threadKey: agentId,
@@ -802,6 +1004,7 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
             artifactsDir,
             browserHeadless: settings.browserHeadless,
             notifyFsChanged,
+            session,
           });
           emit({
             type: 'tool_end',
@@ -811,6 +1014,7 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
             output: truncate(r.text, 6000),
             image: r.image || null,
           });
+          if (r.todos) emit({ type: 'todos', todos: r.todos });
           session.messages.push({ role: 'tool', tool_call_id: call.id, content: truncate(r.text) });
         } catch (e) {
           const result = `Error: ${e.message}`;
@@ -836,4 +1040,15 @@ function resetAgent(agentId) {
   sessions.delete(agentId);
 }
 
-module.exports = { runAgent, stopAgent, resolveApproval, resetAgent, toolSchemas, TOOL_DEFS, loadRules };
+module.exports = {
+  runAgent,
+  stopAgent,
+  resolveApproval,
+  resetAgent,
+  toolSchemas,
+  TOOL_DEFS,
+  loadRules,
+  compactMessages,
+  normalizeTodos,
+  codeLineage,
+};

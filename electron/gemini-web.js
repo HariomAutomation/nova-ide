@@ -511,4 +511,5 @@ module.exports = {
   resetThreads,
   status,
   parseWebToolCalls,
+  protocolBlock,
 };

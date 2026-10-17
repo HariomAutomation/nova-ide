@@ -32,11 +32,13 @@ async function readFileTool(file, { offset = 1, limit = 2000 } = {}) {
   if (stat.size > 4 * 1024 * 1024) {
     return { error: `File too large (${stat.size} bytes). Use offset/limit with a smaller slice via grep_search first.` };
   }
+  // Clamp so a runaway caller can never pull an unbounded slice into context.
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 2000, 5000));
   const buf = await fs.readFile(file);
   if (buf.subarray(0, 4096).includes(0)) return { error: 'Binary file.' };
   const lines = buf.toString('utf8').split('\n');
   const start = Math.max(0, offset - 1);
-  const slice = lines.slice(start, start + limit);
+  const slice = lines.slice(start, start + safeLimit);
   return {
     path: file,
     totalLines: lines.length,
@@ -61,7 +63,12 @@ async function editFileTool(file, oldString, newString, { replaceAll = false } =
   if (count > 1 && !replaceAll) {
     return { error: `old_string occurs ${count} times. Provide more surrounding context or set replace_all.` };
   }
-  const next = replaceAll ? content.split(oldString).join(newString) : content.replace(oldString, newString);
+  // Use a function replacer, not a string one: a string replacement expands
+  // `$&`, `$$`, `` $` `` and `$'` patterns, so an edit whose new_string contains
+  // them (very common in shell/Make/JS-template code) would be silently corrupted.
+  const next = replaceAll
+    ? content.split(oldString).join(newString)
+    : content.replace(oldString, () => newString);
   await fs.writeFile(file, next, 'utf8');
   return { ok: true, path: file, occurrences: replaceAll ? count : 1 };
 }

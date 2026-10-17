@@ -135,6 +135,12 @@ NOVA_DEV_SERVER=http://localhost:5173 npm run app   # terminal 2
 
 `computer_use` needs a screenshot tool and an input-injection tool:
 
+**Actions** — `screenshot`, `move`, `click`, `double_click`, `right_click`, `drag`, `scroll`,
+`type`, `key`, `wait`. It runs as an **observe → act → observe** loop: every input action returns a
+**fresh screenshot** automatically (opt out with `return_screenshot:false`) and reports the screen
+size, so the model can verify the effect of each step before choosing the next one. Coordinates are
+clamped to the detected screen. `drag` and `scroll` need `xdotool` (ydotool has no equivalent).
+
 - **Screenshots** — auto-detected chain: `xdg-desktop-portal` (Wayland), `gnome-screenshot`,
   `grim` (wlroots), `scrot`, GNOME Shell D-Bus.
   On GNOME Wayland the portal shows a **"Share" dialog per capture** (platform security —

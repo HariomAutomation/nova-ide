@@ -10,8 +10,10 @@ import fsTools from '../electron/tools/fsTools.js';
 import checkpoints from '../electron/tools/checkpoints.js';
 import { runCommand } from '../electron/tools/terminal.js';
 import { webFetch, webSearch } from '../electron/tools/web.js';
-import { parseWebToolCalls } from '../electron/gemini-web.js';
-import { loadRules, toolSchemas } from '../electron/agent.js';
+import { parseWebToolCalls, protocolBlock } from '../electron/gemini-web.js';
+import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage } from '../electron/agent.js';
+import { isWithin } from '../electron/tools/paths.js';
+import computer from '../electron/tools/computer.js';
 import { getHeuristicCompletion } from '../renderer/src/completion-heuristics.js';
 
 const TEST_DIR = path.join(os.tmpdir(), 'nova-regression-' + Date.now());
@@ -261,8 +263,245 @@ suite.push(
   })
 );
 
-/* --------------------------------- runner --------------------------------- */
+/* --------------------------- fixes: path safety --------------------------- */
 
+suite.push(
+  test('paths: isWithin rejects sibling prefix dirs and escapes', () => {
+    assert.equal(isWithin('/a/b', '/a/b/c'), true);
+    assert.equal(isWithin('/a/b', '/a/b'), true);
+    assert.equal(isWithin('/a/b', '/a/bc'), false); // prefix, not a child
+    assert.equal(isWithin('/a/b', '/a/b/../c'), false);
+    assert.equal(isWithin('/a/b', '/a'), false);
+    assert.equal(isWithin('/a/b', ''), false);
+  })
+);
+
+/* ------------------------ fixes: editFileTool $-safety ------------------------ */
+
+suite.push(
+  test('fsTools: editFileTool keeps $ patterns in new_string literal', async () => {
+    const target = path.join(TEST_DIR, 'dollar.txt');
+    await fsTools.writeFileTool(target, 'TOTAL=1\n');
+    await fsTools.editFileTool(target, 'TOTAL=1', 'TOTAL=$$');
+    assert.equal(fs.readFileSync(target, 'utf8'), 'TOTAL=$$\n');
+
+    await fsTools.writeFileTool(target, 'a\n');
+    await fsTools.editFileTool(target, 'a', '$&$&');
+    assert.equal(fs.readFileSync(target, 'utf8'), '$&$&\n');
+  })
+);
+
+/* ------------------------ fixes: readFileTool limit clamp ------------------------ */
+
+suite.push(
+  test('fsTools: readFileTool clamps an oversized limit', async () => {
+    const target = path.join(TEST_DIR, 'big.txt');
+    const body = Array.from({ length: 8000 }, (_, i) => 'L' + (i + 1)).join('\n');
+    await fsTools.writeFileTool(target, body);
+    const r = await fsTools.readFileTool(target, { limit: 1e9 });
+    assert.ok(r.to - r.from + 1 <= 5000);
+    assert.ok(r.truncated);
+  })
+);
+
+/* --------------------------- fixes: terminal timeout --------------------------- */
+
+suite.push(
+  test('terminal: runCommand times out and stops a long command', async () => {
+    const t0 = Date.now();
+    const res = await runCommand({ command: 'sleep 30', timeoutMs: 400 });
+    assert.equal(res.timedOut, true);
+    assert.ok(Date.now() - t0 < 6000, `took ${Date.now() - t0}ms`);
+  })
+);
+
+/* ------------------------ improvement: context compaction ------------------------ */
+
+suite.push(
+  test('agent: compactMessages collapses old tool output, keeps recent + pairing', () => {
+    const msgs = [{ role: 'system', content: 'sys' }];
+    for (let i = 0; i < 40; i++) {
+      msgs.push({
+        role: 'assistant',
+        content: '',
+        tool_calls: [{ id: 'c' + i, type: 'function', function: { name: 'read_file', arguments: '{}' } }],
+      });
+      msgs.push({ role: 'tool', tool_call_id: 'c' + i, content: 'X'.repeat(500) });
+    }
+    const out = compactMessages(msgs, { keepRecent: 10 });
+    assert.equal(out.length, msgs.length); // nothing dropped -> pairing intact
+    assert.equal(out[0].content, 'sys');
+    assert.equal(out[1].role, 'assistant'); // tool_calls preserved
+    assert.equal(out[2].content, '[older tool output omitted to save context]');
+    assert.equal(out[out.length - 1].content, 'X'.repeat(500)); // recent window verbatim
+
+    // Every assistant tool_call still has a matching tool reply.
+    const callIds = out.filter((m) => m.role === 'assistant' && m.tool_calls).flatMap((m) => m.tool_calls.map((t) => t.id));
+    const replyIds = out.filter((m) => m.role === 'tool').map((m) => m.tool_call_id);
+    assert.deepEqual(callIds, replyIds);
+
+    // Short transcripts are returned untouched (same reference).
+    const small = [{ role: 'system', content: 's' }, { role: 'user', content: 'hi' }];
+    assert.equal(compactMessages(small), small);
+  })
+);
+
+/* --------------------------- Cursor-parity tools --------------------------- */
+
+suite.push(
+  test('agent: toolSchemas exposes the Cursor-parity tools', async () => {
+    const names = (await toolSchemas({ webSearch: true, webFetch: true })).map((s) => s.function.name);
+    assert.ok(names.includes('todo_write'), 'todo_write missing');
+    assert.ok(names.includes('code_lineage'), 'code_lineage missing');
+  })
+);
+
+suite.push(
+  test('agent: normalizeTodos bounds and coerces status', () => {
+    const out = normalizeTodos([
+      { text: '  read the file ', status: 'in_progress' },
+      { text: 'write tests', status: 'done' },
+      { text: 'bogus status', status: 'weird' },
+      { text: '   ' }, // dropped
+      null, // dropped
+    ]);
+    assert.equal(out.length, 3);
+    assert.deepEqual(out[0], { text: 'read the file', status: 'in_progress' });
+    assert.deepEqual(out[1], { text: 'write tests', status: 'done' });
+    assert.equal(out[2].status, 'pending');
+    assert.deepEqual(normalizeTodos('nope'), []);
+    assert.ok(normalizeTodos(Array.from({ length: 80 }, (_, i) => ({ text: 't' + i }))).length <= 50);
+  })
+);
+
+suite.push(
+  test('agent: codeLineage returns git history for a file and a line range', async () => {
+    const repo = path.join(TEST_DIR, 'git-repo');
+    await fsp.mkdir(repo, { recursive: true });
+    const setup =
+      'git init -q && git config user.email t@t && git config user.name t && ' +
+      'printf "a\\nb\\nc\\n" > f.txt && git add f.txt && git commit -qm first && ' +
+      'printf "a\\nB2\\nc\\n" > f.txt && git commit -qam second';
+    const r = await runCommand({ command: setup, cwd: repo });
+    assert.equal(r.code, 0, r.stderr);
+
+    const whole = await codeLineage({ path: 'f.txt' }, { workspaceRoot: repo });
+    assert.equal(whole.ok, true);
+    assert.match(whole.text, /Lineage of f\.txt:/);
+    assert.match(whole.text, /first|second/);
+
+    const range = await codeLineage({ path: 'f.txt', start_line: 2, end_line: 2 }, { workspaceRoot: repo });
+    assert.match(range.text, /Lineage of f\.txt \(lines 2-2\)/);
+
+    const missing = await codeLineage({}, { workspaceRoot: repo });
+    assert.equal(missing.ok, false);
+  })
+);
+
+/* --------------------------- computer-use mirror --------------------------- */
+
+suite.push(
+  test('computer: buildInputCommands maps xdotool actions', () => {
+    const cap = { inputMethod: 'xdotool' };
+    assert.deepEqual(computer.buildInputCommands('move', { x: 10, y: 20 }, cap), [
+      { bin: 'xdotool', args: ['mousemove', '10', '20'] },
+    ]);
+    assert.deepEqual(computer.buildInputCommands('click', { x: 5, y: 6 }, cap)[0].args, [
+      'mousemove', '5', '6', 'click', '--repeat', '1', '--delay', '60', '1',
+    ]);
+    assert.deepEqual(computer.buildInputCommands('double_click', {}, cap)[0].args, [
+      'click', '--repeat', '2', '--delay', '60', '1',
+    ]);
+    assert.deepEqual(computer.buildInputCommands('right_click', {}, cap)[0].args, [
+      'click', '--repeat', '1', '--delay', '60', '3',
+    ]);
+    assert.deepEqual(computer.buildInputCommands('drag', { x: 1, y: 2, to_x: 3, to_y: 4 }, cap)[0].args, [
+      'mousemove', '1', '2', 'mousedown', '1', 'mousemove', '--sync', '3', '4', 'mouseup', '1',
+    ]);
+    assert.deepEqual(computer.buildInputCommands('scroll', { direction: 'up', amount: 2 }, cap)[0].args, [
+      'click', '--repeat', '2', '--delay', '30', '4',
+    ]);
+    assert.deepEqual(computer.buildInputCommands('key', { key: 'ctrl+a' }, cap)[0].args, ['key', 'ctrl+a']);
+    // move without coordinates is a no-op, not a crash
+    assert.deepEqual(computer.buildInputCommands('move', {}, cap), []);
+  })
+);
+
+suite.push(
+  test('computer: buildInputCommands handles ydotool and unsupported combos', () => {
+    const cap = { inputMethod: 'ydotool' };
+    assert.deepEqual(computer.buildInputCommands('move', { x: 1, y: 2 }, cap), [
+      { bin: 'ydotool', args: ['mousemove', '--absolute', '-x', '1', '-y', '2'] },
+    ]);
+    assert.deepEqual(computer.buildInputCommands('click', {}, cap), [{ bin: 'ydotool', args: ['click', '0xC0'] }]);
+    assert.throws(() => computer.buildInputCommands('drag', { x: 1, y: 2, to_x: 3, to_y: 4 }, cap), /not supported by ydotool/);
+    assert.throws(() => computer.buildInputCommands('scroll', {}, cap), /not supported by ydotool/);
+  })
+);
+
+suite.push(
+  test('computer: clampPoint keeps points on screen', () => {
+    assert.deepEqual(computer.clampPoint(-5, 10, { width: 100, height: 50 }), { x: 0, y: 10 });
+    assert.deepEqual(computer.clampPoint(500, 500, { width: 100, height: 50 }), { x: 99, y: 49 });
+    assert.deepEqual(computer.clampPoint(10, 10, null), { x: 10, y: 10 });
+  })
+);
+
+suite.push(
+  test('computer: buildInputCommands errors without an input tool', () => {
+    assert.throws(
+      () => computer.buildInputCommands('click', { x: 1, y: 1 }, { inputMethod: null, session: 'x11' }),
+      /No input tool available/
+    );
+  })
+);
+
+suite.push(
+  test('agent: computer_use exposes the full action set', async () => {
+    const schema = (await toolSchemas({})).find((s) => s.function.name === 'computer_use');
+    const actions = schema.function.parameters.properties.action.enum;
+    for (const a of ['screenshot', 'move', 'click', 'double_click', 'right_click', 'drag', 'scroll', 'type', 'key', 'wait']) {
+      assert.ok(actions.includes(a), `${a} missing`);
+    }
+  })
+);
+
+/* --------------------- prompt-tools fallback (free models) --------------------- */
+
+suite.push(
+  test('geminiWeb: protocolBlock renders a tool surface for the fallback', () => {
+    const block = protocolBlock([
+      {
+        type: 'function',
+        function: {
+          name: 'read_file',
+          description: 'Read a file',
+          parameters: { type: 'object', properties: { path: { type: 'string' }, limit: { type: 'integer' } }, required: ['path'] },
+        },
+      },
+    ]);
+    assert.match(block, /read_file\(path, limit\?\)/);
+    assert.match(block, /tool_calls/);
+    assert.match(protocolBlock([]), /^$/); // no tools -> empty
+  })
+);
+
+suite.push(
+  test('geminiWeb: a protocolBlock round-trips through parseWebToolCalls', () => {
+    const block = protocolBlock([
+      { type: 'function', function: { name: 'run_terminal_cmd', description: 'Run a command', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },
+    ]);
+    assert.ok(block.includes('run_terminal_cmd'));
+    // A model following the protocol replies with exactly this shape:
+    const reply = '{"tool_calls":[{"name":"run_terminal_cmd","arguments":{"command":"npm test"}}]}';
+    const calls = parseWebToolCalls(reply);
+    assert.ok(calls && calls.length === 1);
+    assert.equal(calls[0].name, 'run_terminal_cmd');
+    assert.match(calls[0].argsRaw, /npm test/);
+  })
+);
+
+/* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {
   await t();

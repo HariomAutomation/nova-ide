@@ -125,6 +125,7 @@ export const useStore = create((set, get) => ({
   /* ------------------------------- agent chat ------------------------------- */
   agentId: uuid(),
   agentItems: [],
+  agentTodos: [],
   agentBusy: false,
   agentStep: 0,
   queued: [],
@@ -499,7 +500,7 @@ export const useStore = create((set, get) => ({
       const s = get();
       if (entry.chatId !== s.currentChatId) {
         if (entry.chatId) s._applyChat(entry.chatId);
-        else set({ currentChatId: null, agentItems: [], agentBusy: false, queued: [] });
+        else set({ currentChatId: null, agentItems: [], agentTodos: [], agentBusy: false, queued: [] });
       }
     }
   },
@@ -547,7 +548,12 @@ export const useStore = create((set, get) => ({
         // get refreshed to the current default wording
         const STALE_LABELS = { 'opencode-zen': ['OpenCode Zen (paid key)'] };
         const stale = (STALE_LABELS[dm.id] || []).includes(found.label);
-        return { ...dm, ...found, label: stale ? dm.label : (found.label || dm.label), tag: dm.tag };
+        // Recover a key parked in keyVault under this host — otherwise a saved
+        // entry with an empty apiKey silently sends unauthenticated requests
+        // ("errors out before replying").
+        const vaulted = dm.baseUrl ? keyVault[hostOf(dm.baseUrl)] : '';
+        const apiKey = found.apiKey || vaulted || dm.apiKey || '';
+        return { ...dm, ...found, apiKey, label: stale ? dm.label : (found.label || dm.label), tag: dm.tag };
       }
       let k = dm.apiKey;
       if (dm.baseUrl && keyVault[hostOf(dm.baseUrl)]) k = keyVault[hostOf(dm.baseUrl)];
@@ -885,6 +891,7 @@ export const useStore = create((set, get) => ({
     set({
       agentId: uuid(),
       agentItems: [],
+      agentTodos: [],
       agentBusy: false,
       agentStep: 0,
       currentChatId: null,
@@ -902,6 +909,7 @@ export const useStore = create((set, get) => ({
       currentChatId: chat.id,
       agentId: chat.agentId || uuid(),
       agentItems: (chat.items || []).map((it, i) => ({ ...it, id: it.id || `${chat.id}_${i}` })),
+      agentTodos: [],
       agentBusy: false,
       agentStep: 0,
       queued: [],
@@ -1025,6 +1033,9 @@ export const useStore = create((set, get) => ({
           output: e.output,
           image: e.image || null,
         });
+        break;
+      case 'todos':
+        set({ agentTodos: Array.isArray(e.todos) ? e.todos : [] });
         break;
       case 'error':
         s.agentAppend({ kind: 'error', text: e.message });
@@ -1180,15 +1191,16 @@ export const useStore = create((set, get) => ({
   },
 
   termData(payload) {
-    const lines = [...get().termLines];
+    const lines = get().termLines;
     const last = lines[lines.length - 1];
     const text = payload.text;
-    if (last && last.kind === (payload.stream === 'stderr' ? 'err' : 'out') && !last.closed) {
-      last.text += text;
+    const kind = payload.stream === 'stderr' ? 'err' : 'out';
+    // Build a new array and a new last object instead of mutating state in place.
+    if (last && last.kind === kind && !last.closed) {
+      set({ termLines: [...lines.slice(0, -1), { ...last, text: last.text + text }] });
     } else {
-      lines.push({ kind: payload.stream === 'stderr' ? 'err' : 'out', text });
+      set({ termLines: [...lines, { kind, text }] });
     }
-    set({ termLines: lines });
   },
 
   termExit(payload) {

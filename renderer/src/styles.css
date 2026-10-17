@@ -4218,3 +4218,45 @@ input:focus, select:focus, textarea:focus {
 
 /* two-phase connection test: subtle "verifying" note while chat ping runs */
 .conn-verify { font-size: 12px; color: #8a8f98; font-style: italic; }
+
+/* Agent task list (todo_write) */
+.agent-todos {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev, rgba(127, 127, 127, 0.06));
+  max-height: 180px;
+  overflow-y: auto;
+}
+.agent-todos-head {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.todo-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 2px 0;
+  line-height: 1.45;
+}
+.todo-row .todo-mark {
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.todo-row.done .todo-mark {
+  color: #3fb950;
+}
+.todo-row.done .todo-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.todo-row.in_progress .todo-mark {
+  color: var(--accent, #3d7eff);
+}

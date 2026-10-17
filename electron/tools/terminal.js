@@ -13,15 +13,31 @@ function runCommand({ command, cwd, timeoutMs = 120000, onData = null, env = nul
     let timedOut = false;
     let child;
 
+    // Spawn in its own process group so a timeout can kill the whole tree
+    // (e.g. `npm start` -> node -> children), not just the shell.
+    const useGroup = process.platform !== 'win32';
+
     try {
       child = spawn('/bin/bash', ['-lc', command], {
         cwd: cwd || process.cwd(),
         env: env || process.env,
+        detached: useGroup,
       });
     } catch (e) {
       resolve({ code: -1, error: e.message, stdout: '', stderr: '' });
       return;
     }
+
+    const killTree = (sig) => {
+      try {
+        if (useGroup && child.pid) process.kill(-child.pid, sig);
+        else child.kill(sig);
+      } catch {
+        try {
+          child.kill(sig);
+        } catch {}
+      }
+    };
 
     const append = (which, buf) => {
       const text = buf.toString('utf8');
@@ -38,11 +54,9 @@ function runCommand({ command, cwd, timeoutMs = 120000, onData = null, env = nul
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGTERM');
+      killTree('SIGTERM');
       setTimeout(() => {
-        try {
-          child.kill('SIGKILL');
-        } catch {}
+        killTree('SIGKILL');
       }, 3000);
     }, timeoutMs);
 

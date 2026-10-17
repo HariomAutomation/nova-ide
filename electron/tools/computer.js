@@ -52,6 +52,145 @@ function detect() {
   };
 }
 
+/** Current screen size in pixels, via xdotool (null when unavailable). */
+async function screenSize() {
+  const x = which('xdotool');
+  if (!x) return null;
+  const r = await run(x, ['getdisplaygeometry']);
+  const m = /(\d+)\s+(\d+)/.exec(r.stdout || '');
+  if (!m) return null;
+  return { width: Number(m[1]), height: Number(m[2]) };
+}
+
+/* ------------------------------ pure helpers ------------------------------ */
+
+function num(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n) : null;
+}
+
+/** Parse {x,y} / {to_x,to_y} from tool params, rounding and rejecting NaN. */
+function parsePoints(params = {}) {
+  return {
+    x: num(params.x),
+    y: num(params.y),
+    toX: num(params.to_x),
+    toY: num(params.to_y),
+  };
+}
+
+/** Clamp a point into a screen box (no-op when the size is unknown). */
+function clampPoint(x, y, size) {
+  if (!size || x == null || y == null) return { x, y };
+  return {
+    x: Math.min(Math.max(x, 0), Math.max(0, size.width - 1)),
+    y: Math.min(Math.max(y, 0), Math.max(0, size.height - 1)),
+  };
+}
+
+const SCROLL_BUTTON = { up: '4', down: '5', left: '6', right: '7' };
+const YDOTOOL_BUTTON = { 1: '0xC0', 2: '0xC1', 3: '0xC2' };
+
+/**
+ * Build the concrete shell commands for one desktop-input action.
+ *
+ * Pure and side-effect free so it can be unit-tested without a display — the
+ * actual execution is `inputAction` below. Returns `[{bin, args}]` (an empty
+ * array means "nothing to do"); throws a descriptive error for an unsupported
+ * action/backend combination.
+ */
+function buildInputCommands(action, params = {}, cap = {}) {
+  const method = cap.inputMethod;
+  const p = params || {};
+  const { x, y, toX, toY } = parsePoints(p);
+  const scrollDir = SCROLL_BUTTON[p.direction] ? p.direction : 'down';
+  const scrollAmount = Math.max(1, Math.min(num(p.amount) || 3, 50));
+
+  if (method === 'xdotool') {
+    const X = 'xdotool';
+    switch (action) {
+      case 'move':
+        if (x == null || y == null) return [];
+        return [{ bin: X, args: ['mousemove', String(x), String(y)] }];
+      case 'click':
+      case 'double_click':
+      case 'right_click': {
+        const button = action === 'right_click' ? '3' : p.button === 3 ? '3' : p.button === 2 ? '2' : '1';
+        const repeat = action === 'double_click' || p.double ? '2' : '1';
+        const args = [];
+        if (x != null && y != null) args.push('mousemove', String(x), String(y));
+        args.push('click', '--repeat', repeat, '--delay', '60', button);
+        return [{ bin: X, args }];
+      }
+      case 'drag': {
+        if (x == null || y == null || toX == null || toY == null) return [];
+        return [
+          {
+            bin: X,
+            args: ['mousemove', String(x), String(y), 'mousedown', '1', 'mousemove', '--sync', String(toX), String(toY), 'mouseup', '1'],
+            timeoutMs: 30000,
+          },
+        ];
+      }
+      case 'scroll': {
+        const args = [];
+        if (x != null && y != null) args.push('mousemove', String(x), String(y));
+        args.push('click', '--repeat', String(scrollAmount), '--delay', '30', SCROLL_BUTTON[scrollDir]);
+        return [{ bin: X, args }];
+      }
+      case 'type':
+        return [{ bin: X, args: ['type', '--delay', String(num(p.delay) ?? 12), String(p.text ?? '')], timeoutMs: 60000 }];
+      case 'key':
+        return [{ bin: X, args: ['key', String(p.key || 'Return')] }];
+      default:
+        throw new Error(`Unknown computer action: ${action}`);
+    }
+  }
+
+  if (method === 'ydotool') {
+    const Y = 'ydotool';
+    const moveTo = (px, py) => ({ bin: Y, args: ['mousemove', '--absolute', '-x', String(px), '-y', String(py)] });
+    switch (action) {
+      case 'move':
+        if (x == null || y == null) return [];
+        return [moveTo(x, y)];
+      case 'click':
+      case 'right_click': {
+        const code = action === 'right_click' ? '0xC1' : YDOTOOL_BUTTON[p.button] || '0xC0';
+        const cmds = [];
+        if (x != null && y != null) cmds.push(moveTo(x, y));
+        cmds.push({ bin: Y, args: ['click', code] });
+        return cmds;
+      }
+      case 'double_click': {
+        const cmds = [];
+        if (x != null && y != null) cmds.push(moveTo(x, y));
+        cmds.push({ bin: Y, args: ['click', '0xC0'] }, { bin: Y, args: ['click', '0xC0'] });
+        return cmds;
+      }
+      case 'type':
+        return [{ bin: Y, args: ['type', '--key-delay', String(num(p.delay) ?? 12), String(p.text ?? '')], timeoutMs: 60000 }];
+      case 'key': {
+        const code = YDOTOOL_KEYS[p.key];
+        if (!code) throw new Error(`Key not mapped for ydotool: ${p.key}. Use xdotool for full key support.`);
+        return [{ bin: Y, args: ['key', `${code}:1`, `${code}:0`] }];
+      }
+      case 'drag':
+      case 'scroll':
+        throw new Error(`${action} is not supported by ydotool. Install xdotool (works under X11/XWayland) for this action.`);
+      default:
+        throw new Error(`Unknown computer action: ${action}`);
+    }
+  }
+
+  throw new Error(
+    `No input tool available (session: ${cap.session || 'unknown'}). Install xdotool (X11) or ydotool (Wayland, needs uinput daemon). ` +
+      `On GNOME Wayland: sudo apt install ydotoold, then enable the ydotool user service.`
+  );
+}
+
+/* ------------------------------ screenshots ------------------------------ */
+
 async function screenshotToFile(dir) {
   const cap = detect();
   await fsp.mkdir(dir, { recursive: true });
@@ -176,57 +315,57 @@ function portalScreenshot(dir, targetFile) {
   });
 }
 
+/* ------------------------------ input ------------------------------ */
+
 const YDOTOOL_KEYS = {
   Return: '28', Enter: '28', Escape: '1', Tab: '15', Space: '57', Backspace: '14',
   Up: '103', Down: '108', Left: '105', Right: '106',
 };
 
+/**
+ * Execute one desktop-input action. Coordinates are clamped to the detected
+ * screen when known. Returns { method, commands } — the caller decides whether
+ * to capture a fresh screenshot afterwards.
+ */
 async function inputAction(action, params = {}) {
   const cap = detect();
+  const p = { ...(params || {}) };
 
-  if (cap.inputMethod === 'xdotool') {
-    const x = which('xdotool');
-    switch (action) {
-      case 'move':
-        return run(x, ['mousemove', String(params.x | 0), String(params.y | 0)]);
-      case 'click':
-        if (params.x != null) await run(x, ['mousemove', String(params.x | 0), String(params.y | 0)]);
-        return run(x, ['click', String(params.button || 1)]);
-      case 'type':
-        return run(x, ['type', '--delay', '12', String(params.text ?? '')], 60000);
-      case 'key':
-        return run(x, ['key', String(params.key || 'Return')]);
-      default:
-        throw new Error(`Unknown computer action: ${action}`);
+  // Clamp click/drag coordinates into the screen box (best-effort).
+  if (cap.inputMethod === 'xdotool' && (p.x != null || p.y != null)) {
+    const size = await screenSize();
+    if (size) {
+      const a = clampPoint(num(p.x), num(p.y), size);
+      p.x = a.x;
+      p.y = a.y;
+      if (p.to_x != null || p.to_y != null) {
+        const b = clampPoint(num(p.to_x), num(p.to_y), size);
+        p.to_x = b.x;
+        p.to_y = b.y;
+      }
     }
   }
 
-  if (cap.inputMethod === 'ydotool') {
-    const y = which('ydotool');
-    switch (action) {
-      case 'move':
-        return run(y, ['mousemove', '--absolute', '-x', String(params.x | 0), '-y', String(params.y | 0)]);
-      case 'click': {
-        if (params.x != null) await run(y, ['mousemove', '--absolute', '-x', String(params.x | 0), '-y', String(params.y | 0)]);
-        const btn = params.button === 3 ? '0xC2' : params.button === 2 ? '0xC1' : '0xC0';
-        return run(y, ['click', btn]);
-      }
-      case 'type':
-        return run(y, ['type', '--key-delay', '12', String(params.text ?? '')], 60000);
-      case 'key': {
-        const code = YDOTOOL_KEYS[params.key];
-        if (!code) throw new Error(`Key not mapped for ydotool: ${params.key}. Use xdotool names or install xdotool.`);
-        return run(y, ['key', `${code}:1`, `${code}:0`]);
-      }
-      default:
-        throw new Error(`Unknown computer action: ${action}`);
+  const cmds = buildInputCommands(action, p, cap);
+  if (!cmds.length) throw new Error(`computer_use ${action}: missing coordinates (need x and y).`);
+  for (const c of cmds) {
+    const full = which(c.bin);
+    if (!full) throw new Error(`${c.bin} not found on PATH.`);
+    const r = await run(full, c.args, c.timeoutMs || 30000);
+    if (r.err && r.err.code !== undefined && r.err.code !== 0) {
+      throw new Error(`${c.bin} ${c.args[0]} failed: ${r.err.message}`);
     }
   }
-
-  throw new Error(
-    `No input tool available (session: ${cap.session}). Install xdotool (X11) or ydotool (Wayland, needs uinput daemon). ` +
-      `On GNOME Wayland: sudo apt install ydotoold, then enable the ydotool user service.`
-  );
+  return { method: cap.inputMethod, commands: cmds.length };
 }
 
-module.exports = { detect, screenshotToFile, inputAction, which };
+module.exports = {
+  detect,
+  screenshotToFile,
+  inputAction,
+  which,
+  screenSize,
+  buildInputCommands,
+  clampPoint,
+  parsePoints,
+};

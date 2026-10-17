@@ -10,6 +10,7 @@ const browserTool = require('./tools/browser');
 const computerTool = require('./tools/computer');
 const checkpoints = require('./tools/checkpoints');
 const { describeHttpError } = require('./tools/errors');
+const { isWithin } = require('./tools/paths');
 const mcp = require('./mcp');
 const googleAuth = require('./google-auth');
 const geminiWeb = require('./gemini-web');
@@ -120,7 +121,9 @@ app.whenReady().then(() => {
     let rel = decodeURIComponent(new URL(req.url).pathname);
     if (!rel || rel === '/') rel = '/index.html';
     const abs = path.normalize(path.join(DIST, rel));
-    if (!abs.startsWith(DIST)) {
+    // Component-boundary containment: a naive `startsWith(DIST)` would also
+    // accept a sibling like `/…/dist-evil`.
+    if (!isWithin(DIST, abs)) {
       return new Response('Forbidden', { status: 403 });
     }
     try {
@@ -489,7 +492,39 @@ ipcMain.handle('mcp:reload', async () => mcp.reload());
 /* ------------------------------ addons (REA, LeanToken) ------------------------------ */
 
 const MCP_CONFIG = mcp.CONFIG_PATH;
-const NPX_CLI = '/usr/share/nodejs/npm/bin/npx-cli.js';
+
+// --- Portability helpers -----------------------------------------------------
+// These used to be hard-coded to one developer's machine (Debian's npx path,
+// a fixed Ghidra dir and JDK). Resolve them instead: honour an env override,
+// then fall back to a known location only if it actually exists. That keeps the
+// original machine working while letting everyone else run the addons too.
+const nodeFs = require('node:fs');
+
+function firstExisting(paths) {
+  for (const p of paths) {
+    try {
+      if (p && nodeFs.existsSync(p)) return p;
+    } catch {}
+  }
+  return null;
+}
+
+function resolveNpxCli() {
+  if (process.env.NOVA_NPX_CLI) return process.env.NOVA_NPX_CLI;
+  return firstExisting([
+    path.join(path.dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+    '/usr/share/nodejs/npm/bin/npx-cli.js',
+    '/usr/lib/node_modules/npm/bin/npx-cli.js',
+    '/usr/local/lib/node_modules/npm/bin/npx-cli.js',
+  ]);
+}
+
+function resolveEnvPath(key, fallbacks = []) {
+  if (process.env[key]) return process.env[key];
+  return firstExisting(fallbacks);
+}
+
+const NPX_CLI = resolveNpxCli();
 
 const ADDONS = {
   rea: {
@@ -501,8 +536,11 @@ const ADDONS = {
       command: 'npx',
       args: ['-y', 'rea-agents@6.5.0', 'mcp'],
       env: {
-        GHIDRA_INSTALL_DIR: '/home/hariom/tools/ghidra_12.1.4_PUBLIC',
-        JAVA_HOME: '/usr/lib/jvm/java-21-openjdk-amd64',
+        GHIDRA_INSTALL_DIR: resolveEnvPath('GHIDRA_INSTALL_DIR', [
+          '/home/hariom/tools/ghidra_12.1.4_PUBLIC',
+          path.join(os.homedir(), 'tools', 'ghidra_12.1.4_PUBLIC'),
+        ]),
+        JAVA_HOME: resolveEnvPath('JAVA_HOME', ['/usr/lib/jvm/java-21-openjdk-amd64']),
       },
       exposeTools: 'auto',
     },
@@ -513,8 +551,12 @@ const ADDONS = {
       'Token-bounded repo exploration: outlines, exact reads, search, history — keeps the agent context small so token use stays low.',
     site: 'https://github.com/morluto/leantoken',
     server: {
-      command: '/usr/bin/node',
-      args: [NPX_CLI, '--yes', '--prefer-offline', '--package=leantoken@0.1.28', '--', 'leantoken', '--managed-by-setup', 'mcp'],
+      command: process.execPath,
+      args: NPX_CLI
+        ? [NPX_CLI, '--yes', '--prefer-offline', '--package=leantoken@0.1.28', '--', 'leantoken', '--managed-by-setup', 'mcp']
+        : ['--yes', '--prefer-offline', '--package=leantoken@0.1.28', '--', 'leantoken', '--managed-by-setup', 'mcp'],
+      // Fall back to the `npx` shim when we could not locate npx-cli.js.
+      ...(NPX_CLI ? {} : { command: 'npx' }),
       cwd: os.homedir(),
       exposeTools: 'auto',
     },
