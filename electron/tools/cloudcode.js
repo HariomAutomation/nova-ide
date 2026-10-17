@@ -166,6 +166,12 @@ async function ensureProject() {
   const load = await apiCall('loadCodeAssist', {
     metadata: META,
     ...(c.project ? { cloudaicompanionProject: c.project } : {}),
+  }).catch(async (e) => {
+    // Some deployments reject "metadata"; retry with the bare body.
+    if (/Unknown name "metadata"|Cannot find field/i.test(String(e.message || ''))) {
+      return apiCall('loadCodeAssist', c.project ? { cloudaicompanionProject: c.project } : {});
+    }
+    throw e;
   });
   let project = load.cloudaicompanionProject || null;
 
@@ -175,7 +181,12 @@ async function ensureProject() {
       (load.currentTier && load.currentTier.id) ||
       (tiers.find((t) => t && t.isDefault) || tiers[0] || {}).id ||
       'free-tier';
-    const op = await apiCall('onboardUser', { tierId: tier, metadata: META });
+    const op = await apiCall('onboardUser', { tierId: tier, metadata: META }).catch(async (e) => {
+      if (/Unknown name "metadata"|Cannot find field/i.test(String(e.message || ''))) {
+        return apiCall('onboardUser', { tierId: tier });
+      }
+      throw e;
+    });
     // Long-running operation: poll until done.
     let opName = op && op.name;
     for (let i = 0; i < 30 && opName; i += 1) {
@@ -208,10 +219,12 @@ async function ensureProject() {
  */
 async function listModels() {
   const project = await ensureProject().catch(() => null);
+  // This endpoint rejects unknown fields ("Unknown name metadata"), so send the
+  // bare body shapes only - and it is the only method that exists (listModels
+  // is a 404).
   const attempts = [
-    { method: 'fetchAvailableModels', body: { metadata: META, ...(project ? { project } : {}) } },
-    { method: 'fetchAvailableModels', body: { project, metadata: META } },
-    { method: 'listModels', body: { project, metadata: META } },
+    { method: 'fetchAvailableModels', body: {} },
+    { method: 'fetchAvailableModels', body: project ? { project } : {} },
   ];
   const errors = [];
   for (const a of attempts) {
