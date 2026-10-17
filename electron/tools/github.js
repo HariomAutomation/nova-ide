@@ -47,6 +47,15 @@ async function api(pathname) {
       'User-Agent': 'NovaIDE',
     },
   });
+  if (res.status === 401) {
+    // Token revoked or expired ("Expire user access tokens" is on). Drop it so
+    // the UI goes back to the sign-in state with a clear message.
+    const c2 = await readCfg();
+    delete c2.token;
+    delete c2.login;
+    await writeCfg(c2);
+    throw new Error('GitHub token expire ho gaya — dobara "Sign in with GitHub" karo.');
+  }
   if (!res.ok) {
     const t = await res.text().catch(() => '');
     throw new Error(`GitHub HTTP ${res.status}${t ? ` — ${t.slice(0, 160)}` : ''}`);
