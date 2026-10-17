@@ -166,6 +166,27 @@ const JS_STATE = `(() => {
     busy: !!stopBtn,
     editorText: editor ? (editor.innerText || '') : '',
     text: last ? (last.innerText || '') : '',
+    fallback: (() => {
+      try {
+        const marker = window.__novaLastPrompt || '';
+        const root = document.querySelector('main') || document.body;
+        const all = root ? root.innerText || '' : '';
+        if (!marker || !all.includes(marker)) return '';
+        const tail = all.slice(all.lastIndexOf(marker) + marker.length);
+        // Drop the button labels / chrome that sit around the answer.
+        return tail
+          .split('\n')
+          .filter((l) => {
+            const t = l.trim();
+            if (!t) return false;
+            return !/^(copy|share|edit|more_vert|thumb_up|thumb_down|gemini said|google it|show drafts|listen|good response|bad response|regenerate|stop|send|new chat|settings|help|sign in)$/i.test(t);
+          })
+          .join('\n')
+          .trim();
+      } catch {
+        return '';
+      }
+    })(),
     via,
   };
 })()`;
@@ -343,6 +364,16 @@ async function typePrompt(wc, text) {
   if (probe && !String(cur).includes(probe.slice(0, 12))) {
     throw new Error('Gemini input me text set nahi hua (UI badla lagta hai). Gemini tab me Reload karke dobara try karo.');
   }
+  // Remember the tail of what we asked. The answer can then be located as "the
+  // text after the last occurrence of this", which does not depend on Gemini's
+  // response markup at all.
+  const marker = text.trim().slice(-120);
+  if (marker) {
+    await evaluate(
+      wc,
+      `(() => { try { window.__novaLastPrompt = ${JSON.stringify(marker)}; } catch {} return true; })()`
+    ).catch(() => {});
+  }
 }
 
 async function clickSend(wc) {
@@ -518,20 +549,25 @@ async function runPrompt({ threadKey, system, messages, tools, onDelta, signal }
     await sleep(POLL_MS);
     const st = await pageState(wc).catch(() => null);
     if (!st) continue;
-    if (st.text && st.text !== lastText) {
-      if (st.text.startsWith(lastText)) {
-        const d = st.text.slice(lastText.length);
+    // Prefer the precise response element; fall back to "the text after our
+    // prompt", which does not depend on Gemini's response markup at all.
+    const txt = st.text || st.fallback || '';
+    if (txt && txt !== lastText) {
+      if (txt.startsWith(lastText)) {
+        const d = txt.slice(lastText.length);
         if (d && onDelta) onDelta(d);
       } else if (onDelta) {
         // Response regenerated/replaced — can't retract what we already sent.
-        onDelta('\n' + st.text);
+        onDelta('\n' + txt);
       }
-      lastText = st.text;
+      lastText = txt;
       stable = 0;
     } else if (lastText && !st.busy) {
       stable += 1;
     }
     if (lastText && !st.busy && stable >= 3) break; // ~0.75s unchanged = done
+    // A lingering "stop" button must not pin us to the 5-minute timeout.
+    if (lastText && stable >= 16) break; // ~4s unchanged = done anyway
     if (Date.now() - t0 > ANSWER_TIMEOUT_MS) {
       const body = await evaluate(wc, JS_BODY).catch(() => '');
       throw new Error(

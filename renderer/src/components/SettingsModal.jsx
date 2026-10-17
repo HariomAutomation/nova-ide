@@ -553,7 +553,13 @@ function ModelsTab() {
       <Group title="Google Gemini (background)">
         <Row
           label="Sign in once"
-          desc="Ek baar Google se sign in karo. Uske baad Gemini **background** me chalta hai \u2014 kaam Nova ke apne chat/agent se hota hai, Gemini ka web UI kahin nahi dikhta. Koi API key nahi. Google AI Pro ho to Pro models + zyada limits."
+          desc={
+            <>
+              Ek baar Google se sign in karo. Uske baad Gemini <b>background</b> me chalta hai — kaam Nova ke apne chat/agent
+              se hota hai, Gemini ka web UI kahin nahi dikhta. Koi API key nahi. Google AI Pro ho to Pro models + zyada
+              limits. Jawab na aaye to <b>Diagnose</b> dabao.
+            </>
+          }
           control={<GeminiAccountLine />}
         />
       </Group>
