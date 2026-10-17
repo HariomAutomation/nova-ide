@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
+import { chatModels } from '../model-family';
 
 /* --------------------------------- shared UI --------------------------------- */
 
@@ -205,14 +206,18 @@ function GeminiApiLine({ draft, active, setDraft, setActive, commit }) {
       const r = await window.nova.listModels({ baseUrl: probe.entry.baseUrl, apiKey: key, auth: 'gemini' });
       const { next, entry } = ensureEntry(draft, key);
       if (r && Array.isArray(r.models) && r.models.length) {
+        const usable = chatModels(r.models); // drop tts/embedding/image models
         const withIds = next.map((m) =>
-          m.id === entry.id ? { ...m, modelIds: r.models.slice(0, 500), model: m.model || r.models[0] } : m
+          m.id === entry.id ? { ...m, modelIds: usable.slice(0, 500), model: m.model || usable[0] } : m
         );
         setDraft(withIds);
         setActive(entry.id);
         commit(withIds, entry.id);
-        setList(r.models);
-        setMsg(`${r.models.length} models mile — save ho gaye, picker me bhi dikhenge. Ek click me pick karo.`);
+        setList(usable);
+        setMsg(
+          `${usable.length} chat models mile — save ho gaye, picker me bhi dikhenge. Ek click me pick karo.` +
+            (r.models.length > usable.length ? ` (${r.models.length - usable.length} non-chat skip kiye)` : '')
+        );
       } else {
         setDraft(next);
         setActive(entry.id);

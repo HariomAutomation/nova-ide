@@ -6,7 +6,7 @@ import { basename } from '../timeAgo';
 import ToolCard from './ToolCard';
 import RepoMenu from './RepoMenu';
 import { usableModels as pickUsableModels, RETIRED_AUTHS } from '../model-filter';
-import { groupModels, variantsOf, variantCount, pickerMaxHeight } from '../model-family';
+import { groupModels, variantsOf, variantCount, pickerMaxHeight, chipLabel } from '../model-family';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -1010,7 +1010,7 @@ export default function AgentMain() {
             }}
           >
             <span style={{ fontSize: 13, marginRight: 2 }}>⚡</span>
-            {activeModel ? activeModel.label : 'Select Model…'}
+            {chipLabel(activeModel)}
             <span className="chip-caret">▾</span>
           </button>
 

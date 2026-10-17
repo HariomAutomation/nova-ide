@@ -81,3 +81,30 @@ export function pickerMaxHeight(anchorTop, min = 220, max = 460) {
   if (!Number.isFinite(t)) return max;
   return Math.max(min, Math.min(max, Math.round(t - 24)));
 }
+
+/** What the composer chip should say for the active entry. */
+export function chipLabel(entry) {
+  if (!entry) return 'Select Model…';
+  // With a fetched list the interesting thing is which model is chosen, not the
+  // provider label the entry was created with.
+  if (Array.isArray(entry.modelIds) && entry.modelIds.length) {
+    return entry.model || entry.label || 'Model';
+  }
+  return entry.label || entry.model || 'Model';
+}
+
+/**
+ * Models that cannot chat. Listing them just leads people to pick one and get a
+ * confusing failure, so they are dropped from a fetched list.
+ */
+export function isChatModel(id) {
+  const s = String(id || '').toLowerCase();
+  if (!s) return false;
+  return !/(^|[-_])(tts|embedding|embeddings|aqa|imagen|veo|whisper|dall-e|moderation)([-_]|$)/.test(s);
+}
+
+/** Keep only the ids that can plausibly be used for chat. */
+export function chatModels(ids) {
+  const list = Array.isArray(ids) ? ids : [];
+  return list.filter(isChatModel);
+}

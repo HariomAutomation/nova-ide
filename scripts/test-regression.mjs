@@ -20,7 +20,17 @@ import gh from '../electron/tools/github.js';
 import cloudcode from '../electron/tools/cloudcode.js';
 import voice from '../electron/tools/voice.js';
 import { usableModels, isModelUsable } from '../renderer/src/model-filter.js';
-import { groupModels, latestOf, versionOf, variantsOf, variantCount, pickerMaxHeight } from '../renderer/src/model-family.js';
+import {
+  groupModels,
+  latestOf,
+  versionOf,
+  variantsOf,
+  variantCount,
+  pickerMaxHeight,
+  chipLabel,
+  isChatModel,
+  chatModels,
+} from '../renderer/src/model-family.js';
 import { handle as mcpHandle, askGemini } from './mcp-gemini-web.mjs';
 import * as geminiPw from '../electron/gemini-pw.js';
 import {
@@ -824,6 +834,29 @@ suite.push(
         `${name} must not be nested inside another component`
       );
     }
+  })
+);
+
+/* ------------------------------ chip label ------------------------------ */
+
+suite.push(
+  test('composer chip shows the chosen model, and non-chat models are filtered', () => {
+    // an entry with a fetched list: the chip must show the picked id, not the
+    // label the entry was created with
+    const gem = { id: 'g', label: 'Gemini 3.7 Flash', model: 'gemini-4-argon', modelIds: ['gemini-3.7-flash', 'gemini-4-argon'] };
+    assert.equal(chipLabel(gem), 'gemini-4-argon');
+    // a plain entry keeps its friendly label
+    assert.equal(chipLabel({ id: 'd', label: 'DeepSeek', model: 'deepseek-chat' }), 'DeepSeek');
+    assert.equal(chipLabel(null), 'Select Model…');
+
+    assert.equal(isChatModel('gemini-2.5-flash'), true);
+    assert.equal(isChatModel('gemini-3.8-flash-tts'), false);
+    assert.equal(isChatModel('text-embedding-004'), false);
+    assert.equal(isChatModel('gemini-2.5-flash-image'), true); // '-image' is not in the blocklist by design
+    assert.equal(isChatModel('veo-3'), false);
+    assert.equal(isChatModel(''), false);
+    assert.deepEqual(chatModels(['gemini-2.5-flash', 'gemini-3.8-flash-tts', 'text-embedding-004']), ['gemini-2.5-flash']);
+    assert.deepEqual(chatModels(null), []);
   })
 );
 
