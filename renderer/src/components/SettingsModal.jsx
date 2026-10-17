@@ -920,8 +920,8 @@ function CloudTab() {
   return (
     <div className="settings-body">
       <p className="muted small">
-        Sign in with Google once (read-only Drive access) and Nova can list and open your cloud files any time. Nova can
-        read cloud files, never modify them.
+        Ye sign-in <b>cloud files aur memory</b> ke liye hai (read-only Drive). <b>AI models ke liye nahi</b> — models ke
+        liye neeche "Open Gemini tab" ya Settings → Models dekho.
       </p>
 
       <Group title="Google Drive">
@@ -1034,6 +1034,21 @@ function CloudTab() {
             />
           </>
         )}
+        <Row
+          label="Gemini models"
+          desc="Ye (Drive) sign-in models ke liye nahi hai. Free Gemini ke liye Gemini tab me apne Google account se sign in karo — koi API key nahi."
+          control={
+            <button
+              className="btn small"
+              onClick={() => {
+                useStore.getState().setMainView('gemini');
+                useStore.getState().setSettingsOpen(false);
+              }}
+            >
+              Open Gemini tab
+            </button>
+          }
+        />
         {msg && <div className={'g-inline g-' + msg.type}>{msg.text}</div>}
         {msg && msg.type === 'err' && /access_denied|verif/i.test(msg.text || '') && (
           <Row
