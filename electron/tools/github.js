@@ -15,7 +15,11 @@ const { execFile } = require('node:child_process');
 
 // A build can ship a GitHub OAuth App client ID (public for the device flow) so
 // "Sign in with GitHub" is one click. Otherwise the user pastes their own once.
-const DEFAULT_CLIENT_ID = process.env.NOVA_GITHUB_CLIENT_ID || '';
+// Default GitHub OAuth App client ID, so "Sign in with GitHub" is one click with
+// no setup. A client ID is public (not a secret) - the device flow is designed to
+// be embedded in clients and needs no client secret. Override with the
+// NOVA_GITHUB_CLIENT_ID env var, or clear it in the UI's Advanced field.
+const DEFAULT_CLIENT_ID = process.env.NOVA_GITHUB_CLIENT_ID || 'Ov23lirvysSV2ryNxylL';
 
 function configDir() {
   return process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
