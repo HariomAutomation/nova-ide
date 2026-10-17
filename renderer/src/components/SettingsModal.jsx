@@ -886,20 +886,24 @@ function CloudTab() {
   }
 
   async function signIn() {
-    if (!clientId.trim()) {
+    // A built-in client means no fields are needed; only ask when there is none.
+    if (drive.hasClientId === false && !clientId.trim()) {
       setMsg({
         type: 'err',
         text: 'Sign-in ke liye Google client ID chahiye — neeche "Advanced" khol ke paste karo.',
       });
       return;
     }
-    await useStore.getState().saveDriveClient({ clientId, clientSecret: clientSecret || undefined });
+    if (clientId.trim()) {
+      await useStore.getState().saveDriveClient({ clientId, clientSecret: clientSecret || undefined });
+    }
     setBusy(true);
     setMsg({ type: 'info', text: 'Browser me Google sign-in khulega… consent ke baad yahan status update hoga.' });
     try {
       const r = await window.nova.gdriveLogin();
       if (r && r.ok) {
-        setMsg({ type: 'ok', text: `Connected \u2713 ${(r.status && r.status.email) || ''}` });
+        const st = r.status || {};
+        setMsg({ type: 'ok', text: `Connected \u2713 ${st.name || st.email || ''}` });
       } else {
         const lu = await window.nova.gdriveLastUrl().catch(() => null);
         setUrl((lu && lu.url) || null);
