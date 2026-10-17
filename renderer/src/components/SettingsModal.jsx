@@ -498,6 +498,15 @@ function ModelsTab() {
             </div>
           }
         />
+        <Row
+          label="Enable nahi ho raha?"
+          desc="Ye private API Google sabko nahi deta. Agar enable na ho, to ise chhod do aur AI Studio ki FREE key se Gemini chalao (neeche Add a model → Gemini, ya quick-add). Key path supported hai aur asli tool-calling deta hai."
+          control={
+            <button className="btn small" onClick={() => window.nova.openExternal('https://aistudio.google.com/apikey')}>
+              Get AI Studio key ↗
+            </button>
+          }
+        />
       </Group>
 
       <Group title="Add a model">
