@@ -63,8 +63,8 @@ jobs:
     - name: Build renderer
       run: npm run build
 
-    - name: Install Playwright system dependencies
-      run: npx playwright install --with-deps
+    - name: Install Playwright Chromium & system dependencies
+      run: npx playwright install chromium --with-deps
 
     - name: Run Playwright E2E with Xvfb
       run: xvfb-run -a npm run test:e2e

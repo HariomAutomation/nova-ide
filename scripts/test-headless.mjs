@@ -108,6 +108,13 @@ try {
     const grepTool = events.find((e) => e.type === 'tool_end' && e.name === 'grep_search');
     assert.ok(grepTool, 'grep search tool executed');
 
+    // Check browser execution (open + screenshot)
+    const browserTools = events.filter((e) => e.type === 'tool_end' && e.name === 'browser');
+    assert.equal(browserTools.length, 2, 'both browser open and screenshot tools executed');
+    assert.ok(browserTools.every((t) => t.ok === true), 'all browser tool calls succeeded');
+    assert.match(browserTools[0].output, /Nova Test Page/, 'browser loaded the test page');
+    assert.ok(browserTools[1].image, 'browser screenshot produced an image data URL');
+
     // Check final turn completion
     const doneEvt = events.find((e) => e.type === 'done');
     assert.ok(doneEvt, 'agent completed the turn successfully');
