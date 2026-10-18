@@ -53,7 +53,7 @@ const SPECIAL_MENTIONS = [
   { name: '@git', label: '@git', desc: 'Include git diff / status context', icon: '\u{1F500}' },
   { name: '@terminal', label: '@terminal', desc: 'Include recent terminal output', icon: '>_' },
   { name: '@codebase', label: '@codebase', desc: 'Scan and explore the entire codebase', icon: '\u{1F4E6}' },
-  { name: '@docs', label: '@docs', desc: 'Search documentation and external APIs', icon: '\u{1F4D6}' },
+  { name: '@docs', label: '@docs', desc: 'Reference official documentation & library APIs', icon: '\u{1F4D6}' },
   { name: '@web', label: '@web', desc: 'Search the web for live resources', icon: '\u{1F310}' },
   { name: '@folder', label: '@folder', desc: 'Include directory structure and files', icon: '\u{1F4C1}' },
 ];

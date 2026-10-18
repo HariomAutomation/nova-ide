@@ -218,10 +218,30 @@ async function clone(cloneUrl, name) {
   const dest = path.join(dir, safe);
   await fsp.mkdir(dir, { recursive: true });
 
-  // If destination folder already exists, open it directly instead of failing with "already exists"
+  // If destination folder already exists, open it directly or verify remote origin
   try {
     const st = await fsp.stat(dest);
     if (st.isDirectory()) {
+      const originUrl = await new Promise((res) => {
+        execFile('git', ['remote', 'get-url', 'origin'], { cwd: dest, timeout: 5000 }, (err, stdout) => {
+          res(err ? '' : String(stdout || '').trim());
+        });
+      });
+      const norm = (u) => String(u || '').replace(/\.git$/i, '').toLowerCase().replace(/^https?:\/\/github\.com\//i, '').replace(/^git@github\.com:/i, '');
+      // If existing directory points to a different repo, clone to a unique folder to avoid collision
+      if (originUrl && norm(originUrl) !== norm(url)) {
+        const uniqueSafe = `${safe}-${Date.now().toString(36)}`;
+        const uniqueDest = path.join(dir, uniqueSafe);
+        return new Promise((resolve) => {
+          execFile('git', ['clone', '--depth', '1', url, uniqueDest], { timeout: 300000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+            if (err) {
+              resolve({ error: String(stderr || err.message || err).slice(0, 400) });
+            } else {
+              resolve({ ok: true, path: uniqueDest });
+            }
+          });
+        });
+      }
       execFile('git', ['pull', '--ff-only'], { cwd: dest, timeout: 8000 }, () => {});
       return { ok: true, path: dest, existed: true };
     }

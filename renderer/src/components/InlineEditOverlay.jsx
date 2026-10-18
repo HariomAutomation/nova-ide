@@ -6,7 +6,11 @@ export default function InlineEditOverlay({ inline, onPromptChange, onSubmit, on
           <input
             autoFocus
             className="inline-input"
-            placeholder="Edit with AI… (e.g. “refactor this”, “fix the bug”, “add error handling”)"
+            placeholder={
+              inline.isInsertion
+                ? 'Generate at cursor… (e.g. “write helper function”, “add unit test”)'
+                : 'Edit with AI… (e.g. “refactor this”, “fix the bug”, “add error handling”)'
+            }
             value={inline.prompt}
             onChange={(e) => onPromptChange(e.target.value)}
             onKeyDown={(e) => {
@@ -33,7 +37,7 @@ export default function InlineEditOverlay({ inline, onPromptChange, onSubmit, on
             {!inline.streaming && (
               <div className="inline-actions">
                 <button className="btn primary" onClick={onAccept}>
-                  Accept (replace selection)
+                  {inline.isInsertion ? 'Accept (insert at cursor)' : 'Accept (replace selection)'}
                 </button>
                 <button className="btn" onClick={onReject}>
                   Reject

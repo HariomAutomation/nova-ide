@@ -1305,6 +1305,35 @@ suite.push(
     // Mentions -> agent
     assert.equal(detectMode('check this', {}, 'Contents of @-mentioned files:\n...'), 'agent');
     assert.equal(detectMode('see this', {}, 'User tagged @git'), 'agent');
+
+    // Auto routing: direct follow-up action confirmations -> agent
+    assert.equal(detectMode('ok do it'), 'agent');
+    assert.equal(detectMode('do it'), 'agent');
+    assert.equal(detectMode('continue'), 'agent');
+    assert.equal(detectMode('karo'), 'agent');
+    assert.equal(detectMode('haan karo'), 'agent');
+    assert.equal(detectMode('kar do'), 'agent');
+    assert.equal(detectMode('go ahead'), 'agent');
+    assert.equal(detectMode('same karo'), 'agent');
+    assert.equal(detectMode('proceed'), 'agent');
+    assert.equal(detectMode('next step'), 'agent');
+    assert.equal(detectMode('try again'), 'agent');
+
+    // Auto routing: contextual brief confirmations with history -> agent
+    const mockSession = {
+      messages: [
+        { role: 'user', content: 'inspect login.js' },
+        { role: 'assistant', content: 'I can fix the bug in login.js. Proceed?' },
+      ],
+    };
+    assert.equal(detectMode('yes', {}, '', mockSession), 'agent');
+    assert.equal(detectMode('ok', {}, '', mockSession), 'agent');
+    assert.equal(detectMode('sure', {}, '', mockSession), 'agent');
+    assert.equal(detectMode('theek hai', {}, '', mockSession), 'agent');
+
+    // Brand new empty conversation with just 'yes' or 'ok' -> chat
+    assert.equal(detectMode('yes'), 'chat');
+    assert.equal(detectMode('ok'), 'chat');
   })
 );
 

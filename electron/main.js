@@ -678,7 +678,11 @@ ipcMain.handle('skills:new', async (_e, rawName) => {
 /* ------------------------------ MCP ------------------------------ */
 
 ipcMain.handle('mcp:status', async () => mcp.status());
-ipcMain.handle('mcp:reload', async () => mcp.reload());
+ipcMain.handle('mcp:reload', async () => {
+  await mcp.reload();
+  await mcp.tools(true).catch(() => {});
+  return mcp.status();
+});
 
 /* ------------------------------ addons (REA, LeanToken) ------------------------------ */
 
@@ -865,6 +869,7 @@ ipcMain.handle('addons:toggle', async (_e, { id, enable, url }) => {
   await writeMcpConfig(cfg);
   try {
     await mcp.reload();
+    await mcp.tools(true);
   } catch {}
   return addonsStatus();
 });

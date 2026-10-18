@@ -1082,7 +1082,7 @@ function compactMessages(
   return out;
 }
 
-function detectMode(userText, settings = {}, contextNote = '') {
+function detectMode(userText, settings = {}, contextNote = '', sessionOrHistory = null) {
   const mode = settings.composerMode || 'auto';
   if (mode === 'chat') return 'chat';
   if (mode === 'agent') return 'agent';
@@ -1094,8 +1094,30 @@ function detectMode(userText, settings = {}, contextNote = '') {
     return 'agent';
   }
 
+  // Direct action follow-ups: user explicitly telling the agent to do it, continue, execute, or retry
+  const directActionFollowup = /^(ok\s+do\s+it|do\s+it|go\s+ahead|continue|proceed|next(\s+step)?|apply(\s+it)?|run\s+it|same\s+karo|karo|haan\s+karo|kar\s+do|aage\s+badho|shuru\s+karo|start|try\s+again|retry|fir\s+se\s+karo|theek\s+karo|fix\s+it)[.!?\s]*$/i;
+  if (directActionFollowup.test(text)) {
+    return 'agent';
+  }
+
+  // Pure conversational greetings / identity queries
   const greetingPattern = /^(hi|hello|hey|hiya|howdy|yo|namaste|sup|greetings|good\s+(morning|afternoon|evening|night)|who are you|what are you|what can you do|kya kar sakte ho|kaise ho|kya haal hai|help|shukriya|thanks|thank you|suno)[.!?\s]*$/i;
   if (greetingPattern.test(text)) {
+    return 'chat';
+  }
+
+  // Short confirmations (e.g. "ok", "yes", "sure", "yeah", "yep", "theek hai")
+  // In an active multi-turn session where the agent presented a plan or ran tools, route to agent
+  const briefConfirmPattern = /^(ok|okay|yes|yeah|yep|sure|theek hai|sahi hai|bilkul|agreed)[.!?\s]*$/i;
+  if (briefConfirmPattern.test(text)) {
+    const msgs = Array.isArray(sessionOrHistory)
+      ? sessionOrHistory
+      : (sessionOrHistory && Array.isArray(sessionOrHistory.messages))
+        ? sessionOrHistory.messages
+        : null;
+    if (msgs && msgs.length > 1) {
+      return 'agent';
+    }
     return 'chat';
   }
 
@@ -1163,7 +1185,7 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
   let modelRequests = 0;
 
   try {
-    const activeMode = detectMode(userText, settings, contextNote);
+    const activeMode = detectMode(userText, settings, contextNote, session);
     emit({ type: 'mode', mode: activeMode });
 
     // Cursor Parity: Direct Chat Mode (fast conversation without tool schemas/loops)
