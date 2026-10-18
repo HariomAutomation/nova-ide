@@ -86,6 +86,21 @@ const COMMANDS = [
   },
 ];
 
+function sanitizeAssistantReply(text) {
+  if (!text || typeof text !== 'string') return text;
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  if (/^\s*\*\s*(?:User says|Context|Workspace|Mode: Direct Chat|Acknowledge|Introduce myself)/i.test(cleaned)) {
+    const quoteMatch = cleaned.match(/(?:^|\n)(?:["“]([^"”]+)["”]|(?:Hello|Hi|Hey|Welcome|Namaste)[!.,\s][\s\S]*)/i);
+    if (quoteMatch) {
+      cleaned = (quoteMatch[1] || quoteMatch[0]).trim();
+    } else {
+      cleaned = cleaned.replace(/^(?:\s*\*[^\n]*\n*)+/gm, '').trim();
+    }
+  }
+  cleaned = cleaned.replace(/\n+\s*\*\s*(?:Add a brief|Remind the user|Introduce|Mention)[\s\S]*$/i, '').trim();
+  return cleaned || text;
+}
+
 function diagnoseError(text) {
   const t = String(text || '');
   const low = t.toLowerCase();
@@ -1490,7 +1505,7 @@ export default function AgentMain() {
                           </span>
                         )}
                       </div>
-                      <Markdown text={item.text + (item.streaming ? ' \u258D' : '')} />
+                      <Markdown text={(item.streaming ? item.text : sanitizeAssistantReply(item.text)) + (item.streaming ? ' \u258D' : '')} />
                     </div>
                   );
                 }

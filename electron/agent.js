@@ -1198,16 +1198,42 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
     const activeMode = detectMode(userText, settings, contextNote, session);
     emit({ type: 'mode', mode: activeMode });
 
+function sanitizeAssistantReply(text) {
+  if (!text || typeof text !== 'string') return text;
+  // 1. Strip <think>...</think> reasoning blocks if model emitted them
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // 2. If model leaked an instruction outline scratchpad (e.g. * User says: ... * Context: ... * Acknowledge ...)
+  if (/^\s*\*\s*(?:User says|Context|Workspace|Mode: Direct Chat|Acknowledge|Introduce myself)/i.test(cleaned)) {
+    // If there is an actual quoted message or greeting after the bullets
+    const quoteMatch = cleaned.match(/(?:^|\n)(?:["“]([^"”]+)["”]|(?:Hello|Hi|Hey|Welcome|Namaste)[!.,\s][\s\S]*)/i);
+    if (quoteMatch) {
+      cleaned = (quoteMatch[1] || quoteMatch[0]).trim();
+    } else {
+      // Remove all leading bullet lines that echo meta prompts
+      cleaned = cleaned.replace(/^(?:\s*\*[^\n]*\n*)+/gm, '').trim();
+    }
+  }
+
+  // 3. If cleaned still ends with a stray prompt instruction like '* Add a brief...'
+  cleaned = cleaned.replace(/\n+\s*\*\s*(?:Add a brief|Remind the user|Introduce|Mention)[\s\S]*$/i, '').trim();
+
+  return cleaned || text;
+}
+
     // Cursor Parity: Direct Chat Mode (fast conversation without tool schemas/loops)
     if (activeMode === 'chat') {
       emit({ type: 'turn_start' });
       emit({ type: 'step', step: 1, maxSteps: 1 });
 
       const chatSystem = [
-        'You are Nova AI, an intelligent coding assistant inside Nova IDE.',
-        workspaceRoot ? `Workspace folder: ${workspaceRoot}` : '',
-        'You are in direct Chat mode (no tools). Answer questions, write code snippets with markdown formatting, and explain concepts directly and concisely.',
-        'If the user wants you to edit files, inspect project files, or run terminal commands, answer their question and let them know they can switch to Agent mode or ask you to perform the action.',
+        'You are Nova AI, a helpful and knowledgeable coding assistant inside Nova IDE.',
+        workspaceRoot ? `Current workspace folder: ${workspaceRoot}` : '',
+        'CRITICAL INSTRUCTIONS:',
+        '- Answer conversationally, concisely, and directly.',
+        '- NEVER output meta-scratchpads, prompt analysis, or bullet-point breakdowns of your instructions (e.g. never write "* User says...", "* Context...", "* Mode...", "* Acknowledge the user").',
+        '- When greeted with "hi", "hello", etc., reply with a warm, natural greeting (e.g. "Hello! How can I help you today?") without listing your instructions.',
+        '- You are in Chat mode (fast Q&A without tool loops). If the user asks to edit workspace files or run terminal commands, answer them and let them know they can toggle Agent mode.',
       ].filter(Boolean).join('\n');
 
       const chatMessages = [
@@ -1226,8 +1252,9 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
       });
 
       if (res.content) {
-        emit({ type: 'assistant_message', text: res.content });
-        session.messages.push({ role: 'assistant', content: res.content });
+        const cleanContent = sanitizeAssistantReply(res.content);
+        emit({ type: 'assistant_message', text: cleanContent });
+        session.messages.push({ role: 'assistant', content: cleanContent });
       }
       emit({ type: 'done' });
       return;
@@ -1265,17 +1292,18 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
         result = await attempt(fit);
       }
       const { content, toolCalls } = result;
+      const cleanContent = sanitizeAssistantReply(content);
 
-      if (content) emit({ type: 'assistant_message', text: content });
+      if (cleanContent) emit({ type: 'assistant_message', text: cleanContent });
 
       if (!toolCalls.length) {
-        session.messages.push({ role: 'assistant', content: content || '' });
+        session.messages.push({ role: 'assistant', content: cleanContent || '' });
         break;
       }
 
       session.messages.push({
         role: 'assistant',
-        content: content || '',
+        content: cleanContent || '',
         tool_calls: toolCalls.map((c) => ({
           id: c.id,
           type: 'function',
