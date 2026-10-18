@@ -134,6 +134,145 @@ async function searchFiles({ pattern, dir, caseSensitive = false, maxResults = 1
   return { pattern, dir: root, count: results.length, truncated: results.length >= maxResults, results };
 }
 
+async function codebaseSearch({ query, dir, maxResults = 30, maxFileBytes = 512 * 1024 }) {
+  const q = String(query || '').trim();
+  if (!q) return { error: 'query is required' };
+  const root = dir || process.cwd();
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+
+  const matches = [];
+  let scanned = 0;
+
+  async function walk(d) {
+    if (matches.length >= maxResults * 2) return;
+    let entries;
+    try {
+      entries = await fs.readdir(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (matches.length >= maxResults * 2) return;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) {
+        if (IGNORE_DIRS.has(e.name) || e.name.startsWith('.git')) continue;
+        await walk(p);
+      } else if (e.isFile()) {
+        scanned += 1;
+        if (scanned > 20000) return;
+        let stat;
+        try {
+          stat = await fs.stat(p);
+        } catch {
+          continue;
+        }
+        if (stat.size > maxFileBytes) continue;
+        let text;
+        try {
+          text = await fs.readFile(p, 'utf8');
+        } catch {
+          continue;
+        }
+        if (text.includes('\u0000')) continue;
+
+        const relPath = path.relative(root, p);
+        const relLower = relPath.toLowerCase();
+
+        // 1. Path match bonus
+        let pathScore = 0;
+        if (terms.every((t) => relLower.includes(t))) pathScore += 5;
+
+        const lines = text.split('\n');
+        for (let i = 0; i < lines.length && matches.length < maxResults * 2; i++) {
+          const line = lines[i];
+          const lineLower = line.toLowerCase();
+          let score = pathScore;
+          if (regex.test(line)) {
+            score += 10;
+          } else if (terms.every((t) => lineLower.includes(t))) {
+            score += 5;
+          } else if (terms.some((t) => lineLower.includes(t))) {
+            score += 2;
+          }
+
+          if (score > 0) {
+            // Def/symbol bonus
+            if (/^\s*(function|class|def|const|let|var|export|pub|async|interface|type)\b/i.test(line)) {
+              score += 4;
+            }
+            matches.push({
+              path: p,
+              relPath,
+              line: i + 1,
+              score,
+              snippet: line.trim().slice(0, 200),
+            });
+          }
+        }
+      }
+    }
+  }
+
+  await walk(root);
+  matches.sort((a, b) => b.score - a.score);
+  const results = matches.slice(0, maxResults);
+  return { query: q, dir: root, count: results.length, results };
+}
+
+async function editNotebook({ path: filePath, action = 'replace', cellIndex, cellType = 'code', source = '' }) {
+  let content;
+  try {
+    content = await fs.readFile(filePath, 'utf8');
+  } catch (e) {
+    return { error: `Could not read notebook: ${e.message}` };
+  }
+  let nb;
+  try {
+    nb = JSON.parse(content);
+  } catch (e) {
+    return { error: `Invalid notebook JSON: ${e.message}` };
+  }
+  if (!nb || !Array.isArray(nb.cells)) {
+    return { error: 'Notebook missing "cells" array' };
+  }
+
+  const idx = Number.isInteger(cellIndex) ? cellIndex : -1;
+  const sourceLines = typeof source === 'string' ? source.split('\n').map((l, i, arr) => (i < arr.length - 1 ? l + '\n' : l)) : [];
+
+  if (action === 'delete') {
+    if (idx < 0 || idx >= nb.cells.length) {
+      return { error: `Cell index ${idx} out of range (0..${nb.cells.length - 1})` };
+    }
+    nb.cells.splice(idx, 1);
+  } else if (action === 'insert') {
+    const newCell = {
+      cell_type: cellType === 'markdown' ? 'markdown' : 'code',
+      metadata: {},
+      source: sourceLines,
+      ...(cellType === 'code' ? { outputs: [], execution_count: null } : {}),
+    };
+    if (idx >= 0 && idx <= nb.cells.length) {
+      nb.cells.splice(idx, 0, newCell);
+    } else {
+      nb.cells.push(newCell);
+    }
+  } else {
+    // replace
+    if (idx < 0 || idx >= nb.cells.length) {
+      return { error: `Cell index ${idx} out of range (0..${nb.cells.length - 1})` };
+    }
+    const cell = nb.cells[idx];
+    if (cellType) cell.cell_type = cellType;
+    cell.source = sourceLines;
+    if (cell.cell_type === 'code' && !cell.outputs) cell.outputs = [];
+  }
+
+  const updatedJson = JSON.stringify(nb, null, 1) + '\n';
+  await fs.writeFile(filePath, updatedJson, 'utf8');
+  return { ok: true, path: filePath, totalCells: nb.cells.length, action };
+}
+
 module.exports = {
   listDir,
   readFileTool,
@@ -141,5 +280,7 @@ module.exports = {
   editFileTool,
   deleteFileTool,
   searchFiles,
+  codebaseSearch,
+  editNotebook,
   IGNORE_DIRS,
 };

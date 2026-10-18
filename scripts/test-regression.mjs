@@ -1166,6 +1166,90 @@ suite.push(
   })
 );
 
+/* ------------------------------ Cursor Parity Tools ------------------------------ */
+
+suite.push(
+  test('fsTools: codebaseSearch ranks definitions and keywords', async () => {
+    const searchDir = path.join(TEST_DIR, 'cb-search');
+    await fsp.mkdir(searchDir, { recursive: true });
+    await fsp.writeFile(
+      path.join(searchDir, 'auth.js'),
+      'function handleLoginUser(req, res) {\n  const token = generateAuthToken();\n  return res.json({ token });\n}\n'
+    );
+    await fsp.writeFile(
+      path.join(searchDir, 'config.js'),
+      'export const authConfig = {\n  domain: "auth.example.com",\n};\n'
+    );
+
+    const r = await fsTools.codebaseSearch({ query: 'handleLoginUser', dir: searchDir });
+    assert.ok(r.count >= 1);
+    assert.equal(r.results[0].relPath, 'auth.js');
+    assert.equal(r.results[0].line, 1);
+    assert.ok(r.results[0].snippet.includes('handleLoginUser'));
+  })
+);
+
+suite.push(
+  test('fsTools: editNotebook manipulates ipynb cells safely', async () => {
+    const nbPath = path.join(TEST_DIR, 'test.ipynb');
+    const initialNb = {
+      cells: [
+        { cell_type: 'markdown', metadata: {}, source: ['# Welcome\n'] },
+      ],
+      metadata: {},
+      nbformat: 4,
+      nbformat_minor: 2,
+    };
+    await fsp.writeFile(nbPath, JSON.stringify(initialNb, null, 1), 'utf8');
+
+    // 1. Insert a code cell
+    const ins = await fsTools.editNotebook({
+      path: nbPath,
+      action: 'insert',
+      cellIndex: 1,
+      cellType: 'code',
+      source: 'print("hello from notebook")',
+    });
+    assert.equal(ins.ok, true);
+    assert.equal(ins.totalCells, 2);
+
+    // 2. Replace the cell
+    const rep = await fsTools.editNotebook({
+      path: nbPath,
+      action: 'replace',
+      cellIndex: 1,
+      cellType: 'code',
+      source: 'print("updated code")',
+    });
+    assert.equal(rep.ok, true);
+
+    const readBack = JSON.parse(await fsp.readFile(nbPath, 'utf8'));
+    assert.equal(readBack.cells.length, 2);
+    assert.ok(readBack.cells[1].source.join('').includes('updated code'));
+
+    // 3. Delete the cell
+    const del = await fsTools.editNotebook({
+      path: nbPath,
+      action: 'delete',
+      cellIndex: 1,
+    });
+    assert.equal(del.ok, true);
+    assert.equal(del.totalCells, 1);
+  })
+);
+
+suite.push(
+  test('agent: toolSchemas includes codebase_search and edit_notebook for Cursor parity', async () => {
+    const schemas = await toolSchemas();
+    const names = schemas.map((s) => s.function.name);
+    assert.ok(names.includes('codebase_search'));
+    assert.ok(names.includes('edit_notebook'));
+    assert.ok(names.includes('read_file'));
+    assert.ok(names.includes('todo_write'));
+    assert.ok(names.includes('code_lineage'));
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

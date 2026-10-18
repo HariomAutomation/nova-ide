@@ -248,7 +248,70 @@ const TOOL_DEFS = [
       required: ['note'],
     },
   },
+  {
+    name: 'codebase_search',
+    category: 'read',
+    description:
+      'Search code symbols, identifiers and concepts across workspace files. Returns top ranking matches with file paths, lines and code excerpts.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Semantic or keyword search query (e.g. "auth login handler", "theme switch", "model list").' },
+        path: { type: 'string', description: 'Optional subfolder to constrain search.' },
+        max_results: { type: 'integer', description: 'Max matches (default 25).' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'edit_notebook',
+    category: 'edit',
+    description:
+      'Inspect or modify a Jupyter notebook (.ipynb) cell by cell without breaking its JSON structure.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path to .ipynb file.' },
+        action: { type: 'string', enum: ['replace', 'insert', 'delete'], description: 'Action to perform on the cell.' },
+        cell_index: { type: 'integer', description: '0-based index of the target cell.' },
+        cell_type: { type: 'string', enum: ['code', 'markdown'], description: 'Type of the cell.' },
+        source: { type: 'string', description: 'New code or markdown content for the cell.' },
+      },
+      required: ['path', 'action'],
+    },
+  },
 ];
+
+const CURSOR_TOOL_ALIASES = {
+  Read: 'read_file',
+  ReadFile: 'read_file',
+  read: 'read_file',
+  LS: 'list_dir',
+  ls: 'list_dir',
+  dir: 'list_dir',
+  Grep: 'grep_search',
+  grep: 'grep_search',
+  rg: 'grep_search',
+  ripgrep: 'grep_search',
+  Shell: 'run_terminal_cmd',
+  terminal: 'run_terminal_cmd',
+  bash: 'run_terminal_cmd',
+  sh: 'run_terminal_cmd',
+  Delete: 'delete_file',
+  delete: 'delete_file',
+  WebSearch: 'web_search',
+  webSearch: 'web_search',
+  WebFetch: 'web_fetch',
+  webFetch: 'web_fetch',
+  TodoWrite: 'todo_write',
+  todoWrite: 'todo_write',
+  CodeLineage: 'code_lineage',
+  codeLineage: 'code_lineage',
+  codebase_search: 'codebase_search',
+  CodebaseSearch: 'codebase_search',
+  edit_notebook: 'edit_notebook',
+  EditNotebook: 'edit_notebook',
+};
 
 const mcpToolMap = new Map();
 
@@ -576,10 +639,30 @@ async function codeLineage(args, ctx = {}) {
   return { text: `Lineage of ${rel}${label}:\n${truncate(out, 6000)}`, ok: true };
 }
 
-async function executeTool(name, args, ctx) {
+async function executeTool(name, args = {}, ctx = {}) {
   const { workspaceRoot, artifactsDir } = ctx;
+  const canonical = CURSOR_TOOL_ALIASES[name] || name;
 
-  switch (name) {
+  // Parameter normalization for Cursor and alternative model conventions
+  if (args && typeof args === 'object') {
+    if (!args.path && (args.file || args.target || args.filePath)) {
+      args.path = args.file || args.target || args.filePath;
+    }
+    if (!args.command && (args.cmd || args.script)) {
+      args.command = args.cmd || args.script;
+    }
+    if (!args.pattern && (args.query || args.regex)) {
+      args.pattern = args.query || args.regex;
+    }
+    if (!args.old_string && (args.oldText || args.find || args.old)) {
+      args.old_string = args.oldText || args.find || args.old;
+    }
+    if (!args.new_string && (args.newText || args.replace || args.new)) {
+      args.new_string = args.newText || args.replace || args.new;
+    }
+  }
+
+  switch (canonical) {
     case 'list_dir': {
       const entries = await fsTools.listDir(args.path);
       const listing = entries
@@ -743,14 +826,40 @@ async function executeTool(name, args, ctx) {
     case 'code_lineage': {
       return await codeLineage(args, { workspaceRoot });
     }
+    case 'codebase_search': {
+      const r = await fsTools.codebaseSearch({
+        query: args.query || args.pattern || '',
+        dir: args.path || workspaceRoot,
+        maxResults: Math.min(args.max_results || 25, 100),
+      });
+      if (r.error) return { text: `Error: ${r.error}` };
+      if (!r.results || !r.results.length) return { text: `No codebase matches for "${r.query}" under ${r.dir}` };
+      const body = r.results
+        .map((m) => `${m.relPath}:${m.line}: ${m.snippet}`)
+        .join('\n');
+      return { text: `Codebase search found ${r.count} matches for "${r.query}":\n${body}` };
+    }
+    case 'edit_notebook': {
+      await snapshotFor(ctx, args.path);
+      const r = await fsTools.editNotebook({
+        path: args.path,
+        action: args.action,
+        cellIndex: args.cell_index,
+        cellType: args.cell_type,
+        source: args.source,
+      });
+      if (r.error) return { text: `Error: ${r.error}` };
+      ctx.notifyFsChanged(args.path);
+      return { text: `Notebook updated (${r.path}): ${r.action} executed, total cells: ${r.totalCells}`, ok: true };
+    }
     default: {
-      if (name.startsWith('mcp__')) {
-        let target = mcpToolMap.get(name);
+      if (canonical.startsWith('mcp__')) {
+        let target = mcpToolMap.get(canonical);
         if (!target) {
-          const parts = name.slice(5).split('__');
+          const parts = canonical.slice(5).split('__');
           if (parts.length >= 2) target = { server: parts[0], tool: parts.slice(1).join('__') };
         }
-        if (!target) return { text: `Unknown MCP tool: ${name}` };
+        if (!target) return { text: `Unknown MCP tool: ${canonical}` };
         const r = await mcp.call(target.server, target.tool, args);
         return { text: r.text, ok: r.ok };
       }
@@ -1081,8 +1190,9 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
           continue;
         }
 
-        const def = TOOL_DEFS.find((t) => t.name === call.name);
-        const category = def ? def.category : call.name.startsWith('mcp__') ? 'mcp' : 'unknown';
+        const canonicalName = CURSOR_TOOL_ALIASES[call.name] || call.name;
+        const def = TOOL_DEFS.find((t) => t.name === canonicalName);
+        const category = def ? def.category : (call.name.startsWith('mcp__') || canonicalName.startsWith('mcp__')) ? 'mcp' : 'unknown';
         const autoFlags = {
           read: true,
           edit: settings.autoApproveEdit !== false,
@@ -1096,7 +1206,7 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
         // Cursor-style protections (Settings → Agents → Execution and Approvals)
         let requiresApproval = !autoFlags[category];
         let approveReason = null;
-        const targetPath = typeof args.path === 'string' ? args.path : null;
+        const targetPath = typeof args.path === 'string' ? args.path : (typeof args.file === 'string' ? args.file : null);
         if (!requiresApproval) {
           if (category === 'read' && targetPath && settings.readAccess === 'workspace' && !withinWorkspace(targetPath)) {
             requiresApproval = true;
@@ -1106,7 +1216,7 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
             requiresApproval = true;
             approveReason = 'External-File Protection is on (path outside the workspace)';
           }
-          if (call.name === 'delete_file' && settings.fileDeletionProtection) {
+          if ((call.name === 'delete_file' || canonicalName === 'delete_file') && settings.fileDeletionProtection) {
             requiresApproval = true;
             approveReason = 'File-Deletion Protection is on';
           }
