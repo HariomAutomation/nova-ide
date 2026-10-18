@@ -30,6 +30,12 @@ jobs:
     - name: Run Regression Tests
       run: npm run test:regression
 
+    # test:headless asserts the browser tool really opened a page and produced a
+    # screenshot, so Chromium has to be present. Without this the browser
+    # assertions fail and the fast gate goes red.
+    - name: Install Chromium for the browser tool
+      run: npx playwright install chromium --with-deps
+
     - name: Run Headless Agent E2E
       run: npm run test:headless
 
