@@ -87,9 +87,10 @@ console.log(`  ✓ Store & Agent Settings (autocomplete: ${agentSettings.agentAu
 const views = ['editor', 'search', 'automations', 'customize', 'agent'];
 let viewSwitchOk = true;
 for (const v of views) {
-  await evaljs(`window.__novaStore.getState().setMainView(${JSON.stringify(v)})`, false);
-  await sleep(100);
-  const cur = await evaljs('window.__novaStore.getState().mainView');
+  const cur = await evaljs(`(() => {
+    window.__novaStore.getState().setMainView(${JSON.stringify(v)});
+    return window.__novaStore.getState().mainView;
+  })()`);
   if (cur !== v) {
     viewSwitchOk = false;
     break;
@@ -101,11 +102,14 @@ console.log(`  ✓ View Navigation (${views.join(' -> ')})`);
 // 4. Theme switching sanity
 const initialTheme = await evaljs('window.__novaStore.getState().theme');
 const targetTheme = initialTheme === 'dark' ? 'light' : 'dark';
-await evaljs(`window.__novaStore.getState().setTheme(${JSON.stringify(targetTheme)})`, false);
-await sleep(100);
-const toggledTheme = await evaljs('window.__novaStore.getState().theme');
-await evaljs(`window.__novaStore.getState().setTheme(${JSON.stringify(initialTheme)})`, false); // restore
-const restoredTheme = await evaljs('window.__novaStore.getState().theme');
+const toggledTheme = await evaljs(`(() => {
+  window.__novaStore.getState().setTheme(${JSON.stringify(targetTheme)});
+  return window.__novaStore.getState().theme;
+})()`);
+const restoredTheme = await evaljs(`(() => {
+  window.__novaStore.getState().setTheme(${JSON.stringify(initialTheme)});
+  return window.__novaStore.getState().theme;
+})()`);
 checks.theme_toggle = toggledTheme === targetTheme && restoredTheme === initialTheme;
 console.log(`  ✓ Theme toggling (${initialTheme} -> ${toggledTheme} -> ${restoredTheme})`);
 
@@ -121,6 +125,10 @@ const heuristicTest = await evaljs(`
   typeof window.__novaEditor !== 'undefined' || true
 `);
 checks.editor_environment = !!heuristicTest;
+
+for (const [k, v] of Object.entries(checks)) {
+  if (!v) console.log(`  ✗ Check failed: ${k}`);
+}
 
 const pass = Object.values(checks).every(Boolean);
 console.log(`\nSanity Suite Results: ${Object.values(checks).filter(Boolean).length}/${Object.keys(checks).length} passed`);
