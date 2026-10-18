@@ -1363,6 +1363,36 @@ suite.push(
   })
 );
 
+suite.push(
+  test('renderer: store handles both streamed and non-streamed assistant replies with mode tagging', async () => {
+    globalThis.window = { nova: {} };
+    const { useStore } = await import('../renderer/src/store.js');
+    const st = useStore.getState();
+
+    // 1. Non-streamed reply (direct assistant_message without assistant_delta)
+    useStore.setState({ agentItems: [] });
+    st.agentHandleEvent({ type: 'mode', mode: 'agent' });
+    st.agentHandleEvent({ type: 'assistant_message', text: 'Direct non-streamed reply' });
+    const items1 = useStore.getState().agentItems;
+    assert.equal(items1.length, 1);
+    assert.equal(items1[0].text, 'Direct non-streamed reply');
+    assert.equal(items1[0].streaming, false);
+    assert.equal(items1[0].mode, 'agent');
+
+    // 2. Streamed reply (assistant_delta followed by assistant_message)
+    useStore.setState({ agentItems: [] });
+    st.agentHandleEvent({ type: 'mode', mode: 'chat' });
+    st.agentHandleEvent({ type: 'assistant_delta', text: 'Chunk 1' });
+    st.agentHandleEvent({ type: 'assistant_delta', text: ' Chunk 2' });
+    st.agentHandleEvent({ type: 'assistant_message', text: 'Chunk 1 Chunk 2' });
+    const items2 = useStore.getState().agentItems;
+    assert.equal(items2.length, 1);
+    assert.equal(items2[0].text, 'Chunk 1 Chunk 2');
+    assert.equal(items2[0].streaming, false);
+    assert.equal(items2[0].mode, 'chat');
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

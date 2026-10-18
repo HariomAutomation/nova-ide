@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { langFromPath } from './languages';
-import { dueAutomations, normalizeTrigger } from './automation-schedule';
+import { langFromPath } from './languages.js';
+import { dueAutomations, normalizeTrigger } from './automation-schedule.js';
 
 // Automation scheduler state (module-level: not part of the render tree).
 let autoTimer = null;
@@ -1447,11 +1447,22 @@ export const useStore = create((set, get) => ({
       }
       case 'assistant_message': {
         const turnMode = get().activeTurnMode || null;
-        s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, {
-          text: e.text,
-          streaming: false,
-          ...(turnMode ? { mode: turnMode } : {}),
-        });
+        const items = get().agentItems;
+        const hasStreaming = items.some((it) => it.kind === 'assistant' && it.streaming);
+        if (hasStreaming) {
+          s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, {
+            text: e.text,
+            streaming: false,
+            ...(turnMode ? { mode: turnMode } : {}),
+          });
+        } else {
+          s.agentAppend({
+            kind: 'assistant',
+            text: e.text,
+            streaming: false,
+            ...(turnMode ? { mode: turnMode } : {}),
+          });
+        }
         break;
       }
       case 'tool_start':
