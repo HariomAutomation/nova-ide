@@ -20,15 +20,13 @@
     "test:all": "node scripts/test-all.mjs",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/test-regression.mjs && node scripts/test-headless.mjs",
-    "bench:search": "node scripts/bench-search.mjs"
+    "test": "node scripts/test-regression.mjs && node scripts/test-headless.mjs"
   },
   "engines": {
     "node": ">=22.12"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
-    "@vscode/ripgrep": "^1.18.0",
     "dompurify": "^3.4.17",
     "marked": "^18.1.1",
     "monaco-editor": "^0.57.0",

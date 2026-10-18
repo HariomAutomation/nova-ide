@@ -1,5 +1,4 @@
 const fs = require('node:fs/promises');
-const rg = require('./ripgrep');
 const path = require('node:path');
 
 const IGNORE_DIRS = new Set([
@@ -79,7 +78,7 @@ async function deleteFileTool(file) {
   return { ok: true, path: file };
 }
 
-async function searchFilesJs({ pattern, dir, caseSensitive = false, maxResults = 100, maxFileBytes = 512 * 1024 }) {
+async function searchFiles({ pattern, dir, caseSensitive = false, maxResults = 100, maxFileBytes = 512 * 1024 }) {
   let re;
   try {
     re = new RegExp(pattern, caseSensitive ? '' : 'i');
@@ -135,64 +134,7 @@ async function searchFilesJs({ pattern, dir, caseSensitive = false, maxResults =
   return { pattern, dir: root, count: results.length, truncated: results.length >= maxResults, results };
 }
 
-/**
- * Globs mirroring IGNORE_DIRS/IGNORE_FILES so ripgrep skips the same things the
- * JS walker did, even in a folder with no .gitignore of its own.
- */
-function ignoreGlobs() {
-  // Root-relative on purpose. ripgrep matches globs against the path it reports,
-  // and we search `.` with cwd=root, so `!tmp/**` excludes the project's own tmp/
-  // while a project living under /tmp is untouched. A `!**/tmp/**` form matches
-  // the absolute path and silently excluded the entire search.
-  const globs = [];
-  for (const d of IGNORE_DIRS) globs.push(`!${d}/**`);
-  for (const f of IGNORE_FILES) globs.push(`!${f}`);
-  return globs;
-}
-
-/** ripgrep reports `./a/b.js` when searching `.`; make it absolute again. */
-function absolutize(matches, root) {
-  for (const m of matches) {
-    if (!m || !m.path) continue;
-    const rel = String(m.path).replace(/^\.\//, '');
-    m.path = path.resolve(root, rel);
-  }
-  return matches;
-}
-
-/**
- * Score ripgrep's matches with the same rules the JS walker used, so the ranking
- * the agent sees is unchanged:
- *   whole query on the line  +10 | every term +5 | any term +2
- *   every term in the path    +5 | declaration keyword +4
- */
-function scoreMatches(matches, root, query, terms) {
-  const phrase = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-  const seen = new Set();
-  const out = [];
-  for (const m of matches) {
-    if (!m || !m.path) continue;
-    const relPath = path.relative(root, m.path) || m.path;
-    const line = String(m.text || '').replace(/\r?\n$/, '');
-    const key = `${relPath}:${m.line}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-
-    const relLower = relPath.toLowerCase();
-    const lineLower = line.toLowerCase();
-    let score = 0;
-    if (terms.every((t) => relLower.includes(t))) score += 5;
-    if (phrase.test(line)) score += 10;
-    else if (terms.every((t) => lineLower.includes(t))) score += 5;
-    else if (terms.some((t) => lineLower.includes(t))) score += 2;
-    if (score > 0 && /^\s*(function|class|def|const|let|var|export|pub|async|interface|type)\b/i.test(line)) score += 4;
-
-    out.push({ path: m.path, relPath, line: m.line, score, snippet: line.trim().slice(0, 200) });
-  }
-  return out;
-}
-
-async function codebaseSearchJs({ query, dir, maxResults = 30, maxFileBytes = 512 * 1024, timeoutMs = 6000 }) {
+async function codebaseSearch({ query, dir, maxResults = 30, maxFileBytes = 512 * 1024, timeoutMs = 6000 }) {
   const q = String(query || '').trim();
   if (!q) return { error: 'query is required' };
   const root = dir || process.cwd();
@@ -279,85 +221,6 @@ async function codebaseSearchJs({ query, dir, maxResults = 30, maxFileBytes = 51
   return { query: q, dir: root, count: results.length, results };
 }
 
-/** NOVA_SEARCH_ENGINE=js forces the pure-JS walkers (escape hatch + testable). */
-function forceJsEngine() {
-  return String(process.env.NOVA_SEARCH_ENGINE || '').toLowerCase() === 'js';
-}
-
-/**
- * Fast codebase search.
- *
- * Ripgrep does the walking and matching (~0.1s on 8k files vs ~3.8s for the JS
- * walker) and scoreMatches() keeps the ranking identical. Anything unexpected —
- * ripgrep missing, an unreadable directory, a timeout — falls through to the
- * original JS implementation, so behaviour is never worse than before.
- *
- * Note: ripgrep respects .gitignore (the JS walker did not). Pass
- * `respectIgnore: false` to search ignored files too.
- */
-async function codebaseSearch({ query, dir, maxResults = 30, maxFileBytes = 512 * 1024, timeoutMs = 6000, respectIgnore = true }) {
-  const q = String(query || '').trim();
-  if (!q) return { error: 'query is required' };
-  const root = dir || process.cwd();
-  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-
-  const bin = forceJsEngine() ? null : await rg.binary();
-  if (bin && terms.length) {
-    const args = [
-      ...rg.baseArgs({ maxFileBytes, respectIgnore, extraGlobs: ignoreGlobs() }),
-      '-i',
-      '-F',
-      ...terms.flatMap((t) => ['-e', t]),
-      '--max-count', String(Math.max(10, maxResults)),
-      '.',
-    ];
-    const r = await rg.rgRun({ bin, args, dir: root, timeoutMs, maxCandidates: Math.max(150, maxResults * 8) });
-    if (r.ok && Array.isArray(r.matches)) {
-      const scored = scoreMatches(absolutize(r.matches, root), root, q, terms);
-      scored.sort((a, b) => b.score - a.score);
-      const results = scored.slice(0, maxResults);
-      return { query: q, dir: root, count: results.length, results, engine: 'ripgrep' };
-    }
-  }
-  const fallback = await codebaseSearchJs({ query, dir, maxResults, maxFileBytes, timeoutMs });
-  return { ...fallback, engine: 'js' };
-}
-
-/** Fast regex search across files. Same result shape as the JS walker. */
-async function searchFiles({ pattern, dir, caseSensitive = false, maxResults = 100, maxFileBytes = 512 * 1024, respectIgnore = true }) {
-  try {
-    // Validated here so an invalid pattern keeps the exact JS error message.
-    // eslint-disable-next-line no-new
-    new RegExp(pattern, caseSensitive ? '' : 'i');
-  } catch (e) {
-    return { error: `Invalid regex: ${e.message}` };
-  }
-  const root = dir || process.cwd();
-
-  const bin = forceJsEngine() ? null : await rg.binary();
-  if (bin) {
-    const args = [
-      ...rg.baseArgs({ maxFileBytes, respectIgnore, extraGlobs: ignoreGlobs() }),
-      ...(caseSensitive ? [] : ['-i']),
-      '-e', String(pattern),
-      '--max-count', String(Math.max(10, maxResults)),
-      '.',
-    ];
-    const r = await rg.rgRun({ bin, args, dir: root, timeoutMs: 8000, maxCandidates: Math.max(200, maxResults * 4) });
-    // rg uses Rust's regex engine, which has no lookarounds; a pattern that is
-    // valid in JS but not in Rust reports ok:false and we fall back.
-    if (r.ok && Array.isArray(r.matches)) {
-      const results = absolutize(r.matches, root)
-        .filter((m) => m && m.path)
-        .slice(0, maxResults)
-        .map((m) => ({ path: m.path, line: m.line, text: String(m.text || '').replace(/\r?\n$/, '').slice(0, 240) }));
-      return { pattern, dir: root, count: results.length, truncated: results.length >= maxResults, results, engine: 'ripgrep' };
-    }
-  }
-  const fallback = await searchFilesJs({ pattern, dir, caseSensitive, maxResults, maxFileBytes });
-  return { ...fallback, engine: 'js' };
-}
-
 async function editNotebook({ path: filePath, action = 'replace', cellIndex, cellType, source = '' }) {
   let content;
   try {
@@ -427,12 +290,7 @@ module.exports = {
   editFileTool,
   deleteFileTool,
   searchFiles,
-  searchFilesJs,
-  forceJsEngine,
-  ignoreGlobs,
-  absolutize,
   codebaseSearch,
-  codebaseSearchJs,
   editNotebook,
   IGNORE_DIRS,
 };
