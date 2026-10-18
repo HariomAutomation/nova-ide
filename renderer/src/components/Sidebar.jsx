@@ -193,6 +193,8 @@ function ChatHome() {
   const chats = useStore((s) => s.chats);
   const currentChatId = useStore((s) => s.currentChatId);
   const rootFolder = useStore((s) => s.rootFolder);
+  const recentFolders = useStore((s) => s.recentFolders) || [];
+  const removeRecentFolder = useStore((s) => s.removeRecentFolder);
   const appInfo = useStore((s) => s.appInfo);
   const removeChat = useStore((s) => s.removeChat);
   const pinChat = useStore((s) => s.pinChat);
@@ -237,9 +239,27 @@ function ChatHome() {
 
   const userName = appInfo?.username || 'you';
 
-  // Group chats by the folder they were created in, newest group first.
+  // Group chats by repository/folder.
   const groups = [];
   const byKey = new Map();
+
+  // 1. Root folder (active repository) is always first
+  if (rootFolder) {
+    const g = { key: rootFolder, folder: rootFolder, chats: [] };
+    byKey.set(rootFolder, g);
+    groups.push(g);
+  }
+
+  // 2. Add other recent repositories
+  for (const f of recentFolders) {
+    if (f && !byKey.has(f)) {
+      const g = { key: f, folder: f, chats: [] };
+      byKey.set(f, g);
+      groups.push(g);
+    }
+  }
+
+  // 3. Sort chats and populate into groups
   const sorted = [...chats].sort((a, b) => {
     const pa = a.pinned ? 1 : 0;
     const pb = b.pinned ? 1 : 0;
@@ -247,6 +267,7 @@ function ChatHome() {
     if (pa && pb) return (b.pinnedAt || 0) - (a.pinnedAt || 0);
     return (b.updatedAt || 0) - (a.updatedAt || 0);
   });
+
   for (const c of sorted) {
     const key = c.folder || '__none__';
     if (!byKey.has(key)) {
@@ -255,6 +276,15 @@ function ChatHome() {
       groups.push(g);
     }
     byKey.get(key).chats.push(c);
+  }
+
+  // Ensure active rootFolder is at the top of groups
+  if (rootFolder && groups.length > 1) {
+    const rootIdx = groups.findIndex((g) => g.folder === rootFolder);
+    if (rootIdx > 0) {
+      const [rg] = groups.splice(rootIdx, 1);
+      groups.unshift(rg);
+    }
   }
 
   const atHome = mainView === 'agent' && !currentChatId;
@@ -352,10 +382,19 @@ function ChatHome() {
 
       <div className="sb-repos">
         {groups.length === 0 && (
-          <div className="sb-empty">No chats yet — ask the agent something.</div>
+          <div className="sb-empty">
+            <div>No repositories added yet.</div>
+            <button
+              className="btn small"
+              style={{ marginTop: '8px', width: '100%' }}
+              onClick={() => useStore.getState().openFolder()}
+            >
+              Open folder…
+            </button>
+          </div>
         )}
         {groups.map((g) => (
-          <div key={g.key} className="sb-repo-group">
+          <div key={g.key} className="sb-repo-group" data-testid="sb-repo-group">
             <div
               className={
                 'sb-repo' + (g.folder && g.folder === rootFolder ? ' active' : '') + (g.folder ? '' : ' none')
@@ -367,8 +406,39 @@ function ChatHome() {
             >
               <span className="sb-ico">{g.folder ? '\u{1F4C1}' : '\u{1F3E0}'}</span>
               <span className="sb-chat-title">{g.folder ? basename(g.folder) : 'No Repo'}</span>
+              {g.folder && (
+                <button
+                  className="sb-repo-close-btn"
+                  title="Remove repository from sidebar"
+                  aria-label="Remove repository"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeRecentFolder(g.folder);
+                  }}
+                >
+                  {'\u00D7'}
+                </button>
+              )}
             </div>
-            {g.chats.map((c) => (
+            {g.chats.length === 0 ? (
+              <div
+                className="sb-chat-row sb-empty-chat-hint"
+                onClick={() => {
+                  if (g.folder && g.folder !== rootFolder) {
+                    useStore.getState().openFolder(g.folder).then(() => useStore.getState().newAgentChat());
+                  } else {
+                    useStore.getState().newAgentChat();
+                  }
+                }}
+                title="Start a new chat in this repo"
+              >
+                <span className="sb-dot" style={{ opacity: 0.35 }} />
+                <span className="sb-chat-title" style={{ color: 'var(--muted)', fontSize: '11.5px' }}>
+                  + New chat
+                </span>
+              </div>
+            ) : (
+              g.chats.map((c) => (
               <div
                 key={c.id}
                 className={'sb-chat-row' + (c.id === currentChatId ? ' active' : '')}
@@ -462,7 +532,8 @@ function ChatHome() {
                   </div>
                 )}
               </div>
-            ))}
+            ))
+            )}
           </div>
         ))}
       </div>

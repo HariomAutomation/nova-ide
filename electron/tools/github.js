@@ -219,6 +219,13 @@ async function clone(cloneUrl, name) {
   const dest = path.join(dir, safe);
   await fsp.mkdir(dir, { recursive: true });
 
+  const c = await readCfg();
+  const authArgs = [];
+  if (c && c.token && url.startsWith('https://')) {
+    const basicAuth = Buffer.from(`x-access-token:${c.token}`).toString('base64');
+    authArgs.push('-c', `http.extraHeader=AUTHORIZATION: basic ${basicAuth}`);
+  }
+
   // If destination folder already exists, open it directly or verify remote origin
   try {
     const st = await fsp.stat(dest);
@@ -237,12 +244,12 @@ async function clone(cloneUrl, name) {
         try {
           const ust = await fsp.stat(uniqueDest);
           if (ust.isDirectory()) {
-            execFile('git', ['pull', '--ff-only'], { cwd: uniqueDest, timeout: 8000 }, () => {});
+            execFile('git', [...authArgs, 'pull', '--ff-only'], { cwd: uniqueDest, timeout: 8000 }, () => {});
             return { ok: true, path: uniqueDest, existed: true };
           }
         } catch {}
         return new Promise((resolve) => {
-          execFile('git', ['clone', '--depth', '1', url, uniqueDest], { timeout: 300000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+          execFile('git', [...authArgs, 'clone', '--depth', '1', url, uniqueDest], { timeout: 300000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
             if (err) {
               resolve({ error: String(stderr || err.message || err).slice(0, 400) });
             } else {
@@ -252,14 +259,14 @@ async function clone(cloneUrl, name) {
         });
       }
       if (originUrl && norm(originUrl) === norm(url)) {
-        execFile('git', ['pull', '--ff-only'], { cwd: dest, timeout: 8000 }, () => {});
+        execFile('git', [...authArgs, 'pull', '--ff-only'], { cwd: dest, timeout: 8000 }, () => {});
       }
       return { ok: true, path: dest, existed: true };
     }
   } catch {}
 
   return new Promise((resolve) => {
-    execFile('git', ['clone', '--depth', '1', url, dest], { timeout: 300000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('git', [...authArgs, 'clone', '--depth', '1', url, dest], { timeout: 300000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
         resolve({ error: String(stderr || err.message || err).slice(0, 400) });
       } else {

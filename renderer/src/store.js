@@ -65,6 +65,7 @@ function sanitizeItems(items) {
 export const useStore = create((set, get) => ({
   /* ------------------------------ workspace ------------------------------ */
   rootFolder: null,
+  recentFolders: [],
   gitBranch: null,
   childrenByDir: {},
   expanded: {},
@@ -998,10 +999,31 @@ export const useStore = create((set, get) => ({
         webhookToken: a.webhookToken || uuid().replace(/-/g, '').slice(0, 16),
       })),
       usedAgent: !!s.usedAgent,
+      recentFolders: Array.isArray(s.recentFolders) ? s.recentFolders : (s.lastFolder ? [s.lastFolder] : []),
     });
     api()
       .appInfo()
-      .then((info) => set({ appInfo: info }))
+      .then(async (info) => {
+        set({ appInfo: info });
+        if (info && info.home) {
+          try {
+            const novaReposDir = `${info.home}/nova-repos`;
+            const entries = await api().listDir(novaReposDir);
+            if (Array.isArray(entries)) {
+              const currentRecent = get().recentFolders || [];
+              const dirs = entries.filter((e) => e.isDir).map((e) => e.path);
+              const merged = [...currentRecent];
+              for (const d of dirs) {
+                if (!merged.includes(d)) merged.push(d);
+              }
+              if (merged.length !== currentRecent.length) {
+                set({ recentFolders: merged.slice(0, 30) });
+                get().saveSettings();
+              }
+            }
+          } catch {}
+        }
+      })
       .catch(() => {});
     get().loadSkills().catch(() => {});
     get().loadMcpStatus().catch(() => {});
@@ -1011,13 +1033,14 @@ export const useStore = create((set, get) => ({
   },
 
   async saveSettings() {
-    const { models, activeModelId, rootFolder, agentSettings, browserSettings, voiceSettings, theme, chats, automations, usedAgent, keyVault, runOn } =
+    const { models, activeModelId, rootFolder, recentFolders, agentSettings, browserSettings, voiceSettings, theme, chats, automations, usedAgent, keyVault, runOn } =
       get();
     try {
       await api().setSettings({
         models,
         activeModelId,
         lastFolder: rootFolder,
+        recentFolders: (recentFolders || []).slice(0, 30),
         agentSettings,
         browserSettings,
         voiceSettings,
@@ -1098,8 +1121,11 @@ export const useStore = create((set, get) => ({
       if (m) gitBranch = m[1].trim();
     } catch {}
 
+    const prevRecent = get().recentFolders || [];
+    const nextRecent = folder ? [folder, ...prevRecent.filter((f) => f !== folder)].slice(0, 30) : prevRecent;
     set({
       rootFolder: folder,
+      recentFolders: nextRecent,
       gitBranch,
       childrenByDir: { [folder]: entries },
       expanded: { [folder]: true },
@@ -1113,6 +1139,18 @@ export const useStore = create((set, get) => ({
     get().loadWorkspaceFiles().catch(() => {});
     // Fetch git info (incl. the origin remote) so the repo chip can show the GitHub repo.
     get().loadGit().catch(() => {});
+  },
+
+  removeRecentFolder(folder) {
+    const s = get();
+    const nextRecent = (s.recentFolders || []).filter((f) => f !== folder);
+    const nextChats = (s.chats || []).filter((c) => c.folder !== folder);
+    set({
+      recentFolders: nextRecent,
+      chats: nextChats,
+      rootFolder: s.rootFolder === folder ? (nextRecent[0] || null) : s.rootFolder,
+    });
+    s.saveSettings();
   },
 
   async toggleDir(dirPath) {

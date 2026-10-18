@@ -3247,6 +3247,7 @@ kbd {
 }
 .sb-repo-group { margin-bottom: 4px; }
 .sb-repo {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -3261,6 +3262,36 @@ kbd {
 .sb-repo:hover { background: var(--bg-elevated-hover); }
 .sb-repo.active { border-color: var(--accent); background: var(--bg-hover); }
 .sb-repo.none { opacity: 0.7; }
+.sb-repo-close-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 15px;
+  cursor: pointer;
+  line-height: 1;
+}
+.sb-repo:hover .sb-repo-close-btn {
+  display: inline-flex;
+}
+.sb-repo-close-btn:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.sb-empty-chat-hint {
+  opacity: 0.65;
+  transition: opacity 0.15s ease;
+}
+.sb-empty-chat-hint:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
 .sb-chat-row {
   position: relative;
   display: flex;
