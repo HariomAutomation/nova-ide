@@ -599,7 +599,15 @@ export const useStore = create((set, get) => ({
     if (!drive || !drive.connected) return { ok: false, reason: 'not-connected' };
     const r = await api().gdriveMemoryPull();
     if (!r || r.error) {
-      get().setStatus(`Memory sync failed: ${(r && r.error) || 'unknown'}`);
+      let errStr = (r && r.error) || 'unknown';
+      try {
+        const parsed = JSON.parse(errStr.replace(/^Drive HTTP \d+:\s*/, ''));
+        if (parsed?.error?.message) errStr = parsed.error.message;
+      } catch {}
+      if (errStr.includes('Google Drive API has not been used') || errStr.includes('disabled')) {
+        errStr = 'Google Drive API is disabled in GCP project. Enable it from Cloud tab.';
+      }
+      get().setStatus(`Memory sync failed: ${errStr.slice(0, 95)}`);
       return { ok: false, error: (r && r.error) || 'unknown' };
     }
     const cloud = Array.isArray(r.notes) ? r.notes : [];
@@ -625,7 +633,15 @@ export const useStore = create((set, get) => ({
     if (!drive || !drive.connected) return { ok: false, reason: 'not-connected' };
     const r = await api().gdriveMemoryPush(memory.notes || []);
     if (r && r.error) {
-      get().setStatus(`Memory sync failed: ${r.error}`);
+      let errStr = r.error;
+      try {
+        const parsed = JSON.parse(errStr.replace(/^Drive HTTP \d+:\s*/, ''));
+        if (parsed?.error?.message) errStr = parsed.error.message;
+      } catch {}
+      if (errStr.includes('Google Drive API has not been used') || errStr.includes('disabled')) {
+        errStr = 'Google Drive API is disabled in GCP project. Enable it from Cloud tab.';
+      }
+      get().setStatus(`Memory sync failed: ${errStr.slice(0, 95)}`);
       return { ok: false, error: r.error };
     }
     set({ drive: { ...get().drive, memorySyncedAt: Date.now() } });

@@ -76,7 +76,50 @@ export default function CloudPage() {
   return (
     <div className="page-main">
       {header(`Connected${drive.email ? ` as ${drive.email}` : ''} \u00B7 read-only`)}
-      {drive.error && <p className="search-error">{drive.error}</p>}
+      {drive.error && (
+        <div
+          className="search-error"
+          style={{
+            whiteSpace: 'normal',
+            wordBreak: 'break-word',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            alignItems: 'flex-start',
+            padding: '12px 16px',
+            borderRadius: 6,
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <strong>Google Drive Error:</strong> {drive.error}
+          </div>
+          {drive.error.match(/https?:\/\/[^\s"]+/) && (
+            <button
+              className="btn small"
+              style={{
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              onClick={() => {
+                const url = (drive.error.match(/https?:\/\/[^\s"]+/) || [])[0];
+                if (url && window.nova?.openExternal) {
+                  window.nova.openExternal(url);
+                } else if (url) {
+                  window.open(url, '_blank');
+                }
+              }}
+            >
+              🔗 Enable Google Drive API in Google Cloud Console
+            </button>
+          )}
+        </div>
+      )}
       {drive.loading && <p className="muted">Loading…</p>}
       {!drive.loading && drive.files.length === 0 && !drive.error && <p className="muted">No files found.</p>}
       <div className="cloud-list">

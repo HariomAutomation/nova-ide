@@ -284,7 +284,14 @@ async function apiGet(url, { raw = false } = {}) {
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) {
     const t = await res.text().catch(() => '');
-    throw new Error(`Drive HTTP ${res.status}: ${t.slice(0, 200)}`);
+    let msg = t;
+    try {
+      const parsed = JSON.parse(t);
+      if (parsed?.error?.message) {
+        msg = parsed.error.message;
+      }
+    } catch {}
+    throw new Error(`Drive HTTP ${res.status}: ${msg}`);
   }
   return raw ? res : res.json();
 }
