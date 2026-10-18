@@ -1,6 +1,6 @@
 # Nova IDE
 
-A Cursor-like AI IDE built from scratch — **with your own API keys and full model choice**.
+An autonomous AI IDE built from scratch — **with your own API keys and full model choice**.
 
 The point: no plan gates. You bring any OpenAI-compatible endpoint — **Gemini free tier**,
 OpenCode Zen, OpenRouter, OmniRoute, Sarvam AI, DeepSeek, Groq, Ollama,
@@ -10,12 +10,12 @@ junk-free default list** (Gemini free family + OpenCode Zen); everything else is
 ## Features (v0.2)
 
 ### Agent-first UI
-The center area **is** the agent — a Cursor-2026-style home with a big composer, repo chips
+The center area **is** the agent — a modern home with a big composer, repo chips
 and quick suggestions. The left sidebar has **New Chat / Search / Automations / Customize**,
 your repositories and recent chats (persisted across restarts). The right panel is an
 optional **Ask** assistant (`View → Assistant Panel`). Switch between the agent and the code
 editor with **Ctrl+Shift+A** or the **IDE ↗ / Agent ↗** pills. Light theme by default
-(`View → Theme` toggles), matching the new Cursor look.
+(`View → Theme` toggles), with clean, sleek styling.
 
 ### Agent mode (the big one)
 The agent is an autonomous loop with real tools:

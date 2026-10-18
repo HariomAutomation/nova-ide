@@ -3,7 +3,7 @@
   "productName": "Nova IDE",
   "version": "0.2.0",
   "private": true,
-  "description": "A Cursor-like AI IDE with your own API keys and full model choice",
+  "description": "Nova IDE - The autonomous AI IDE with your own API keys and full model choice",
   "main": "electron/main.js",
   "scripts": {
     "build": "vite build --config renderer/vite.config.mjs",
