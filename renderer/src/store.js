@@ -1646,6 +1646,8 @@ export const useStore = create((set, get) => ({
         s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, { streaming: false });
         s.agentAppend({ kind: 'error', text: e.message });
         set({ agentBusy: false });
+        s.updateCurrentChatEntry();
+        s.saveSettings();
         finishAutomationRun('error', e.message);
         pumpQueue();
         break;

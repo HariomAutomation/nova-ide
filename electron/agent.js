@@ -510,13 +510,37 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey }
       body.tool_choice = 'auto';
     }
 
-    const res = await fetch(url, { method: 'POST', headers, signal, body: JSON.stringify(body) });
-    if (!res.ok || !res.body) {
-      const text = await res.text().catch(() => '');
-      const err = new Error(describeHttpError(url, res.status, res.statusText, text));
-      err.status = res.status;
-      err.body = text;
-      throw err;
+    let res;
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        res = await fetch(url, { method: 'POST', headers, signal, body: JSON.stringify(body) });
+      } catch (netErr) {
+        if (signal && signal.aborted) throw netErr;
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 1200 * attempt));
+          continue;
+        }
+        throw netErr;
+      }
+
+      if (!res.ok || !res.body) {
+        const text = await res.text().catch(() => '');
+        const isTransient =
+          res.status === 503 ||
+          res.status === 502 ||
+          res.status === 504 ||
+          (res.status === 429 && /high demand|spikes in demand|try again later/i.test(text));
+        if (isTransient && attempt < maxAttempts && (!signal || !signal.aborted)) {
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+          continue;
+        }
+        const err = new Error(describeHttpError(url, res.status, res.statusText, text));
+        err.status = res.status;
+        err.body = text;
+        throw err;
+      }
+      break;
     }
 
     const decoder = new TextDecoder();
@@ -1201,8 +1225,8 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
 function sanitizeAssistantReply(text) {
   if (!text || typeof text !== 'string') return text;
 
-  // 1. Strip <think>...</think> reasoning blocks if model emitted them
-  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  // 1. Strip <think>...</think> and <thought>...</thought> reasoning blocks if model emitted them
+  let cleaned = text.replace(/<(?:think|thought)>[\s\S]*?<\/(?:think|thought)>/gi, '').trim();
 
   // 2. Only strip prompt-reflection meta-lines from the VERY START of the message.
   // Code blocks, markdown, formatting and technical explanations are NEVER touched.

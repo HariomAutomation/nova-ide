@@ -65,6 +65,12 @@ function describeHttpError(url, status, statusText, text) {
       hint = '\n\n💡 API key / permissions check karo — key sahi hai? us project me Gemini API enabled hai?';
     } else if (status === 404 && /models\//.test(msg)) {
       hint = '\n\n💡 Model ID galat lag raha hai — Settings -> Models -> ⇅ Fetch se exact model ID pick karo.';
+    } else if (status === 503 || /high demand|spikes in demand/i.test(raw)) {
+      hint = '\n\n💡 Google servers pe temporary high demand / traffic spike hai (503 Service Unavailable). Kuch seconds me ↻ Retry karein ya doosra model chuno.';
+    } else if (status >= 500 && status < 600) {
+      hint = `\n\n💡 Google servers pe temporary error hai (${status} ${statusText || ''}). Kuch der me Retry karein.`;
+    } else if (status === 400) {
+      hint = '\n\n💡 Model request parameters ya input invalid hain (400 Bad Request).';
     }
   } else if (status === 413 || /payload too large|request too large|itpm/i.test(raw)) {
     const lim = /limit[:\s]+([\d,]{3,})/i.exec(raw);
@@ -77,6 +83,12 @@ function describeHttpError(url, status, statusText, text) {
     hint = '\n\n💡 API key check karo (Settings -> Models).';
   } else if (status === 404) {
     hint = '\n\n💡 Base URL / model ID check karo — ⇅ Fetch se list dekh lo.';
+  } else if (status === 503 || /high demand/i.test(raw)) {
+    hint = '\n\n💡 Provider servers pe temporary overload hai (503). Kuch seconds baad Retry karein.';
+  } else if (status >= 500 && status < 600) {
+    hint = `\n\n💡 Provider server error (${status} ${statusText || ''}) — kuch der me Retry karein.`;
+  } else if (status === 400) {
+    hint = '\n\n💡 Request parameters invalid hain (400 Bad Request).';
   }
 
   const first = `HTTP ${status}${statusText ? ' ' + statusText : ''}: ${msg}`;

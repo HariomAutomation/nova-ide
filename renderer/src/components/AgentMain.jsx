@@ -89,8 +89,8 @@ const COMMANDS = [
 function sanitizeAssistantReply(text) {
   if (!text || typeof text !== 'string') return text;
 
-  // 1. Strip <think>...</think> reasoning blocks if model emitted them
-  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  // 1. Strip <think>...</think> and <thought>...</thought> reasoning blocks if model emitted them
+  let cleaned = text.replace(/<(?:think|thought)>[\s\S]*?<\/(?:think|thought)>/gi, '').trim();
 
   // 2. Only strip prompt-reflection meta-lines from the VERY START of the message.
   // Code blocks, markdown, formatting and technical explanations are NEVER touched.
@@ -157,6 +157,34 @@ function diagnoseError(text) {
       kind: 'switch',
     };
   }
+  if (/503|service unavailable|high demand|spikes in demand|overloaded|busy/i.test(t)) {
+    return {
+      headline: 'Model servers pe temporary high demand hai (503)',
+      detail: 'Google/Provider servers pe temporary traffic spike hai (503 Service Unavailable). Kuch seconds ruk kar ↻ Retry dabayein ya doosra model chuno.',
+      kind: 'switch',
+    };
+  }
+  if (/500|502|504|internal server|bad gateway|gateway timeout/i.test(t)) {
+    return {
+      headline: 'Provider server error (500/502/504)',
+      detail: 'Model provider ke server pe temporary issue aaya hai. Ek bar ↻ Retry dabayein ya doosre model pe switch karein.',
+      kind: 'switch',
+    };
+  }
+  if (/404|not found/i.test(t)) {
+    return {
+      headline: 'Model ya endpoint nahi mila (404)',
+      detail: 'Model ID galat ya deprecated ho sakti hai. Settings → Models me jaakar Fetch dabayein aur available model chuno.',
+      kind: 'switch',
+    };
+  }
+  if (/400|bad request|invalid argument/i.test(t)) {
+    return {
+      headline: 'Model request reject hui (400 Bad Request)',
+      detail: 'Model ne request parameters ya input accept nahi kiye. Ek bar ↻ Retry dabayein ya doosre model pe switch karein.',
+      kind: 'switch',
+    };
+  }
   if (/401|403|invalid api key|unauthorized|api key not valid/i.test(t)) {
     return {
       headline: 'API key galat ya khali hai',
@@ -185,7 +213,11 @@ function diagnoseError(text) {
       kind: 'settings',
     };
   }
-  return null;
+  return {
+    headline: 'Agent me error aya',
+    detail: t.length > 280 ? t.slice(0, 280) + '...' : t,
+    kind: 'switch',
+  };
 }
 
 function ErrorCard({ item }) {
@@ -210,36 +242,39 @@ function ErrorCard({ item }) {
     if (lastUserText) useStore.getState().agentSend(lastUserText);
   };
 
+  const headline = d?.headline || 'Agent me error aya';
+  const detail = d?.detail || item.text;
+
   return (
     <div className="chat-msg error-card err-card">
       <div className="err-head">
         <span className="err-ico">⚠️</span>
         <div className="err-body">
-          <div className="err-headline">{d ? d.headline : 'Agent ruk gaya'}</div>
-          {d && <div className="err-detail">{d.detail}</div>}
+          <div className="err-headline">{headline}</div>
+          {detail && <div className="err-detail">{detail}</div>}
         </div>
       </div>
-      {d?.kind === 'switch' && fallbacks.length > 0 && (
+      {fallbacks.length > 0 && (
         <div className="err-actions">
           <span className="err-try">Try:</span>
           {fallbacks.map((m) => (
             <button key={m.id} className="chip err-model-chip" onClick={() => switchAndRetry(m.id)}>
-              {m.label}
+              {m.label} ({m.model})
             </button>
           ))}
         </div>
       )}
       <div className="err-actions">
-        <button className="chip" onClick={() => useStore.getState().setSettingsOpen(true, 'models')}>
-          ⚙️ Models/Settings
-        </button>
         {lastUserText && (
-          <button className="chip" onClick={() => useStore.getState().agentSend(lastUserText)}>
+          <button className="chip primary" onClick={() => useStore.getState().agentSend(lastUserText)}>
             ↻ Retry
           </button>
         )}
+        <button className="chip" onClick={() => useStore.getState().setSettingsOpen(true, 'models')}>
+          ⚙️ Models/Settings
+        </button>
         <button className="chip subtle" onClick={() => setShowRaw(!showRaw)}>
-          {showRaw ? 'Hide detail' : 'Detail'}
+          {showRaw ? 'Hide full error' : 'Full error'}
         </button>
       </div>
       {showRaw && <div className="err-raw">{item.text}</div>}

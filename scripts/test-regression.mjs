@@ -1524,6 +1524,20 @@ suite.push(
     assert.ok(!cleaned.includes('* Mode: Direct Chat'), 'Must strip * Mode: Direct Chat');
     assert.ok(cleaned.includes('```javascript\nconst a = 10;\n```'), 'Code block must remain completely intact');
     assert.ok(cleaned.includes('* Explanation: valid variable'), 'Body bullet points must remain intact');
+
+    // 3. <thought> reasoning blocks from Gemini models must be cleanly stripped
+    const geminiThought = '<thought>* User says: "hi"\n* Plan: answer warmly</thought>Hello! How can I help you today?';
+    assert.equal(sanitize(geminiThought), 'Hello! How can I help you today?', 'Must strip <thought> reasoning blocks');
+  })
+);
+
+suite.push(
+  test('errors: describeHttpError produces informative diagnostics for HTTP 503 high demand', async () => {
+    const { describeHttpError } = await import('../electron/tools/errors.js');
+    const desc = describeHttpError('https://generativelanguage.googleapis.com/v1beta/openai', 503, 'Service Unavailable', 'This model is currently experiencing high demand.');
+    assert.ok(desc.includes('503'), 'Must contain 503 status code');
+    assert.ok(desc.includes('Google servers pe temporary high demand'), 'Must explain temporary high demand in clear Hindi');
+    assert.ok(desc.includes('Retry'), 'Must suggest Retry');
   })
 );
 
