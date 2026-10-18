@@ -12,7 +12,8 @@ import { runCommand } from '../electron/tools/terminal.js';
 import { webFetch, webSearch } from '../electron/tools/web.js';
 import { parseWebToolCalls, protocolBlock, setEngineMode, getEngineMode } from '../electron/gemini-web.js';
 import { describeHttpError } from '../electron/tools/errors.js';
-import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage } from '../electron/agent.js';
+import { gpuPlan } from '../electron/tools/gpu-flags.js';
+import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage, estimateChars, fitFromSizeError } from '../electron/agent.js';
 import { isWithin } from '../electron/tools/paths.js';
 import computer from '../electron/tools/computer.js';
 import git from '../electron/tools/git.js';
@@ -21,6 +22,7 @@ import gh from '../electron/tools/github.js';
 import cloudcode from '../electron/tools/cloudcode.js';
 import voice from '../electron/tools/voice.js';
 import { usableModels, isModelUsable } from '../renderer/src/model-filter.js';
+import { formatRetry, retryWindow, sizeNumbers } from '../renderer/src/error-text.js';
 import {
   groupModels,
   latestOf,
@@ -790,6 +792,81 @@ suite.push(
     assert.equal(decls[0].functionDeclarations[0].parameters.additionalProperties, undefined);
     assert.equal(cloudcode.toFunctionDeclarations([]), undefined);
     assert.equal(typeof cloudcode.generate, 'function');
+  })
+);
+
+/* --------------------------- linux GPU flags --------------------------- */
+
+suite.push(
+  test('gpu flags: Wayland gets the ozone hint and no Vulkan, other OSes untouched', () => {
+    // non-Linux: leave Chromium alone
+    assert.deepEqual(gpuPlan({ platform: 'win32', env: {} }).switches, []);
+
+    // Linux on X11: just let Chromium pick the platform
+    const x11 = gpuPlan({ platform: 'linux', env: { XDG_SESSION_TYPE: 'x11' } });
+    assert.equal(x11.mode, 'auto');
+    assert.equal(x11.wayland, false);
+    assert.deepEqual(x11.switches, [['ozone-platform-hint', 'auto']]);
+
+    // Wayland: also drop Vulkan + VA-API (the reported errors)
+    const wl = gpuPlan({ platform: 'linux', env: { XDG_SESSION_TYPE: 'wayland' } });
+    assert.equal(wl.wayland, true);
+    const flat = wl.switches.map(([k, v]) => `${k}=${v}`);
+    assert.ok(flat.includes('ozone-platform-hint=auto'));
+    assert.ok(flat.some((x) => x.startsWith('disable-features=') && x.includes('Vulkan')));
+
+    // WAYLAND_DISPLAY is enough on its own
+    assert.equal(gpuPlan({ platform: 'linux', env: { WAYLAND_DISPLAY: 'wayland-0' } }).wayland, true);
+
+    // escape hatches
+    assert.equal(gpuPlan({ platform: 'linux', env: { NOVA_GPU: 'off' } }).mode, 'off');
+    assert.equal(gpuPlan({ platform: 'linux', env: { NOVA_GPU: 'keep', XDG_SESSION_TYPE: 'wayland' } }).mode, 'keep');
+    assert.deepEqual(gpuPlan({ platform: 'linux', env: { NOVA_GPU: 'keep' } }).switches, []);
+  })
+);
+
+/* --------------------------- oversized requests --------------------------- */
+
+suite.push(
+  test('oversized request: Nova shrinks the context instead of just failing', () => {
+    const groq =
+      'HTTP 413 Payload Too Large: Request too large for model `qwen/qwen3.8-27b` in organization `org_1` ' +
+      'service tier `on_demand` on input tokens per minute (ITPM): Limit 7000, Requested 19502, please reduce ' +
+      'your message size and try again.';
+    // the budget we retry with is derived from the provider's own limit
+    const fit = fitFromSizeError(groq);
+    assert.ok(fit > 0 && fit < 19502 * 3.5, `expected a smaller budget, got ${fit}`);
+    assert.equal(fit, 22400); // 7000 tokens * 3.2 chars
+
+    // a 413 without numbers cannot be acted on
+    assert.equal(fitFromSizeError('HTTP 413 Payload Too Large'), 0);
+    // and a size error where we already fit is not a size problem
+    assert.equal(fitFromSizeError('Limit 7000, Requested 500'), 0);
+
+    // compactMessages honours the budget while keeping the system prompt
+    const sys = { role: 'system', content: 's'.repeat(200) };
+    const big = [];
+    for (let i = 0; i < 40; i++) big.push({ role: 'user', content: `msg ${i} ` + 'x'.repeat(400) });
+    const compacted = compactMessages([sys, ...big], { maxChars: 3000 });
+    assert.equal(compacted[0], sys);
+    assert.ok(estimateChars(compacted) <= 3000, `still ${estimateChars(compacted)} chars`);
+    assert.ok(compacted.length < 41);
+    // it must not start with an orphan tool result
+    assert.notEqual(compacted[1] && compacted[1].role, 'tool');
+  })
+);
+
+suite.push(
+  test('error text: the reset window is human, not 17h24m8.276149635', () => {
+    assert.equal(formatRetry('17h24m8.276149635'), '17h 24m');
+    assert.equal(formatRetry('22680.179850251'), '6h 18m');
+    assert.equal(formatRetry('45s'), '45s');
+    assert.equal(formatRetry('2m30.5'), '2m');
+    assert.equal(retryWindow('Please retry in 17h24m8.276149635s'), '17h 24m');
+    assert.equal(retryWindow('"retryDelay":"22680.179850251s"'), '6h 18m');
+    assert.equal(retryWindow('no timing here'), '');
+    assert.deepEqual(sizeNumbers('Limit 7000, Requested 19502'), { limit: 7000, requested: 19502 });
+    assert.deepEqual(sizeNumbers('nothing'), { limit: 0, requested: 0 });
   })
 );
 

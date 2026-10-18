@@ -7,6 +7,7 @@ import ToolCard from './ToolCard';
 import RepoMenu from './RepoMenu';
 import { usableModels as pickUsableModels, RETIRED_AUTHS } from '../model-filter';
 import { groupModels, variantsOf, variantCount, pickerMaxHeight, chipLabel } from '../model-family';
+import { retryWindow, sizeNumbers } from '../error-text';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -93,11 +94,24 @@ function diagnoseError(text) {
       kind: 'switch',
     };
   }
+  if (/413|payload too large|request too large|itpm|tpm limit/i.test(t)) {
+    const size = sizeNumbers(t);
+    return {
+      headline: 'Request is model ke limit se bada hai',
+      detail:
+        `Is model ka per-minute input limit${size.limit ? ` ${size.limit}` : ''} tokens hai, par request${size.requested ? ` ${size.requested}` : ''} tokens ki thi. ` +
+        'Nova khud context chhota karke dobara try karta hai — phir bhi na chale to chhote-context wale model pe switch karo ' +
+        '(Gemini / OpenRouter), ya Groq pe billing enable karo (free tier ka ITPM kam hai).',
+      kind: 'switch',
+    };
+  }
   if (/429|resource_exhausted|quota|rate.?limit/i.test(t)) {
-    const retryIn = /retry in ([\dhm.0-9]+)/i.exec(t);
+    const when = retryWindow(t);
     return {
       headline: 'Is model ka quota khatam ho gaya',
-      detail: `Free tier limits per-model hote hain${retryIn ? ` — ${retryIn[1]} me reset hoga` : ''}. Doosre model pe switch karke same message dobara bhejo.`,
+      detail:
+        `Free tier limits per-model hote hain${when ? ` — ${when} me reset hoga` : ''}. Doosre model pe switch karke same message dobara bhejo.` +
+        ' Ye aapki API KEY ka quota hai — Gemini ka web app (Google AI Pro) isse alag hai aur chalta rehta hai.',
       kind: 'switch',
     };
   }

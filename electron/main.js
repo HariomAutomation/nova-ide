@@ -62,6 +62,20 @@ app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
+/* --------------------------- Linux / Wayland GPU --------------------------- */
+// See tools/gpu-flags.js for why: Wayland + Vulkan logs errors and can fall back
+// to software rendering. NOVA_GPU=off disables hardware acceleration entirely;
+// NOVA_GPU=keep leaves Chromium alone.
+try {
+  const { gpuPlan } = require('./tools/gpu-flags');
+  const plan = gpuPlan({ platform: process.platform, env: process.env });
+  if (plan.mode === 'off') {
+    app.disableHardwareAcceleration();
+  } else {
+    for (const [name, value] of plan.switches) app.commandLine.appendSwitch(name, value);
+  }
+} catch {}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1480,
