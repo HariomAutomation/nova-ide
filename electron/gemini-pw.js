@@ -30,7 +30,10 @@ try {
   pwVersion = require('playwright/package.json').version;
 } catch {}
 
-const PROFILE_DIR = path.join(os.homedir(), '.nova-ide', 'gemini-profile');
+function getProfileDir() {
+  const home = process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR;
+  return home ? path.join(home, 'gemini-profile') : path.join(os.homedir(), '.nova-ide', 'gemini-profile');
+}
 const GEMINI_URL = 'https://gemini.google.com/app';
 const ANSWER_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -42,13 +45,14 @@ function available() {
 }
 
 function engineInfo() {
-  return { available: available(), version: pwVersion, profile: PROFILE_DIR, running: !!ctx };
+  return { available: available(), version: pwVersion, profile: getProfileDir(), running: !!ctx };
 }
 
 /* ------------------------------- launching ------------------------------- */
 
 async function launchContext({ headless }) {
-  await fsp.mkdir(PROFILE_DIR, { recursive: true });
+  const profileDir = getProfileDir();
+  await fsp.mkdir(profileDir, { recursive: true });
   const base = {
     headless,
     viewport: { width: 1280, height: 900 },
@@ -56,12 +60,12 @@ async function launchContext({ headless }) {
     locale: 'en-IN',
   };
   try {
-    return await chromium.launchPersistentContext(PROFILE_DIR, base);
+    return await chromium.launchPersistentContext(profileDir, base);
   } catch (e) {
     // No Playwright browser downloaded — fall back to the installed Chrome.
     lastError = `bundled chromium nahi mila (${e.message}); Chrome try kar raha hoon`;
     try {
-      return await chromium.launchPersistentContext(PROFILE_DIR, { ...base, channel: 'chrome' });
+      return await chromium.launchPersistentContext(profileDir, { ...base, channel: 'chrome' });
     } catch (e2) {
       const hint =
         'Koi browser nahi mila. Terminal me chalao: npx playwright install chromium ' +
@@ -261,6 +265,8 @@ async function ask({ prompt, onDelta, signal } = {}) {
   return String(answer || '').trim();
 }
 
+const PROFILE_DIR = getProfileDir();
+
 module.exports = {
   available,
   engineInfo,
@@ -270,6 +276,6 @@ module.exports = {
   ask,
   newChat,
   status,
-  PROFILE_DIR,
   GEMINI_URL,
+  PROFILE_DIR,
 };

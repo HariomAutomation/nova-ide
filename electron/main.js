@@ -25,6 +25,13 @@ const agent = require('./agent');
 const DIST = path.join(__dirname, '..', 'dist');
 const DEV_SERVER = process.env.NOVA_DEV_SERVER || null;
 
+const CONFIG_ROOT = process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
+if (process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR) {
+  try {
+    app.setPath('userData', CONFIG_ROOT);
+  } catch {}
+}
+
 const chromeVer = process.versions.chrome || '152.0.7977.167';
 const plat = process.platform === 'win32'
   ? 'Windows NT 10.0; Win64; x64'
@@ -125,7 +132,7 @@ let bridgeToken = '';
 
 async function writeBridgeFile(port) {
   try {
-    const dir = path.join(os.homedir(), '.nova-ide');
+    const dir = CONFIG_ROOT;
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(
       path.join(dir, 'gemini-bridge.json'),
@@ -436,7 +443,7 @@ ipcMain.handle('gemini:diagnose', async () => geminiWeb.diagnose());
 
 /* ---- which engine drives Gemini: Playwright (fast) or the built-in driver ---- */
 
-const GEMINI_ENGINE_FILE = path.join(os.homedir(), '.nova-ide', 'gemini-engine.json');
+const GEMINI_ENGINE_FILE = path.join(CONFIG_ROOT, 'gemini-engine.json');
 
 async function loadGeminiEngine() {
   try {
@@ -622,7 +629,7 @@ ipcMain.handle('workspace:files', async (_e, root) => {
   return walkFiles(root);
 });
 
-const SKILLS_DIR = path.join(os.homedir(), '.nova-ide', 'skills');
+const SKILLS_DIR = path.join(CONFIG_ROOT, 'skills');
 
 async function listSkills() {
   let names = [];
@@ -1082,8 +1089,8 @@ ipcMain.handle('browser:test', async () => {
   try {
     const r = await browserTool.act('open', {
       url: 'data:text/html,<title>Nova Browser</title><body style="background:%2318191b;color:%23d6d7d9;font-family:sans-serif;display:grid;place-items:center;height:100vh;margin:0"><h1>Nova browser works</h1><p>Playwright Chromium is running.</p></body>',
-    }, { headless: true, artifactsDir: path.join(os.homedir(), '.nova-ide', 'artifacts') });
-    const shot = await browserTool.act('screenshot', {}, { headless: true, artifactsDir: path.join(os.homedir(), '.nova-ide', 'artifacts') });
+    }, { headless: true, artifactsDir: path.join(CONFIG_ROOT, 'artifacts') });
+    const shot = await browserTool.act('screenshot', {}, { headless: true, artifactsDir: path.join(CONFIG_ROOT, 'artifacts') });
     const buf = await fs.readFile(shot.file);
     return { ok: true, title: r.title, image: 'data:image/png;base64,' + buf.toString('base64') };
   } catch (e) {
@@ -1097,7 +1104,7 @@ ipcMain.handle('computer:status', async () => computerTool.detect());
 
 ipcMain.handle('computer:screenshot', async () => {
   try {
-    const dir = path.join(os.homedir(), '.nova-ide', 'artifacts');
+    const dir = path.join(CONFIG_ROOT, 'artifacts');
     const r = await computerTool.screenshotToFile(dir);
     const buf = await fs.readFile(r.file);
     return { ok: true, method: r.method, image: 'data:image/png;base64,' + buf.toString('base64') };

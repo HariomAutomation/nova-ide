@@ -46,6 +46,8 @@ import { getHeuristicCompletion } from '../renderer/src/completion-heuristics.js
 
 const ROOT_DIR = process.cwd();
 const TEST_DIR = path.join(os.tmpdir(), 'nova-regression-' + Date.now());
+process.env.NOVA_HOME = TEST_DIR;
+process.env.NOVA_CONFIG_DIR = TEST_DIR;
 await fsp.mkdir(TEST_DIR, { recursive: true });
 
 const results = [];
@@ -1416,6 +1418,17 @@ suite.push(
     assert.equal(itemsTurn2.length, 3, 'turn 2 must create its own bubble rather than overwriting turn 1');
     assert.equal(itemsTurn2[0].text, 'Partial text before error');
     assert.equal(itemsTurn2[2].text, 'Second turn reply');
+  })
+);
+
+suite.push(
+  test('agent: toolSchemas serialization size stays within token budget', async () => {
+    const schemas = await toolSchemas({});
+    const jsonStr = JSON.stringify(schemas);
+    // Tool schemas are sent on every agent provider request (~83% of the payload).
+    // Set a strict budget of 15,000 characters (~3,750 tokens) so schema bloat is caught immediately.
+    assert.ok(jsonStr.length < 15000, `toolSchemas size (${jsonStr.length} chars) exceeded 15,000 char budget`);
+    assert.ok(schemas.length >= 8, 'at least 8 core tools registered');
   })
 );
 

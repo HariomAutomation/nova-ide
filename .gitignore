@@ -38,5 +38,6 @@ gemini-bridge.json
 # Electron / Playwright artifacts
 /tmp/
 test-results/
+e2e-results/
 playwright-report/
 blob-report/

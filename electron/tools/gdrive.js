@@ -22,8 +22,12 @@ const crypto = require('node:crypto');
 const fsp = require('node:fs/promises');
 const { shell } = require('electron');
 
-const CONFIG_DIR = path.join(os.homedir(), '.nova-ide');
-const CONFIG_PATH = path.join(CONFIG_DIR, 'gdrive.json');
+function getConfigDir() {
+  return process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
+}
+function getConfigPath() {
+  return path.join(getConfigDir(), 'gdrive.json');
+}
 
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -61,7 +65,7 @@ function getLastAuthUrl() {
 
 async function readConfig() {
   try {
-    const raw = await fsp.readFile(CONFIG_PATH, 'utf8');
+    const raw = await fsp.readFile(getConfigPath(), 'utf8');
     const j = JSON.parse(raw);
     return j && typeof j === 'object' ? j : {};
   } catch {
@@ -70,8 +74,8 @@ async function readConfig() {
 }
 
 async function writeConfig(cfg) {
-  await fsp.mkdir(CONFIG_DIR, { recursive: true });
-  await fsp.writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
+  await fsp.mkdir(getConfigDir(), { recursive: true });
+  await fsp.writeFile(getConfigPath(), JSON.stringify(cfg, null, 2), 'utf8');
 }
 
 function b64url(buf) {
@@ -91,7 +95,7 @@ async function status() {
   const cfg = await readConfig();
   const eff = await effectiveConfig();
   return {
-    configPath: CONFIG_PATH,
+    configPath: getConfigPath(),
     hasClient: !!eff.clientId,
     builtin: !cfg.clientId && !!DEFAULT_CLIENT_ID,
     clientId: cfg.clientId || null,

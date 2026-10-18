@@ -25,6 +25,10 @@ function toolCallChunks(name, args, id) {
 }
 
 const server = http.createServer((req, res) => {
+  if (req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
+    return;
+  }
   if (req.method !== 'POST') {
     res.writeHead(404).end('not found');
     return;

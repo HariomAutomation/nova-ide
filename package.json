@@ -18,6 +18,7 @@
     "test:smoke": "node scripts/test-flow.mjs",
     "test:headless": "node scripts/test-headless.mjs",
     "test:all": "node scripts/test-all.mjs",
+    "test:e2e": "playwright test",
     "test": "node scripts/test-regression.mjs && node scripts/test-headless.mjs"
   },
   "engines": {
@@ -34,6 +35,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@vitejs/plugin-react": "^6.1.2",
     "electron": "^44.8.0",
     "vite": "^8.3.4"

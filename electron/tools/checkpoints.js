@@ -9,14 +9,17 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
-const ROOT = path.join(os.homedir(), '.nova-ide', 'checkpoints');
+function getRootDir() {
+  const home = process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR;
+  return home ? path.join(home, 'checkpoints') : path.join(os.homedir(), '.nova-ide', 'checkpoints');
+}
 
 function safeId(agentId) {
   return String(agentId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
 }
 
 function dirFor(agentId) {
-  return path.join(ROOT, safeId(agentId));
+  return path.join(getRootDir(), safeId(agentId));
 }
 
 /** Snapshot the current content of `filePath` (or record that it didn't exist). */

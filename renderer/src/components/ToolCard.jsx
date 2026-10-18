@@ -129,7 +129,7 @@ export default function ToolCard({ item }) {
   const shown = expanded || !showCollapsed ? output : lines.slice(0, 10).join('\n');
 
   return (
-    <div className={'tool-card ' + st.cls}>
+    <div className={'tool-card ' + st.cls} data-testid="tool-card" data-tool-name={item.name} data-tool-status={item.status}>
       <div className="tool-head">
         <span className="tool-icon">{ICONS[item.name] || (item.name && item.name.startsWith('mcp__') ? '\u{1F50C}' : '\u2699')}</span>
         <span className="tool-name">{labelFor(item.name)}</span>
@@ -157,13 +157,13 @@ export default function ToolCard({ item }) {
                       ? 'Allow this MCP tool call?'
                       : 'Allow this action?'}
           </span>
-          <button className="btn small primary" onClick={() => approve(item.callId, true, false)}>
+          <button className="btn small primary" data-testid="tool-allow-btn" aria-label="Allow" onClick={() => approve(item.callId, true, false)}>
             Allow
           </button>
-          <button className="btn small" onClick={() => approve(item.callId, true, true)}>
+          <button className="btn small" data-testid="tool-always-btn" aria-label="Always" onClick={() => approve(item.callId, true, true)}>
             Always
           </button>
-          <button className="btn small danger" onClick={() => approve(item.callId, false, false)}>
+          <button className="btn small danger" data-testid="tool-deny-btn" aria-label="Deny" onClick={() => approve(item.callId, false, false)}>
             Deny
           </button>
         </div>

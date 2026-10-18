@@ -948,6 +948,8 @@ export default function AgentMain() {
       <textarea
         ref={taRef}
         className="agent-input"
+        data-testid="composer-input"
+        aria-label="Plan, Build, / for skills, @ for context"
         rows={docked ? 2 : 3}
         placeholder={'Plan, Build, / for skills, @ for context'}
         value={input}
@@ -1247,6 +1249,8 @@ export default function AgentMain() {
           <button
             className={`model-chip ${modeMenuOpen ? 'on' : ''}`}
             title="Execution mode: Auto (Smart), Agent (Autonomous tools), or Chat (Direct fast conversation)"
+            aria-label="Execution mode"
+            data-testid="composer-mode-chip"
             onClick={() => setModeMenuOpen(!modeMenuOpen)}
           >
             <span style={{ fontSize: 12, marginRight: 2 }}>
@@ -1288,6 +1292,7 @@ export default function AgentMain() {
               </div>
               <button
                 className="dropdown-item"
+                data-testid="mode-option-auto"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1313,6 +1318,7 @@ export default function AgentMain() {
               </button>
               <button
                 className="dropdown-item"
+                data-testid="mode-option-chat"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1338,6 +1344,7 @@ export default function AgentMain() {
               </button>
               <button
                 className="dropdown-item"
+                data-testid="mode-option-agent"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1366,17 +1373,31 @@ export default function AgentMain() {
         </div>
         <div className="spacer" />
         {agentBusy ? (
-          <button className="run-btn stop" title="Stop" onClick={() => useStore.getState().agentStop()}>
+          <button
+            className="run-btn stop"
+            title="Stop"
+            aria-label="Stop"
+            data-testid="composer-stop-btn"
+            onClick={() => useStore.getState().agentStop()}
+          >
             {'\u25A0'}
           </button>
         ) : input.trim() ? (
-          <button className="run-btn" title="Send (Enter)" onClick={send}>
+          <button
+            className="run-btn"
+            title="Send (Enter)"
+            aria-label="Send"
+            data-testid="composer-send-btn"
+            onClick={send}
+          >
             {'\u2191'}
           </button>
         ) : (
           <button
             className={'run-btn' + (listening || recording ? ' listening' : '')}
             title={listening ? 'Stop listening' : recording ? 'Stop recording & transcribe' : 'Voice input'}
+            aria-label={listening ? 'Stop listening' : recording ? 'Stop recording & transcribe' : 'Voice input'}
+            data-testid="composer-voice-btn"
             onClick={toggleVoice}
           >
             <MicIcon />

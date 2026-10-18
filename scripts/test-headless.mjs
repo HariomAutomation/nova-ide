@@ -21,9 +21,11 @@ console.log('\n--- Running Nova IDE Headless Agent Test Suite ---');
 console.log(`Workspace: ${TEST_DIR}`);
 console.log(`Mock LLM port: ${MOCK_PORT}\n`);
 
-// Setup clean test directory
+// Setup clean test directory and isolated config
+process.env.NOVA_HOME = path.join(TEST_DIR, '.nova-ide');
+process.env.NOVA_CONFIG_DIR = process.env.NOVA_HOME;
 await fsp.rm(TEST_DIR, { recursive: true, force: true }).catch(() => {});
-await fsp.mkdir(TEST_DIR, { recursive: true });
+await fsp.mkdir(path.join(TEST_DIR, '.nova-ide'), { recursive: true });
 
 // Start mock LLM server
 const mockProc = spawn(process.execPath, [path.join(APP_ROOT, 'scripts', 'mock-llm.mjs'), TEST_DIR, String(MOCK_PORT)], {

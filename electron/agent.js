@@ -910,8 +910,12 @@ async function loadRules(workspaceRoot) {
   return parts;
 }
 
+function getNovaHome() {
+  return process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
+}
+
 async function loadSkills() {
-  const dir = path.join(os.homedir(), '.nova-ide', 'skills');
+  const dir = path.join(getNovaHome(), 'skills');
   const out = [];
   let names = [];
   try {
@@ -1156,7 +1160,7 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
   session.abort = new AbortController();
   const signal = session.abort.signal;
 
-  const artifactsDir = path.join(os.homedir(), '.nova-ide', 'artifacts');
+  const artifactsDir = path.join(getNovaHome(), 'artifacts');
   const maxSteps = Math.min(Math.max(settings.maxSteps || 25, 1), 100);
 
   if (!session.messages.length) {

@@ -12,12 +12,16 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
-const CONFIG_PATH = path.join(os.homedir(), '.nova-ide', 'mcp.json');
+function getConfigPath() {
+  const home = process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR;
+  return home ? path.join(home, 'mcp.json') : path.join(os.homedir(), '.nova-ide', 'mcp.json');
+}
+
 const sessions = new Map();
 
 async function readConfig() {
   try {
-    const raw = await fsp.readFile(CONFIG_PATH, 'utf8');
+    const raw = await fsp.readFile(getConfigPath(), 'utf8');
     const cfg = JSON.parse(raw);
     return cfg && typeof cfg === 'object' && cfg.mcpServers && typeof cfg.mcpServers === 'object' ? cfg.mcpServers : {};
   } catch {
@@ -242,7 +246,7 @@ async function status() {
     bridge: ((s.cfg && s.cfg.exposeTools) || 'auto') === 'auto' && s.tools.length > 40,
     tools: (s.tools || []).map((t) => ({ name: t.name, description: (t.description || '').slice(0, 250) })),
   }));
-  return { configPath: CONFIG_PATH, hasConfig, servers };
+  return { configPath: getConfigPath(), hasConfig, servers };
 }
 
 async function reload() {
@@ -268,4 +272,12 @@ function shutdown() {
   sessions.clear();
 }
 
-module.exports = { tools, call, status, reload, shutdown, CONFIG_PATH };
+module.exports = {
+  tools,
+  call,
+  status,
+  reload,
+  shutdown,
+  getConfigPath,
+  CONFIG_PATH: getConfigPath(),
+};
