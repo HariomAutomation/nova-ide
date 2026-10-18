@@ -145,6 +145,48 @@ function RepoPicker() {
   );
 }
 
+function PinIcon({ pinned }) {
+  if (pinned) {
+    return (
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.5">
+        <path d="M16 12V4h1V2H7v2h1v8l-2 3v2h5.2v5l.8 1 .8-1v-5H18v-2l-2-3z" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 12V4h1V2H7v2h1v8l-2 3v2h5.2v5l.8 1 .8-1v-5H18v-2l-2-3z" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </svg>
+  );
+}
+
+function MoreIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="12" cy="12" r="2" />
+      <circle cx="19" cy="12" r="2" />
+      <circle cx="5" cy="12" r="2" />
+    </svg>
+  );
+}
+
 /* ----------------------------------- chat home ----------------------------------- */
 
 function ChatHome() {
@@ -153,6 +195,7 @@ function ChatHome() {
   const rootFolder = useStore((s) => s.rootFolder);
   const appInfo = useStore((s) => s.appInfo);
   const removeChat = useStore((s) => s.removeChat);
+  const pinChat = useStore((s) => s.pinChat);
   const loadChat = useStore((s) => s.loadChat);
   const mainView = useStore((s) => s.mainView);
   const navHistory = useStore((s) => s.navHistory);
@@ -167,7 +210,14 @@ function ChatHome() {
   useEffect(() => {
     if (!chatMenu) return;
     const onDown = (e) => {
-      if (e.target && e.target.closest && (e.target.closest('.chat-menu') || e.target.closest('.sb-chat-x'))) return;
+      if (
+        e.target &&
+        e.target.closest &&
+        (e.target.closest('.chat-menu') ||
+          e.target.closest('.sb-chat-x') ||
+          e.target.closest('.sb-chat-actions'))
+      )
+        return;
       setChatMenu(null);
     };
     const onScroll = () => setChatMenu(null);
@@ -323,7 +373,14 @@ function ChatHome() {
                 key={c.id}
                 className={'sb-chat-row' + (c.id === currentChatId ? ' active' : '')}
                 onClick={() => loadChat(c.id)}
-                title={c.title}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setChatMenu({ id: c.id, x: e.clientX, y: e.clientY, pinned: !!c.pinned });
+                }}
+                title={c.title || 'New chat'}
+                data-testid="sb-chat-row"
+                data-chat-id={c.id}
               >
                 <span className="sb-dot" />
                 {editingId === c.id ? (
@@ -346,17 +403,64 @@ function ChatHome() {
                   </span>
                 )}
                 <span className="sb-time">{timeAgo(c.updatedAt)}</span>
-                <button
-                  className="sb-chat-x"
-                  title="More"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const r = e.currentTarget.getBoundingClientRect();
-                    setChatMenu((m) => (m && m.id === c.id ? null : { id: c.id, x: r.right, y: r.bottom, pinned: !!c.pinned }));
-                  }}
-                >
-                  {'\u22EF'}
-                </button>
+                {editingId !== c.id && (
+                  <div className="sb-chat-actions" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      className={'sb-action-btn' + (c.pinned ? ' pinned' : '')}
+                      title={c.pinned ? 'Unpin' : 'Pin'}
+                      aria-label={c.pinned ? 'Unpin' : 'Pin'}
+                      data-testid="chat-pin-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        pinChat(c.id, !c.pinned);
+                      }}
+                    >
+                      <PinIcon pinned={c.pinned} />
+                    </button>
+                    <button
+                      className="sb-action-btn"
+                      title="Rename"
+                      aria-label="Rename"
+                      data-testid="chat-rename-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingId(c.id);
+                        setEditTitle(c.title || '');
+                      }}
+                    >
+                      <EditIcon />
+                    </button>
+                    <button
+                      className="sb-action-btn danger"
+                      title="Delete"
+                      aria-label="Delete"
+                      data-testid="chat-delete-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeChat(c.id);
+                      }}
+                    >
+                      <TrashIcon />
+                    </button>
+                    <button
+                      className="sb-action-btn sb-chat-x"
+                      title="More"
+                      aria-label="More"
+                      data-testid="chat-more-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const r = e.currentTarget.getBoundingClientRect();
+                        setChatMenu((m) =>
+                          m && m.id === c.id
+                            ? null
+                            : { id: c.id, x: r.right, y: r.bottom, pinned: !!c.pinned }
+                        );
+                      }}
+                    >
+                      <MoreIcon />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

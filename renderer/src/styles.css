@@ -2202,9 +2202,61 @@ kbd {
   display: none;
 }
 
-.sb-chat-row .sb-chat-x {
-  position: absolute;
-  right: 8px;
+.sb-chat-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.sb-chat-row:hover .sb-chat-actions {
+  display: inline-flex;
+}
+
+.sb-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.sb-action-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+[data-theme='dark'] .sb-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.sb-action-btn.pinned {
+  color: var(--accent);
+}
+
+.sb-action-btn.pinned:hover {
+  color: var(--accent-2);
+}
+
+.sb-action-btn.danger:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.sb-action-btn svg {
+  width: 12px;
+  height: 12px;
+  display: block;
 }
 
 /* getting started card */
@@ -3210,9 +3262,9 @@ kbd {
 .sb-repo.active { border-color: var(--accent); background: var(--bg-hover); }
 .sb-repo.none { opacity: 0.7; }
 .sb-chat-row {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   background: transparent;
   border: 1px solid transparent;
@@ -3220,6 +3272,7 @@ kbd {
   padding: 6px 10px;
   cursor: pointer;
   font-size: 12.5px;
+  min-height: 28px;
 }
 .sb-chat-row:hover { background: var(--bg-hover); }
 .sb-chat-row.active {
@@ -3990,7 +4043,9 @@ html, body, #root {
 }
 .sb-chat-row { border-radius: var(--r-sm); padding: 6px 10px; font-size: 12.5px; }
 .sb-chat-row:hover { background: rgba(0, 0, 0, 0.045); }
+[data-theme='dark'] .sb-chat-row:hover { background: rgba(255, 255, 255, 0.06); }
 .sb-chat-row.active { background: rgba(79, 125, 243, 0.09); border-color: transparent; }
+[data-theme='dark'] .sb-chat-row.active { background: rgba(79, 125, 243, 0.18); }
 .sb-dot { width: 6px; height: 6px; }
 .sb-time { font-size: 10.5px; }
 
