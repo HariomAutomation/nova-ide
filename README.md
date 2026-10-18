@@ -117,6 +117,28 @@ NOVA_DEV_SERVER=http://localhost:5173 npm run app   # terminal 2
    check for errors"* — the agent reads/writes files, runs commands, drives the browser
 4. **Ctrl+Shift+A** to flip to the editor; `Ctrl+K` edits a selection with AI
 
+## GPU warnings on Linux (Wayland)
+
+These lines are Chromium's, not Nova's, and they are harmless noise:
+
+```
+ERROR:vaapi_wrapper.cc:1801] vaInitialize failed: unknown libva error
+ERROR:wayland_surface_factory.cc:249] '--ozone-platform=wayland' is not compatible
+  with Vulkan. Consider switching to '--ozone-platform=x11' or disabling Vulkan
+Warning: maxDynamicUniformBuffersPerPipelineLayout artificially reduced ...
+```
+
+On a Wayland session Chromium picks a backend that conflicts with Vulkan and then fails VA-API
+init. Nova now asks Chromium for the right ozone platform and turns Vulkan/VA-API off **on Wayland
+only**, which removes the first two lines and the software-rendering fallback behind them.
+
+If the window ever comes up blank or flickers, start Nova with hardware acceleration off:
+
+```bash
+NOVA_GPU=off npm start      # no GPU acceleration at all
+NOVA_GPU=keep npm start     # do not touch Chromium's defaults
+```
+
 ## Computer use (desktop control) — Linux notes
 
 `computer_use` needs a screenshot tool and an input-injection tool:

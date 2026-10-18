@@ -12,6 +12,7 @@ import { runCommand } from '../electron/tools/terminal.js';
 import { webFetch, webSearch } from '../electron/tools/web.js';
 import { parseWebToolCalls, protocolBlock, setEngineMode, getEngineMode } from '../electron/gemini-web.js';
 import { describeHttpError } from '../electron/tools/errors.js';
+import { gpuPlan } from '../electron/tools/gpu-flags.js';
 import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage, estimateChars, fitFromSizeError } from '../electron/agent.js';
 import { isWithin } from '../electron/tools/paths.js';
 import computer from '../electron/tools/computer.js';
@@ -791,6 +792,36 @@ suite.push(
     assert.equal(decls[0].functionDeclarations[0].parameters.additionalProperties, undefined);
     assert.equal(cloudcode.toFunctionDeclarations([]), undefined);
     assert.equal(typeof cloudcode.generate, 'function');
+  })
+);
+
+/* --------------------------- linux GPU flags --------------------------- */
+
+suite.push(
+  test('gpu flags: Wayland gets the ozone hint and no Vulkan, other OSes untouched', () => {
+    // non-Linux: leave Chromium alone
+    assert.deepEqual(gpuPlan({ platform: 'win32', env: {} }).switches, []);
+
+    // Linux on X11: just let Chromium pick the platform
+    const x11 = gpuPlan({ platform: 'linux', env: { XDG_SESSION_TYPE: 'x11' } });
+    assert.equal(x11.mode, 'auto');
+    assert.equal(x11.wayland, false);
+    assert.deepEqual(x11.switches, [['ozone-platform-hint', 'auto']]);
+
+    // Wayland: also drop Vulkan + VA-API (the reported errors)
+    const wl = gpuPlan({ platform: 'linux', env: { XDG_SESSION_TYPE: 'wayland' } });
+    assert.equal(wl.wayland, true);
+    const flat = wl.switches.map(([k, v]) => `${k}=${v}`);
+    assert.ok(flat.includes('ozone-platform-hint=auto'));
+    assert.ok(flat.some((x) => x.startsWith('disable-features=') && x.includes('Vulkan')));
+
+    // WAYLAND_DISPLAY is enough on its own
+    assert.equal(gpuPlan({ platform: 'linux', env: { WAYLAND_DISPLAY: 'wayland-0' } }).wayland, true);
+
+    // escape hatches
+    assert.equal(gpuPlan({ platform: 'linux', env: { NOVA_GPU: 'off' } }).mode, 'off');
+    assert.equal(gpuPlan({ platform: 'linux', env: { NOVA_GPU: 'keep', XDG_SESSION_TYPE: 'wayland' } }).mode, 'keep');
+    assert.deepEqual(gpuPlan({ platform: 'linux', env: { NOVA_GPU: 'keep' } }).switches, []);
   })
 );
 
