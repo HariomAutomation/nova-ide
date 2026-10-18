@@ -296,16 +296,40 @@ async function apiGet(url, { raw = false } = {}) {
   return raw ? res : res.json();
 }
 
-/** List the user's Drive files (most recently modified first). */
+const NOVA_FOLDER_NAME = 'Nova IDE';
+
+/**
+ * Find the dedicated 'Nova IDE' folder ID.
+ * To protect user privacy, Nova IDE NEVER queries root Drive or personal documents
+ * (such as ID cards, certificates, salary slips, etc.). It only accesses files
+ * within the 'Nova IDE' folder.
+ */
+async function getNovaFolderId() {
+  const q = `mimeType='application/vnd.google-apps.folder' and name='${NOVA_FOLDER_NAME}' and trashed=false`;
+  const url = `${DRIVE_FILES}?q=${encodeURIComponent(q)}&fields=files(id,name)`;
+  try {
+    const j = await apiGet(url);
+    if (j?.files?.length > 0) return j.files[0].id;
+  } catch {}
+  return null;
+}
+
+/** List the user's Drive files inside the isolated Nova IDE folder ONLY. */
 async function listFiles(query) {
+  const folderId = await getNovaFolderId();
+  if (!folderId) {
+    // Nova IDE folder does not exist yet. Keep personal files completely hidden.
+    return { files: [], isolated: true, folderMissing: true, folderName: NOVA_FOLDER_NAME };
+  }
+
   const q = query && String(query).trim()
-    ? `name contains '${String(query).trim().replace(/'/g, "\\'")}' and trashed=false`
-    : 'trashed=false';
+    ? `'${folderId}' in parents and name contains '${String(query).trim().replace(/'/g, "\\'")}' and trashed=false`
+    : `'${folderId}' in parents and trashed=false`;
   const url =
     `${DRIVE_FILES}?pageSize=60&orderBy=modifiedTime desc&q=${encodeURIComponent(q)}` +
     `&fields=${encodeURIComponent('files(id,name,mimeType,size,modifiedTime,webViewLink)')}`;
   const j = await apiGet(url);
-  return { files: (j && j.files) || [] };
+  return { files: (j && j.files) || [], isolated: true, folderId, folderName: NOVA_FOLDER_NAME };
 }
 
 /** Read a Drive file's contents as text (Google Docs/Sheets/Slides are exported). */

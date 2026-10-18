@@ -75,7 +75,11 @@ export default function CloudPage() {
 
   return (
     <div className="page-main">
-      {header(`Connected${drive.email ? ` as ${drive.email}` : ''} \u00B7 read-only`)}
+      {header(
+        <span>
+          Connected{drive.email ? ` as ${drive.email}` : ''} &middot; <span style={{ color: 'var(--accent)', fontWeight: 500 }}>🔒 Isolated to "Nova IDE" folder</span>
+        </span>
+      )}
       {drive.error && (
         <div
           className="search-error"
@@ -121,7 +125,51 @@ export default function CloudPage() {
         </div>
       )}
       {drive.loading && <p className="muted">Loading…</p>}
-      {!drive.loading && drive.files.length === 0 && !drive.error && <p className="muted">No files found.</p>}
+      {!drive.loading && drive.files.length === 0 && !drive.error && (
+        <div className="auto-empty" style={{ marginTop: 24, textAlign: 'center', padding: '32px 20px' }}>
+          <div className="auto-empty-ico" style={{ fontSize: '32px', marginBottom: 12 }}>🔒</div>
+          <div className="auto-empty-title" style={{ fontSize: '16px', fontWeight: 600, marginBottom: 8 }}>
+            Isolated Nova Cloud Storage
+          </div>
+          <p className="muted small" style={{ maxWidth: 520, margin: '0 auto 12px', lineHeight: 1.6 }}>
+            Aapki privacy secure rakhne ke liye Nova IDE aapki personal Google Drive files (Aadhaar, certificates, personal docs) ko hide rakhta hai. IDE sirf <b>&quot;Nova IDE&quot;</b> folder ko access karta hai.
+          </p>
+          <p className="muted small" style={{ maxWidth: 520, margin: '0 auto 20px', lineHeight: 1.6 }}>
+            Apne Google Drive me <b>&quot;Nova IDE&quot;</b> naam ka folder banayein aur usme jo project files dalenge, sirf wahi yahan dikhengi.
+          </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <button
+              className="btn small"
+              onClick={() => window.nova?.openExternal && window.nova.openExternal('https://drive.google.com/drive/my-drive')}
+            >
+              Open Google Drive ↗
+            </button>
+            <button className="btn small danger" onClick={() => useStore.getState().driveSignOut()}>
+              Sign out from Drive
+            </button>
+          </div>
+          <div
+            style={{
+              marginTop: 28,
+              padding: '12px 16px',
+              background: 'var(--bg-elevated)',
+              borderRadius: 6,
+              maxWidth: 520,
+              margin: '28px auto 0',
+              textAlign: 'left',
+              fontSize: '12px',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text)' }}>
+              ⚡ Gemini AI Models use karne ke liye:
+            </div>
+            <div className="muted" style={{ lineHeight: 1.5 }}>
+              Agar aap Google account ko Gemini models (Gemini 2.5 Flash, Gemini 1.5 Pro, etc.) ke liye use karna chahte hain, toh Settings (&quot;Ctrl+,&quot;) &rarr; <b>Models</b> me jakar free Google AI Studio key add karein. Uske liye Google Drive connect karne ki bilkul zaroorat nahi hoti.
+            </div>
+          </div>
+        </div>
+      )}
       <div className="cloud-list">
         {drive.files.map((f) => (
           <div key={f.id} className="cloud-row">
