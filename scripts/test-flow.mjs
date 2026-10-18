@@ -47,11 +47,15 @@ async function evaljs(expression, awaitPromise = true) {
   return r.result?.result?.value;
 }
 
+const path = await import('node:path');
+
 async function shot(name) {
   const r = await send('Page.captureScreenshot', { format: 'png' });
-  const path = `/tmp/opencode/${name}.png`;
-  await fs.promises.writeFile(path, Buffer.from(r.result.data, 'base64'));
-  return path;
+  const dir = '/tmp/opencode';
+  await fs.promises.mkdir(dir, { recursive: true });
+  const filePath = `${dir}/${name}.png`;
+  await fs.promises.writeFile(filePath, Buffer.from(r.result.data, 'base64'));
+  return filePath;
 }
 
 const steps = {};
@@ -65,7 +69,7 @@ steps.rootChildren = await evaljs(
 
 // 2. open README.md
 steps.openFile = await evaljs(
-  `window.__novaStore.getState().openFile(${JSON.stringify(APP + 'README.md')}).then(() => 'ok')`
+  `window.__novaStore.getState().openFile(${JSON.stringify(path.join(APP, 'README.md'))}).then(() => 'ok')`
 );
 steps.tabs = await evaljs(`window.__novaStore.getState().tabs.map(t => ({name: t.name, lang: t.language, len: t.content.length}))`);
 steps.shot1 = await shot('nova-open-file');

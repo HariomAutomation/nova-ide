@@ -57,8 +57,8 @@ checks.title_is_nova = title === 'Nova IDE';
 console.log(`  ✓ Window title: "${title}"`);
 
 // 2. Store presence and default agent settings
-const rawSettings = await evaljs('JSON.stringify(window.__novaStore.getState().agentSettings)');
-const agentSettings = JSON.parse(rawSettings || '{}');
+const rawSettings = await evaljs('window.__novaStore.getState().agentSettings');
+const agentSettings = typeof rawSettings === 'string' ? JSON.parse(rawSettings) : (rawSettings || {});
 checks.store_exists = !!agentSettings;
 checks.agent_autocomplete_enabled = agentSettings.agentAutocomplete === true;
 checks.auto_approve_edit_default = agentSettings.autoApproveEdit === true;
