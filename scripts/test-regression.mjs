@@ -755,6 +755,23 @@ suite.push(
   })
 );
 
+suite.push(
+  test('github: clone opens already existing directory without failing', async () => {
+    const reposDir = path.join(os.homedir(), 'nova-repos');
+    const dummyName = 'test-existed-repo-' + Date.now();
+    const dest = path.join(reposDir, dummyName);
+    await fsp.mkdir(dest, { recursive: true });
+    try {
+      const res = await gh.clone('https://github.com/foo/' + dummyName + '.git', dummyName);
+      assert.equal(res.ok, true);
+      assert.equal(res.existed, true);
+      assert.equal(res.path, dest);
+    } finally {
+      await fsp.rm(dest, { recursive: true, force: true }).catch(() => {});
+    }
+  })
+);
+
 /* --------------------------------- cloud code --------------------------------- */
 
 suite.push(

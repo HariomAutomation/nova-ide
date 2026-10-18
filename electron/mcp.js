@@ -71,6 +71,7 @@ function startServer(name, cfg) {
     stderr: '',
     serverInfo: null,
     cfg: cfg || {},
+    lastAttempt: Date.now(),
   };
   sessions.set(name, session);
 
@@ -147,11 +148,14 @@ async function ensureServers() {
     }
   }
 
+  const now = Date.now();
   for (const [name, c] of Object.entries(cfg)) {
     if (!c || !c.command || c.enabled === false) continue;
     const existing = sessions.get(name);
-    if (existing && existing.state !== 'stopped' && existing.state !== 'error') continue;
     if (existing) {
+      if (existing.state !== 'stopped' && existing.state !== 'error') continue;
+      // Do not continuously restart failing servers on every prompt turn (60s cooldown)
+      if (existing.state === 'error' && now - (existing.lastAttempt || 0) < 60000) continue;
       try {
         existing.proc.kill();
       } catch {}
@@ -164,6 +168,9 @@ async function ensureServers() {
   return sessions;
 }
 
+let cachedTools = null;
+let lastToolsFetch = 0;
+
 /**
  * All tools across running servers.
  * `exposed` tells the agent whether the tool schema should be sent to the
@@ -171,7 +178,11 @@ async function ensureServers() {
  * mode: their tools are hidden from the schema and discovered through the
  * mcp_list_tools tool, which keeps every request small (token friendly).
  */
-async function tools() {
+async function tools(force = false) {
+  const now = Date.now();
+  if (!force && cachedTools && now - lastToolsFetch < 20000) {
+    return cachedTools;
+  }
   await ensureServers();
   const out = [];
   for (const s of sessions.values()) {
@@ -188,6 +199,8 @@ async function tools() {
       });
     }
   }
+  cachedTools = out;
+  lastToolsFetch = now;
   return out;
 }
 
@@ -227,6 +240,8 @@ async function status() {
 }
 
 async function reload() {
+  cachedTools = null;
+  lastToolsFetch = 0;
   for (const s of sessions.values()) {
     try {
       s.proc.kill();
@@ -237,6 +252,8 @@ async function reload() {
 }
 
 function shutdown() {
+  cachedTools = null;
+  lastToolsFetch = 0;
   for (const s of sessions.values()) {
     try {
       s.proc.kill();

@@ -217,6 +217,16 @@ async function clone(cloneUrl, name) {
   const dir = path.join(os.homedir(), 'nova-repos');
   const dest = path.join(dir, safe);
   await fsp.mkdir(dir, { recursive: true });
+
+  // If destination folder already exists, open it directly instead of failing with "already exists"
+  try {
+    const st = await fsp.stat(dest);
+    if (st.isDirectory()) {
+      execFile('git', ['pull', '--ff-only'], { cwd: dest, timeout: 8000 }, () => {});
+      return { ok: true, path: dest, existed: true };
+    }
+  } catch {}
+
   return new Promise((resolve) => {
     execFile('git', ['clone', '--depth', '1', url, dest], { timeout: 300000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {

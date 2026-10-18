@@ -506,10 +506,10 @@ export const useStore = create((set, get) => ({
   /** Clone a GitHub repo into ~/nova-repos and open it as the workspace. */
   async cloneRepo(repo) {
     if (!repo || !repo.cloneUrl) return;
-    get().setStatus(`Cloning ${repo.fullName}…`);
+    get().setStatus(`Opening ${repo.fullName}…`);
     const r = await api().githubClone({ cloneUrl: repo.cloneUrl, name: repo.name });
     if (r && r.ok) {
-      get().setStatus(`Cloned ${repo.fullName} → ${r.path}`);
+      get().setStatus(r.existed ? `Opened ${repo.fullName} → ${r.path}` : `Cloned ${repo.fullName} → ${r.path}`);
       await get().openFolder(r.path);
     } else {
       get().setStatus(`Clone failed: ${(r && r.error) || 'unknown error'}`);
