@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { configRoot } from '../electron/tools/paths.js';
 
 const CDP_PORT = process.argv[2] ?? '9222';
 const MOCK_PORT = Number(process.argv[3] ?? 9977);
@@ -194,7 +195,7 @@ const searchState = await evaljs(
 
 const helloPath = path.join(TEST_DIR, 'hello.txt');
 const helloContent = fs.existsSync(helloPath) ? fs.readFileSync(helloPath, 'utf8') : null;
-const artifactDir = path.join(os.homedir(), '.nova-ide', 'artifacts');
+const artifactDir = path.join(configRoot(), 'artifacts');
 const artifacts = fs.existsSync(artifactDir) ? fs.readdirSync(artifactDir) : [];
 
 /* --------------------------------- verdict --------------------------------- */

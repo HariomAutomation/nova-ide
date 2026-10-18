@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { configRoot } from '../electron/tools/paths.js';
 
 export const SERVER_INFO = { name: 'nova-gemini-web', version: '1.0.0' };
 export const PROTOCOL_VERSION = '2024-11-05';
@@ -41,7 +42,7 @@ export const TOOLS = [
 ];
 
 export function bridgePath() {
-  return process.env.NOVA_GEMINI_BRIDGE_FILE || path.join(os.homedir(), '.nova-ide', 'gemini-bridge.json');
+  return process.env.NOVA_GEMINI_BRIDGE_FILE || path.join(configRoot(), 'gemini-bridge.json');
 }
 
 export function readBridge() {

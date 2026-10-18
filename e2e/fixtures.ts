@@ -7,20 +7,12 @@ import { join } from 'node:path';
 /**
  * Fixtures for Nova IDE.
  *
- * Test isolation is the whole point of the `profile` fixture. Today the app always
- * uses `~/.nova-ide`, so every test run writes into the developer's real settings,
- * memory and checkpoints (verified: `npm run test:regression` leaves
- * `~/.nova-ide/checkpoints/test-agent-<id>/` behind on a clean machine). That makes
- * tests order-dependent and destructive.
+ * Test isolation is guaranteed via the `profile` fixture. Nova's centralized
+ * `configRoot()` in `electron/tools/paths.js` respects `NOVA_HOME`, redirecting
+ * settings, checkpoints, memory, and Electron's userData to an isolated temp directory.
  *
- * Required app change (3 lines, in electron/main.js + the config helpers):
- *
- *     const CONFIG_ROOT = process.env.NOVA_HOME || path.join(os.homedir(), '.nova-ide');
- *
- * and use CONFIG_ROOT everywhere `path.join(os.homedir(), '.nova-ide')` appears today.
- * Until that lands, this fixture still writes the profile into a temp dir but the app
- * will ignore it — the `profile` fixture asserts that the override actually took
- * effect so the suite fails loudly instead of silently polluting the real profile.
+ * This fixture seeds a clean profile and verifies that the app actually bound to
+ * the temp directory on launch (loudly failing if any pollution occurs).
  */
 
 const CONFIG_DIR_ENV = 'NOVA_HOME';
