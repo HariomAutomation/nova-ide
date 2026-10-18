@@ -86,7 +86,13 @@ function startServer(name, cfg) {
       try {
         msg = JSON.parse(line);
       } catch {
-        continue; // servers sometimes print non-JSON logs on stdout — ignore
+        session.stderr = (session.stderr + '\n[stdout] ' + line).slice(-2000);
+        // Protocol violation: MCP servers MUST write only JSON-RPC to stdout.
+        // If a request is actively waiting for a response, fail fast with a clear error instead of hanging.
+        if (session.pending.size > 0) {
+          failPending(`MCP server "${name}" wrote non-JSON output to stdout: ${line.slice(0, 200)}`);
+        }
+        continue;
       }
       handleMessage(session, msg);
     }
@@ -211,7 +217,7 @@ async function call(server, tool, args) {
     return { ok: false, text: `MCP server "${server}" is not running${s && s.error ? `: ${s.error}` : '.'}` };
   }
   try {
-    const res = await request(s, 'tools/call', { name: tool, arguments: args || {} }, 120000);
+    const res = await request(s, 'tools/call', { name: tool, arguments: args || {} }, 35000);
     const content = Array.isArray(res && res.content) ? res.content : [];
     const text = content.map((c) => (c && c.type === 'text' ? c.text : `[${(c && c.type) || 'unknown'}]`)).join('\n');
     return { ok: !(res && res.isError), text: text || JSON.stringify(res || {}).slice(0, 4000) };

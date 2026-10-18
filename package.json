@@ -19,7 +19,7 @@
     "test:all": "node scripts/test-all.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

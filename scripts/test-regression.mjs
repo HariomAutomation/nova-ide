@@ -1320,6 +1320,14 @@ suite.push(
     assert.equal(detectMode('explain closures in javascript'), 'chat');
 
     // Auto routing: actions and tool requests -> agent
+    assert.equal(detectMode('write the file'), 'agent');
+    assert.equal(detectMode('write a function to sort an array'), 'agent');
+    assert.equal(detectMode('read the config'), 'agent');
+    assert.equal(detectMode('add a dark mode toggle'), 'agent');
+    assert.equal(detectMode('rename the variable'), 'agent');
+    assert.equal(detectMode('move this to utils'), 'agent');
+    assert.equal(detectMode('copy the file'), 'agent');
+    assert.equal(detectMode('show me the code'), 'agent');
     assert.equal(detectMode('drivenow-car-rental ka architecture inspect karo'), 'agent');
     assert.equal(detectMode('create auth.js file'), 'agent');
     assert.equal(detectMode('auth.js file banao'), 'agent');

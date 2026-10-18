@@ -1101,7 +1101,7 @@ function detectMode(userText, settings = {}, contextNote = '', sessionOrHistory 
   }
 
   // Pure conversational greetings / identity queries
-  const greetingPattern = /^(hi|hello|hey|hiya|howdy|yo|namaste|sup|greetings|good\s+(morning|afternoon|evening|night)|who are you|what are you|what can you do|kya kar sakte ho|kaise ho|kya haal hai|help|shukriya|thanks|thank you|suno)[.!?\s]*$/i;
+  const greetingPattern = /^(hi|hello|hey|hiya|howdy|yo|namaste|sup|greetings|good\s+(morning|afternoon|evening|night)|who are you|what are you|what can you do|kya kar sakte ho|kaise ho|kya haal hai|help|shukriya|thanks|thank you|suno)(\s+(there|friend|nova|agent|bot|ji|bro|mate|everyone|all))?[.!?\s]*$/i;
   if (greetingPattern.test(text)) {
     return 'chat';
   }
@@ -1122,7 +1122,7 @@ function detectMode(userText, settings = {}, contextNote = '', sessionOrHistory 
   }
 
   const explanationPattern = /^(what is|what are|explain|difference between|how does|why does|tell me about|summarize|give me ideas|suggest|batao|samjhao)\b/i;
-  const actionPattern = /\b(create|make|edit|update|change|replace|delete|remove|fix|debug|refactor|install|run|execute|build|compile|test|git|commit|push|pull|clone|search|find|grep|list|scan|open|inspect|benchmark|audit|banao|likho|chalao|chalhao|badlo|hatao|dhundo)\b/i;
+  const actionPattern = /\b(create|make|edit|update|change|replace|delete|remove|fix|debug|refactor|install|run|execute|build|compile|test|git|commit|push|pull|clone|search|find|grep|list|scan|open|inspect|benchmark|audit|write|read|add|rename|move|copy|show|generate|implement|setup|configure|format|lint|banao|likho|padho|chalao|chalhao|badlo|hatao|dhundo|jodo|daalo|dikhao)\b/i;
   const toolPattern = /(\.[a-zA-Z0-9_-]+\b|npm\s|git\s|pip\s|cargo\s|yarn\s|pnpm\s|\bcd\b|\bls\b|\bcat\b|\bmkdir\b|\btouch\b|\brm\b)/i;
 
   if (explanationPattern.test(text) && !toolPattern.test(text) && !actionPattern.test(text)) {
@@ -1133,10 +1133,9 @@ function detectMode(userText, settings = {}, contextNote = '', sessionOrHistory 
     return 'agent';
   }
 
-  if (text.length < 50) {
-    return 'chat';
-  }
-
+  // Bias toward agent: in an AI coding assistant, ambiguous instructions should retain
+  // autonomous capabilities (agent mode answers questions naturally without calling tools,
+  // whereas chat mode strips tools and silently breaks real work).
   return 'agent';
 }
 
