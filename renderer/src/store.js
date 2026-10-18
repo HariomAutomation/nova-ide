@@ -31,6 +31,7 @@ const DEFAULT_AGENT_SETTINGS = {
   webFetch: true,
   maxSteps: 25,
   extraInstructions: '',
+  composerMode: 'auto', // 'auto' | 'agent' | 'chat'
 };
 
 // Nova ships NO models by default. The user adds their own (custom endpoint or a
@@ -153,6 +154,10 @@ export const useStore = create((set, get) => ({
   setChatVisible: (v) => set({ chatVisible: v }),
   setTerminalOpen: (v) => set({ terminalOpen: v }),
   patchAgentSettings: (patch) => set({ agentSettings: { ...get().agentSettings, ...patch } }),
+  setComposerMode: (mode) => {
+    set({ agentSettings: { ...get().agentSettings, composerMode: mode } });
+    get().saveSettings();
+  },
   patchBrowserSettings: (patch) => set({ browserSettings: { ...get().browserSettings, ...patch } }),
   patchVoiceSettings: (patch) => set({ voiceSettings: { ...get().voiceSettings, ...patch } }),
 

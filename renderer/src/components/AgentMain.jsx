@@ -388,6 +388,8 @@ export default function AgentMain() {
   const [popup, setPopup] = useState(null); // { type: 'file'|'cmd', start, query, index }
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const composerMode = useStore((s) => s.agentSettings?.composerMode || 'auto');
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
   // The picker opens upward from the composer, so its height has to fit the
   // space above it or the top of the list is clipped off-screen.
   const [modelMenuMax, setModelMenuMax] = useState(420);
@@ -398,6 +400,7 @@ export default function AgentMain() {
   const listRef = useRef(null);
   const menuRef = useRef(null);
   const modelMenuRef = useRef(null);
+  const modeMenuRef = useRef(null);
   const plusRef = useRef(null);
   const [listening, setListening] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -565,15 +568,18 @@ export default function AgentMain() {
   }
 
   useEffect(() => {
-    if (!modelMenuOpen) return;
+    if (!modelMenuOpen && !modeMenuOpen) return;
     const onClick = (e) => {
       if (modelMenuRef.current && !modelMenuRef.current.contains(e.target)) {
         setModelMenuOpen(false);
       }
+      if (modeMenuRef.current && !modeMenuRef.current.contains(e.target)) {
+        setModeMenuOpen(false);
+      }
     };
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
-  }, [modelMenuOpen]);
+  }, [modelMenuOpen, modeMenuOpen]);
 
   useEffect(() => {
     if (composerFocusSeq) taRef.current?.focus();
@@ -1185,6 +1191,127 @@ export default function AgentMain() {
                   <span>Manage Models &amp; API Keys…</span>
                 </button>
               </div>
+            </div>
+          )}
+        </div>
+        <div className="menu-anchor" ref={modeMenuRef} style={{ position: 'relative' }}>
+          <button
+            className={`model-chip ${modeMenuOpen ? 'on' : ''}`}
+            title="Execution mode: Auto (Smart), Agent (Autonomous tools), or Chat (Direct fast conversation)"
+            onClick={() => setModeMenuOpen(!modeMenuOpen)}
+          >
+            <span style={{ fontSize: 12, marginRight: 2 }}>
+              {composerMode === 'chat' ? '💬' : composerMode === 'agent' ? '⚡' : '✨'}
+            </span>
+            <span>
+              {composerMode === 'chat' ? 'Chat' : composerMode === 'agent' ? 'Agent' : 'Auto'}
+            </span>
+            <span className="chip-caret">▾</span>
+          </button>
+
+          {modeMenuOpen && (
+            <div
+              className="dropdown"
+              style={{
+                position: 'absolute',
+                bottom: 'calc(100% + 8px)',
+                left: 0,
+                right: 'auto',
+                top: 'auto',
+                minWidth: 260,
+                padding: '6px',
+                zIndex: 150,
+              }}
+            >
+              <div
+                style={{
+                  padding: '6px 8px',
+                  borderBottom: '1px solid var(--border)',
+                  marginBottom: 4,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: 'var(--text-muted)',
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Execution Mode
+              </div>
+              <button
+                className="dropdown-item"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  padding: '8px 10px',
+                  background: composerMode === 'auto' ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent',
+                }}
+                onClick={() => {
+                  useStore.getState().setComposerMode('auto');
+                  setModeMenuOpen(false);
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, textAlign: 'left' }}>
+                  <span style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    ✨ Auto (Smart)
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    Normal chat for greetings/questions, Agent for tasks
+                  </span>
+                </div>
+                {composerMode === 'auto' && <span style={{ color: 'var(--accent, #3d7eff)' }}>✓</span>}
+              </button>
+              <button
+                className="dropdown-item"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  padding: '8px 10px',
+                  background: composerMode === 'chat' ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent',
+                }}
+                onClick={() => {
+                  useStore.getState().setComposerMode('chat');
+                  setModeMenuOpen(false);
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, textAlign: 'left' }}>
+                  <span style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    💬 Chat
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    Direct fast conversation without tools or execution
+                  </span>
+                </div>
+                {composerMode === 'chat' && <span style={{ color: 'var(--accent, #3d7eff)' }}>✓</span>}
+              </button>
+              <button
+                className="dropdown-item"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  padding: '8px 10px',
+                  background: composerMode === 'agent' ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent',
+                }}
+                onClick={() => {
+                  useStore.getState().setComposerMode('agent');
+                  setModeMenuOpen(false);
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, textAlign: 'left' }}>
+                  <span style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    ⚡ Agent
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    Full autonomous execution (inspect, edit, run terminal)
+                  </span>
+                </div>
+                {composerMode === 'agent' && <span style={{ color: 'var(--accent, #3d7eff)' }}>✓</span>}
+              </button>
             </div>
           )}
         </div>

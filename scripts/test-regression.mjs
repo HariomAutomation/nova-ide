@@ -13,7 +13,7 @@ import { webFetch, webSearch } from '../electron/tools/web.js';
 import { parseWebToolCalls, protocolBlock, setEngineMode, getEngineMode } from '../electron/gemini-web.js';
 import { describeHttpError } from '../electron/tools/errors.js';
 import { gpuPlan } from '../electron/tools/gpu-flags.js';
-import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage, estimateChars, fitFromSizeError } from '../electron/agent.js';
+import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage, estimateChars, fitFromSizeError, detectMode } from '../electron/agent.js';
 import { isWithin } from '../electron/tools/paths.js';
 import computer from '../electron/tools/computer.js';
 import git from '../electron/tools/git.js';
@@ -1276,6 +1276,35 @@ suite.push(
     assert.ok(names.includes('read_file'));
     assert.ok(names.includes('todo_write'));
     assert.ok(names.includes('code_lineage'));
+  })
+);
+
+suite.push(
+  test('agent: detectMode routes conversational chat vs autonomous agent work', () => {
+    // Explicit mode override
+    assert.equal(detectMode('fix the bug in login', { composerMode: 'chat' }), 'chat');
+    assert.equal(detectMode('hi', { composerMode: 'agent' }), 'agent');
+
+    // Auto routing: greetings and questions -> chat
+    assert.equal(detectMode('hi'), 'chat');
+    assert.equal(detectMode('hello there!'), 'chat');
+    assert.equal(detectMode('who are you'), 'chat');
+    assert.equal(detectMode('kya kar sakte ho'), 'chat');
+    assert.equal(detectMode('what is react hooks'), 'chat');
+    assert.equal(detectMode('explain closures in javascript'), 'chat');
+
+    // Auto routing: actions and tool requests -> agent
+    assert.equal(detectMode('drivenow-car-rental ka architecture inspect karo'), 'agent');
+    assert.equal(detectMode('create auth.js file'), 'agent');
+    assert.equal(detectMode('auth.js file banao'), 'agent');
+    assert.equal(detectMode('npm test chalao'), 'agent');
+    assert.equal(detectMode('fix the bug in login.js'), 'agent');
+    assert.equal(detectMode('git status check karo'), 'agent');
+    assert.equal(detectMode('search for symbol handleLoginUser'), 'agent');
+
+    // Mentions -> agent
+    assert.equal(detectMode('check this', {}, 'Contents of @-mentioned files:\n...'), 'agent');
+    assert.equal(detectMode('see this', {}, 'User tagged @git'), 'agent');
   })
 );
 

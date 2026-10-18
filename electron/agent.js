@@ -1082,6 +1082,42 @@ function compactMessages(
   return out;
 }
 
+function detectMode(userText, settings = {}, contextNote = '') {
+  const mode = settings.composerMode || 'auto';
+  if (mode === 'chat') return 'chat';
+  if (mode === 'agent') return 'agent';
+
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return 'chat';
+
+  if (contextNote && (contextNote.includes('Contents of @-mentioned files') || contextNote.includes('User tagged @'))) {
+    return 'agent';
+  }
+
+  const greetingPattern = /^(hi|hello|hey|hiya|howdy|yo|namaste|sup|greetings|good\s+(morning|afternoon|evening|night)|who are you|what are you|what can you do|kya kar sakte ho|kaise ho|kya haal hai|help|shukriya|thanks|thank you|suno)[.!?\s]*$/i;
+  if (greetingPattern.test(text)) {
+    return 'chat';
+  }
+
+  const explanationPattern = /^(what is|what are|explain|difference between|how does|why does|tell me about|summarize|give me ideas|suggest|batao|samjhao)\b/i;
+  const actionPattern = /\b(create|make|edit|update|change|replace|delete|remove|fix|debug|refactor|install|run|execute|build|compile|test|git|commit|push|pull|clone|search|find|grep|list|scan|open|inspect|benchmark|audit|banao|likho|chalao|chalhao|badlo|hatao|dhundo)\b/i;
+  const toolPattern = /(\.[a-zA-Z0-9_-]+\b|npm\s|git\s|pip\s|cargo\s|yarn\s|pnpm\s|\bcd\b|\bls\b|\bcat\b|\bmkdir\b|\btouch\b|\brm\b)/i;
+
+  if (explanationPattern.test(text) && !toolPattern.test(text) && !actionPattern.test(text)) {
+    return 'chat';
+  }
+
+  if (toolPattern.test(text) || actionPattern.test(text)) {
+    return 'agent';
+  }
+
+  if (text.length < 50) {
+    return 'chat';
+  }
+
+  return 'agent';
+}
+
 /**
  * Run the agent loop for one user turn.
  * send(event) pushes {type, ...} events to the renderer.
@@ -1127,6 +1163,44 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
   let modelRequests = 0;
 
   try {
+    const activeMode = detectMode(userText, settings, contextNote);
+    emit({ type: 'mode', mode: activeMode });
+
+    // Cursor Parity: Direct Chat Mode (fast conversation without tool schemas/loops)
+    if (activeMode === 'chat') {
+      emit({ type: 'turn_start' });
+      emit({ type: 'step', step: 1, maxSteps: 1 });
+
+      const chatSystem = [
+        'You are Nova AI, an intelligent coding assistant inside Nova IDE.',
+        workspaceRoot ? `Workspace folder: ${workspaceRoot}` : '',
+        'You are in direct Chat mode (no tools). Answer questions, write code snippets with markdown formatting, and explain concepts directly and concisely.',
+        'If the user wants you to edit files, inspect project files, or run terminal commands, answer their question and let them know they can switch to Agent mode or ask you to perform the action.',
+      ].filter(Boolean).join('\n');
+
+      const chatMessages = [
+        { role: 'system', content: chatSystem },
+        ...session.messages.filter((m) => m && (m.role === 'user' || m.role === 'assistant')).slice(-12),
+      ];
+
+      modelRequests += 1;
+      const res = await callModel({
+        config,
+        messages: chatMessages,
+        tools: [],
+        signal,
+        threadKey: agentId,
+        onDelta: (text) => emit({ type: 'assistant_delta', text }),
+      });
+
+      if (res.content) {
+        emit({ type: 'assistant_message', text: res.content });
+        session.messages.push({ role: 'assistant', content: res.content });
+      }
+      emit({ type: 'done' });
+      return;
+    }
+
     emit({ type: 'turn_start' });
 
     const schemas = await toolSchemas(settings);
@@ -1305,4 +1379,5 @@ module.exports = {
   fitFromSizeError,
   normalizeTodos,
   codeLineage,
+  detectMode,
 };
