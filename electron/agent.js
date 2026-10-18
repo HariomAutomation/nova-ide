@@ -1200,23 +1200,40 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
 
 function sanitizeAssistantReply(text) {
   if (!text || typeof text !== 'string') return text;
+
   // 1. Strip <think>...</think> reasoning blocks if model emitted them
   let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
-  // 2. If model leaked an instruction outline scratchpad (e.g. * User says: ... * Context: ... * Acknowledge ...)
-  if (/^\s*\*\s*(?:User says|Context|Workspace|Mode: Direct Chat|Acknowledge|Introduce myself)/i.test(cleaned)) {
-    // If there is an actual quoted message or greeting after the bullets
-    const quoteMatch = cleaned.match(/(?:^|\n)(?:["“]([^"”]+)["”]|(?:Hello|Hi|Hey|Welcome|Namaste)[!.,\s][\s\S]*)/i);
-    if (quoteMatch) {
-      cleaned = (quoteMatch[1] || quoteMatch[0]).trim();
-    } else {
-      // Remove all leading bullet lines that echo meta prompts
-      cleaned = cleaned.replace(/^(?:\s*\*[^\n]*\n*)+/gm, '').trim();
+  // 2. Only strip prompt-reflection meta-lines from the VERY START of the message.
+  // Code blocks, markdown, formatting and technical explanations are NEVER touched.
+  const metaRegex = /^\s*\*\s*(?:User says:|Context:|Workspace:|Mode:\s*(?:Direct\s*)?Chat|Acknowledge the user|Introduce myself|Mention (?:my )?capabilities|Remind the user)/i;
+
+  if (metaRegex.test(cleaned)) {
+    const lines = cleaned.split('\n');
+    let startIdx = 0;
+    while (startIdx < lines.length) {
+      const line = lines[startIdx];
+      if (metaRegex.test(line) || (startIdx === 0 && line.trim() === '')) {
+        startIdx++;
+      } else if (line.trim() === '' && startIdx > 0 && startIdx < lines.length && metaRegex.test(lines[startIdx + 1] || '')) {
+        startIdx++; // blank line between meta bullets
+      } else {
+        break;
+      }
+    }
+    if (startIdx > 0) {
+      cleaned = lines.slice(startIdx).join('\n').trim();
     }
   }
 
-  // 3. If cleaned still ends with a stray prompt instruction like '* Add a brief...'
-  cleaned = cleaned.replace(/\n+\s*\*\s*(?:Add a brief|Remind the user|Introduce|Mention)[\s\S]*$/i, '').trim();
+  // 3. If there is a stray meta-prompt instruction at the very end
+  cleaned = cleaned.replace(/\n+\s*\*\s*(?:Add a brief note|Remind the user about agent mode)[\s\S]*$/i, '').trim();
+
+  // If the model wrapped the entire answer in redundant outer quotes like "Hello!"
+  const wrapQuote = cleaned.match(/^["“]([\s\S]+)["”]$/);
+  if (wrapQuote && !wrapQuote[1].includes('```')) {
+    cleaned = wrapQuote[1].trim();
+  }
 
   return cleaned || text;
 }

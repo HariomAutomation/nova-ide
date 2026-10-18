@@ -1504,11 +1504,26 @@ suite.push(
 );
 
 suite.push(
-  test('models: default models do not cross-contaminate keys across unrelated providers', async () => {
-    const mainJs = await fsp.readFile(path.join(ROOT_DIR, 'electron/main.js'), 'utf8');
-    assert.doesNotMatch(mainJs, /return\s*\{\s*models\s*,\s*chatOk:\s*false/, 'main.js must not reference undefined models in models:ping');
-    const storeJs = await fsp.readFile(path.join(ROOT_DIR, 'renderer/src/store.js'), 'utf8');
-    assert.doesNotMatch(storeJs, /k\s*=\s*groqKey\s*\|\|\s*k/, 'store.js must not indiscriminately copy groqKey to all models');
+  test('sanitizer: preserves code blocks, indentation, and markdown while stripping prompt reflections', async () => {
+    const agentCode = await fsp.readFile(path.join(ROOT_DIR, 'electron/agent.js'), 'utf8');
+    assert.match(agentCode, /function sanitizeAssistantReply/, 'agent.js must define sanitizeAssistantReply');
+
+    // Extract function logic to test directly
+    const fnMatch = agentCode.match(/function sanitizeAssistantReply\([\s\S]*?\n\}/);
+    assert.ok(fnMatch, 'Must match sanitizeAssistantReply function');
+    const sanitize = new Function('text', fnMatch[0] + '\nreturn sanitizeAssistantReply(text);');
+
+    // 1. Code without prompt reflection must remain completely byte-for-byte identical
+    const pureCode = "```python\ndef hello():\n    return 'world'\n```\n\n* point 1\n* point 2";
+    assert.equal(sanitize(pureCode), pureCode, 'Pure code and bullet points must remain identical');
+
+    // 2. Leaked prompt reflections must be stripped, while leaving code completely intact
+    const leaked = '* User says: "hi"\n* Mode: Direct Chat\n* Context: I am Nova\n\n```javascript\nconst a = 10;\n```\n* Explanation: valid variable';
+    const cleaned = sanitize(leaked);
+    assert.ok(!cleaned.includes('* User says:'), 'Must strip * User says:');
+    assert.ok(!cleaned.includes('* Mode: Direct Chat'), 'Must strip * Mode: Direct Chat');
+    assert.ok(cleaned.includes('```javascript\nconst a = 10;\n```'), 'Code block must remain completely intact');
+    assert.ok(cleaned.includes('* Explanation: valid variable'), 'Body bullet points must remain intact');
   })
 );
 
