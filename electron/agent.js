@@ -908,19 +908,69 @@ function truncate(text, max = 20000) {
  * tool outputs to a short placeholder. Pairing stays valid; the token cost of
  * the transcript stops growing linearly with the step count.
  */
-function compactMessages(messages, { keepRecent = 16, placeholder = '[older tool output omitted to save context]' } = {}) {
-  if (!Array.isArray(messages) || messages.length <= keepRecent + 1) return messages;
-  const cutoff = messages.length - keepRecent;
-  return messages.map((m, i) => {
-    if (!m || i === 0 || i >= cutoff) return m; // system prompt + recent window untouched
-    if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 200) {
-      return { ...m, content: placeholder };
+/** Rough character count of what we are about to send (~3.5 chars per token). */
+function estimateChars(messages) {
+  let n = 0;
+  for (const m of messages || []) {
+    if (!m) continue;
+    n += String(m.content || '').length;
+    if (Array.isArray(m.tool_calls)) {
+      for (const c of m.tool_calls) n += String((c && c.function && c.function.arguments) || '').length + 40;
     }
-    if (m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 2000) {
-      return { ...m, content: m.content.slice(0, 2000) + '\n[...truncated]' };
-    }
-    return m;
-  });
+  }
+  return n;
+}
+
+/**
+ * Providers reject oversized requests with numbers we can act on, e.g. Groq:
+ *   "Limit 7000, Requested 19502"
+ * Returns a character budget that should fit, or 0 when the message tells us
+ * nothing useful.
+ */
+function fitFromSizeError(message) {
+  const t = String(message || '');
+  const lim = /limit[:\s]+([\d,]{3,})/i.exec(t);
+  const req = /requested[:\s]+([\d,]{3,})/i.exec(t);
+  if (!lim) return 0;
+  const limit = Number(lim[1].replace(/,/g, ''));
+  const requested = req ? Number(req[1].replace(/,/g, '')) : 0;
+  if (!Number.isFinite(limit) || limit <= 0) return 0;
+  if (requested && requested <= limit) return 0; // not actually a size problem
+  // ~3.5 chars per token, with a margin so the retry does not bounce again
+  return Math.max(4000, Math.floor(limit * 3.2));
+}
+
+function compactMessages(
+  messages,
+  { keepRecent = 16, maxChars = 0, placeholder = '[older tool output omitted to save context]' } = {}
+) {
+  if (!Array.isArray(messages) || !messages.length) return messages;
+  let out = messages;
+  if (messages.length > keepRecent + 1) {
+    const cutoff = messages.length - keepRecent;
+    out = messages.map((m, i) => {
+      if (!m || i === 0 || i >= cutoff) return m; // system prompt + recent window untouched
+      if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 200) {
+        return { ...m, content: placeholder };
+      }
+      if (m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 2000) {
+        return { ...m, content: m.content.slice(0, 2000) + '\n[...truncated]' };
+      }
+      return m;
+    });
+  }
+  // Hard budget: keep the system prompt and the newest turns, drop the middle.
+  if (maxChars > 0 && estimateChars(out) > maxChars) {
+    const head = out[0];
+    const tail = out.slice(1);
+    let lo = 0;
+    while (lo < tail.length - 1 && estimateChars([head, ...tail.slice(lo)]) > maxChars) lo += 1;
+    const kept = tail.slice(lo);
+    // never start on a tool result without its assistant tool_call before it
+    const boundary = kept.findIndex((m) => m && m.role !== 'tool');
+    out = [head, ...(boundary > 0 ? kept.slice(boundary) : kept)];
+  }
+  return out;
 }
 
 /**
@@ -976,15 +1026,30 @@ async function runAgent({ agentId, config, workspaceRoot, userText, settings = {
       if (signal.aborted) break;
       emit({ type: 'step', step: step + 1, maxSteps });
 
-      modelRequests += 1;
-      const { content, toolCalls } = await callModel({
-        config,
-        messages: compactMessages(session.messages),
-        tools: schemas,
-        signal,
-        threadKey: agentId,
-        onDelta: (text) => emit({ type: 'assistant_delta', text }),
-      });
+      const attempt = async (maxChars) => {
+        modelRequests += 1;
+        return callModel({
+          config,
+          messages: compactMessages(session.messages, { maxChars }),
+          tools: schemas,
+          signal,
+          threadKey: agentId,
+          onDelta: (text) => emit({ type: 'assistant_delta', text }),
+        });
+      };
+
+      let result;
+      try {
+        result = await attempt(settings.contextChars || 0);
+      } catch (e) {
+        // Provider says the request is too big and tells us the limit: shrink the
+        // context to fit and try once more instead of just failing.
+        const fit = fitFromSizeError(e && e.message);
+        if (!fit) throw e;
+        emit({ type: 'status', text: 'Request bada tha — context chhota karke dobara bhej raha hoon…' });
+        result = await attempt(fit);
+      }
+      const { content, toolCalls } = result;
 
       if (content) emit({ type: 'assistant_message', text: content });
 
@@ -1126,6 +1191,8 @@ module.exports = {
   TOOL_DEFS,
   loadRules,
   compactMessages,
+  estimateChars,
+  fitFromSizeError,
   normalizeTodos,
   codeLineage,
 };

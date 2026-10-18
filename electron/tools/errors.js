@@ -66,6 +66,13 @@ function describeHttpError(url, status, statusText, text) {
     } else if (status === 404 && /models\//.test(msg)) {
       hint = '\n\n💡 Model ID galat lag raha hai — Settings -> Models -> ⇅ Fetch se exact model ID pick karo.';
     }
+  } else if (status === 413 || /payload too large|request too large|itpm/i.test(raw)) {
+    const lim = /limit[:\s]+([\d,]{3,})/i.exec(raw);
+    const req = /requested[:\s]+([\d,]{3,})/i.exec(raw);
+    hint =
+      `\n\n💡 Request is model ke limit se bada hai${lim ? ` (limit ${lim[1]} tokens)` : ''}${req ? ` — request ${req[1]} tokens ki thi` : ''}. ` +
+      'Nova context chhota karke dobara try karta hai; phir bhi na chale to chhote-context wale model pe switch karo, ' +
+      'ya provider ka paid tier le lo (Groq free tier ka ITPM kam hai).';
   } else if (status === 401 || status === 403) {
     hint = '\n\n💡 API key check karo (Settings -> Models).';
   } else if (status === 404) {
