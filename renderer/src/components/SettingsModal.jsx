@@ -110,18 +110,18 @@ function GeneralTab() {
 
 const PRESETS = [
   {
-    id: 'gemini',
-    label: 'Gemini 4',
+    id: 'gemini-flash',
+    label: 'Gemini 3.8 Flash (Free & Fast)',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-4-argon',
-    hint: 'Google Gemini 4 (Argon) via your AI Studio key. Argon paid-tier only hai. Free tier ke liye preset: Gemini 3.7 Flash (niche) — quota per-model hota hai, ek khatam ho to doosra chalta hai. Model field me "Fetch" dabao to live list aayegi.',
+    model: 'gemini-3.8-flash',
+    hint: 'Google Gemini 3.8 Flash (Recommended free model) — ultra fast with tool calling. Model field me "Fetch" dabao to live list aayegi.',
   },
   {
-    id: 'gemini-flash-free',
-    label: 'Gemini Flash (free)',
+    id: 'gemini-flash-latest',
+    label: 'Gemini Flash Latest',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-3.7-flash',
-    hint: 'Free AI Studio key pe chalne wala fast Flash model — verified working. Quota khatam ho to gemini-3.1-flash-lite / gemini-3.5-flash try karo.',
+    model: 'gemini-flash-latest',
+    hint: 'Always points to the newest stable Gemini Flash model on your free AI Studio key.',
   },
   {
     id: 'openrouter',
