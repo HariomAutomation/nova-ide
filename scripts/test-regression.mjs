@@ -1390,6 +1390,24 @@ suite.push(
     assert.equal(items2[0].text, 'Chunk 1 Chunk 2');
     assert.equal(items2[0].streaming, false);
     assert.equal(items2[0].mode, 'chat');
+
+    // 3. Errored streamed turn: error event clears streaming flag so next turn creates its own bubble
+    useStore.setState({ agentItems: [] });
+    st.agentHandleEvent({ type: 'turn_start' });
+    st.agentHandleEvent({ type: 'assistant_delta', text: 'Partial text before error' });
+    st.agentHandleEvent({ type: 'error', message: 'Quota exceeded 429' });
+
+    const itemsAfterError = useStore.getState().agentItems;
+    assert.equal(itemsAfterError[0].streaming, false, 'errored assistant item must have streaming=false');
+    assert.equal(itemsAfterError[1].kind, 'error');
+
+    // Next turn arrives: must create its own bubble rather than overwriting turn 1
+    st.agentHandleEvent({ type: 'turn_start' });
+    st.agentHandleEvent({ type: 'assistant_message', text: 'Second turn reply' });
+    const itemsTurn2 = useStore.getState().agentItems;
+    assert.equal(itemsTurn2.length, 3, 'turn 2 must create its own bubble rather than overwriting turn 1');
+    assert.equal(itemsTurn2[0].text, 'Partial text before error');
+    assert.equal(itemsTurn2[2].text, 'Second turn reply');
   })
 );
 

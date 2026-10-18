@@ -1424,6 +1424,7 @@ export const useStore = create((set, get) => ({
         set({ activeTurnMode: e.mode });
         break;
       case 'turn_start':
+        s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, { streaming: false });
         set({ agentBusy: true, agentStep: 0 });
         break;
       case 'step':
@@ -1448,7 +1449,8 @@ export const useStore = create((set, get) => ({
       case 'assistant_message': {
         const turnMode = get().activeTurnMode || null;
         const items = get().agentItems;
-        const hasStreaming = items.some((it) => it.kind === 'assistant' && it.streaming);
+        const last = items[items.length - 1];
+        const hasStreaming = !!(last && last.kind === 'assistant' && last.streaming);
         if (hasStreaming) {
           s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, {
             text: e.text,
@@ -1495,6 +1497,7 @@ export const useStore = create((set, get) => ({
         set({ agentTodos: Array.isArray(e.todos) ? e.todos : [] });
         break;
       case 'error':
+        s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, { streaming: false });
         s.agentAppend({ kind: 'error', text: e.message });
         set({ agentBusy: false });
         finishAutomationRun('error', e.message);
