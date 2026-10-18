@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store';
+import { basename } from '../timeAgo';
 
 /**
- * GitHub repository picker — shared by the sidebar "+" and the composer's repo
- * chip.
- *
- * Sign in with GitHub is one click: the browser opens, you approve, and Nova
- * picks up the token automatically (GitHub device flow — no client secret).
- * A personal-access-token option is kept under "Advanced".
+ * Repository & Workspace switcher — opened by the sidebar "+" icon.
+ * Allows picking recent workspaces, opening a local folder, or cloning/opening from GitHub.
  */
 export default function RepoMenu({ onClose }) {
   const github = useStore((s) => s.github);
+  const rootFolder = useStore((s) => s.rootFolder);
+  const recentFolders = useStore((s) => s.recentFolders) || [];
+  const removeRecentFolder = useStore((s) => s.removeRecentFolder);
   const [q, setQ] = useState('');
   const [token, setToken] = useState('');
   const [cid, setCid] = useState('');
@@ -54,7 +54,68 @@ export default function RepoMenu({ onClose }) {
 
   return (
     <>
-      <div className="rp-head">Repositories</div>
+      <div className="rp-head">Workspaces &amp; Repositories</div>
+
+      <div style={{ padding: '0 2px 8px' }}>
+        <button
+          className="btn small primary"
+          style={{ width: '100%', justifyContent: 'center' }}
+          onClick={openLocal}
+        >
+          📂 Open local folder…
+        </button>
+      </div>
+
+      {recentFolders.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div className="rp-head" style={{ padding: '2px 6px 4px' }}>Recent Workspaces</div>
+          <div className="rp-list" style={{ maxHeight: 160, overflowY: 'auto' }}>
+            {recentFolders.map((f) => {
+              const isActive = f === rootFolder;
+              return (
+                <div
+                  key={f}
+                  className={'rp-row' + (isActive ? ' active' : '')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '4px 6px',
+                    borderRadius: 6,
+                    background: isActive ? 'var(--bg-active)' : 'transparent',
+                  }}
+                >
+                  <div
+                    style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+                    onClick={() => {
+                      if (onClose) onClose();
+                      useStore.getState().openFolder(f);
+                    }}
+                    title={f}
+                  >
+                    <div style={{ fontSize: '12px', fontWeight: isActive ? 600 : 500, color: 'var(--text)' }}>
+                      📁 {basename(f)} {isActive ? '✓' : ''}
+                    </div>
+                    <div className="muted" style={{ fontSize: '10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {f}
+                    </div>
+                  </div>
+                  <button
+                    className="btn-icon tiny"
+                    title="Remove from recents"
+                    style={{ opacity: 0.6, flexShrink: 0 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeRecentFolder(f);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {github.connected ? (
         <>

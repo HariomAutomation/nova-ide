@@ -6,12 +6,73 @@ import { timeAgo, basename } from '../timeAgo';
 
 /* ------------------------------- file tree (editor mode) ------------------------------- */
 
+function NewFileIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="12" y1="18" x2="12" y2="12" />
+      <line x1="9" y1="15" x2="15" y2="15" />
+    </svg>
+  );
+}
+
+function NewFolderIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      <line x1="12" y1="11" x2="12" y2="17" />
+      <line x1="9" y1="14" x2="15" y2="14" />
+    </svg>
+  );
+}
+
 function TreeNode({ entry, depth }) {
   const expanded = useStore((s) => !!s.expanded[entry.path]);
   const children = useStore((s) => s.childrenByDir[entry.path]);
   const activePath = useStore((s) => s.activePath);
   const toggleDir = useStore((s) => s.toggleDir);
   const openFile = useStore((s) => s.openFile);
+  const deleteFileOrDir = useStore((s) => s.deleteFileOrDir);
+  const renameFileOrDir = useStore((s) => s.renameFileOrDir);
+  const createFileInDir = useStore((s) => s.createFileInDir);
+  const createFolderInDir = useStore((s) => s.createFolderInDir);
+
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(entry.name);
+  const [creating, setCreating] = useState(null); // 'file' | 'folder' | null
+  const [createName, setCreateName] = useState('');
+
+  const commitRename = async () => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== entry.name) {
+      const parentDir = entry.path.slice(0, entry.path.lastIndexOf('/'));
+      const newPath = parentDir + '/' + trimmed;
+      await renameFileOrDir(entry.path, newPath);
+    }
+    setEditing(false);
+  };
+
+  const commitCreate = async () => {
+    const trimmed = createName.trim();
+    if (trimmed) {
+      if (creating === 'file') {
+        await createFileInDir(entry.path, trimmed);
+      } else if (creating === 'folder') {
+        await createFolderInDir(entry.path, trimmed);
+      }
+    }
+    setCreating(null);
+    setCreateName('');
+  };
+
+  const handleDelete = (e) => {
+    e.stopPropagation();
+    const kind = entry.isDir ? 'folder' : 'file';
+    if (window.confirm(`Delete ${kind} "${entry.name}"?`)) {
+      deleteFileOrDir(entry.path);
+    }
+  };
 
   if (entry.isDir) {
     return (
@@ -24,8 +85,90 @@ function TreeNode({ entry, depth }) {
         >
           <span className="chev">{expanded ? '\u25BE' : '\u25B8'}</span>
           <span className="tree-icon">{expanded ? '\u{1F4C2}' : '\u{1F4C1}'}</span>
-          <span className="tree-name">{entry.name}</span>
+          {editing ? (
+            <input
+              className="tree-edit-input"
+              value={editName}
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') setEditing(false);
+              }}
+              onBlur={commitRename}
+            />
+          ) : (
+            <span className="tree-name">{entry.name}</span>
+          )}
+          {!editing && (
+            <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="tree-action-btn"
+                title="New file in folder"
+                aria-label="New file"
+                onClick={() => {
+                  if (!expanded) toggleDir(entry.path);
+                  setCreating('file');
+                  setCreateName('');
+                }}
+              >
+                <NewFileIcon />
+              </button>
+              <button
+                className="tree-action-btn"
+                title="New subfolder"
+                aria-label="New folder"
+                onClick={() => {
+                  if (!expanded) toggleDir(entry.path);
+                  setCreating('folder');
+                  setCreateName('');
+                }}
+              >
+                <NewFolderIcon />
+              </button>
+              <button
+                className="tree-action-btn"
+                title="Rename folder"
+                aria-label="Rename folder"
+                onClick={() => {
+                  setEditing(true);
+                  setEditName(entry.name);
+                }}
+              >
+                <EditIcon />
+              </button>
+              <button
+                className="tree-action-btn danger"
+                title="Delete folder"
+                aria-label="Delete folder"
+                onClick={handleDelete}
+              >
+                <TrashIcon />
+              </button>
+            </div>
+          )}
         </div>
+        {creating && (
+          <div
+            className="tree-row tree-create-row"
+            style={{ paddingLeft: 6 + (depth + 1) * 12 }}
+          >
+            <span className="tree-icon">{creating === 'file' ? '\u{1F4C4}' : '\u{1F4C1}'}</span>
+            <input
+              className="tree-edit-input"
+              value={createName}
+              autoFocus
+              placeholder={creating === 'file' ? 'filename.ext' : 'foldername'}
+              onChange={(e) => setCreateName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitCreate();
+                if (e.key === 'Escape') setCreating(null);
+              }}
+              onBlur={commitCreate}
+            />
+          </div>
+        )}
         {expanded &&
           (children || []).map((c) => <TreeNode key={c.path} entry={c} depth={depth + 1} />)}
       </div>
@@ -41,7 +184,46 @@ function TreeNode({ entry, depth }) {
       title={entry.path}
     >
       <span className="tree-icon">{iconForLanguage(langFromPath(entry.name))}</span>
-      <span className={'tree-name' + (isActive ? ' active' : '')}>{entry.name}</span>
+      {editing ? (
+        <input
+          className="tree-edit-input"
+          value={editName}
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => setEditName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitRename();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+          onBlur={commitRename}
+        />
+      ) : (
+        <span className={'tree-name' + (isActive ? ' active' : '')}>{entry.name}</span>
+      )}
+      {!editing && (
+        <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
+          <button
+            className="tree-action-btn"
+            title="Rename file"
+            aria-label="Rename file"
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+              setEditName(entry.name);
+            }}
+          >
+            <EditIcon />
+          </button>
+          <button
+            className="tree-action-btn danger"
+            title="Delete file"
+            aria-label="Delete file"
+            onClick={handleDelete}
+          >
+            <TrashIcon />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -51,6 +233,7 @@ function FilesView() {
   const rootEntries = useStore((s) => s.childrenByDir[s.rootFolder]) || [];
   const openFolder = useStore((s) => s.openFolder);
   const newFile = useStore((s) => s.newFile);
+  const refreshFiles = useStore((s) => s.refreshFiles);
 
   return (
     <>
@@ -64,6 +247,14 @@ function FilesView() {
         </button>
         <span className="sb-view-title">Files</span>
         <div className="spacer" />
+        <button
+          className="btn-icon"
+          title="Refresh files"
+          data-testid="files-refresh-btn"
+          onClick={() => refreshFiles()}
+        >
+          {'\u21BB'}
+        </button>
         <button className="btn-icon" title="New file (Ctrl+N)" onClick={() => newFile()}>
           {'\uFF0B'}
         </button>
@@ -239,53 +430,18 @@ function ChatHome() {
 
   const userName = appInfo?.username || 'you';
 
-  // Group chats by repository/folder.
-  const groups = [];
-  const byKey = new Map();
+  // Filter chats strictly for the active workspace (or general chats if none opened)
+  const activeChats = rootFolder
+    ? chats.filter((c) => c.folder === rootFolder)
+    : chats;
 
-  // 1. Root folder (active repository) is always first
-  if (rootFolder) {
-    const g = { key: rootFolder, folder: rootFolder, chats: [] };
-    byKey.set(rootFolder, g);
-    groups.push(g);
-  }
-
-  // 2. Add other recent repositories
-  for (const f of recentFolders) {
-    if (f && !byKey.has(f)) {
-      const g = { key: f, folder: f, chats: [] };
-      byKey.set(f, g);
-      groups.push(g);
-    }
-  }
-
-  // 3. Sort chats and populate into groups
-  const sorted = [...chats].sort((a, b) => {
+  const sortedChats = [...activeChats].sort((a, b) => {
     const pa = a.pinned ? 1 : 0;
     const pb = b.pinned ? 1 : 0;
     if (pa !== pb) return pb - pa; // pinned first
     if (pa && pb) return (b.pinnedAt || 0) - (a.pinnedAt || 0);
     return (b.updatedAt || 0) - (a.updatedAt || 0);
   });
-
-  for (const c of sorted) {
-    const key = c.folder || '__none__';
-    if (!byKey.has(key)) {
-      const g = { key, folder: c.folder || null, chats: [] };
-      byKey.set(key, g);
-      groups.push(g);
-    }
-    byKey.get(key).chats.push(c);
-  }
-
-  // Ensure active rootFolder is at the top of groups
-  if (rootFolder && groups.length > 1) {
-    const rootIdx = groups.findIndex((g) => g.folder === rootFolder);
-    if (rootIdx > 0) {
-      const [rg] = groups.splice(rootIdx, 1);
-      groups.unshift(rg);
-    }
-  }
 
   const atHome = mainView === 'agent' && !currentChatId;
 
@@ -322,8 +478,16 @@ function ChatHome() {
         <button
           className={'sb-item' + (atHome ? ' active' : '')}
           onClick={() => useStore.getState().newAgentChat()}
+          data-testid="sb-nav-chat"
         >
-          <span className="sb-ico">{'\u270E'}</span> New Chat
+          <span className="sb-ico">{'\u{1F4AC}'}</span> Chat
+        </button>
+        <button
+          className={'sb-item' + (mainView === 'editor' ? ' active' : '')}
+          onClick={() => useStore.getState().setMainView('editor')}
+          data-testid="sb-nav-files"
+        >
+          <span className="sb-ico">{'\u{1F4C1}'}</span> Files
         </button>
         <button
           className={'sb-item' + (mainView === 'search' ? ' active' : '')}
@@ -364,81 +528,25 @@ function ChatHome() {
       </div>
 
       <div className="sb-section-row">
-        <span className="sb-section-label">Repositories</span>
+        <span className="sb-section-label">Workspace</span>
         <div className="spacer" />
-        <button
-          className="btn-icon tiny"
-          title={gitBranch ? `Branch: ${gitBranch}` : 'Sort: recent activity'}
-          onClick={() =>
-            useStore
-              .getState()
-              .setStatus(gitBranch ? `Current branch: ${gitBranch}` : 'Chats are sorted by recent activity')
-          }
-        >
-          {'\u21C5'}
-        </button>
         <RepoPicker />
       </div>
 
       <div className="sb-repos">
-        {groups.length === 0 && (
-          <div className="sb-empty">
-            <div>No repositories added yet.</div>
-            <button
-              className="btn small"
-              style={{ marginTop: '8px', width: '100%' }}
-              onClick={() => useStore.getState().openFolder()}
-            >
-              Open folder…
-            </button>
-          </div>
-        )}
-        {groups.map((g) => (
-          <div key={g.key} className="sb-repo-group" data-testid="sb-repo-group">
-            <div
-              className={
-                'sb-repo' + (g.folder && g.folder === rootFolder ? ' active' : '') + (g.folder ? '' : ' none')
-              }
-              title={g.folder || 'Chats without a repo'}
-              onClick={() => {
-                if (g.folder) useStore.getState().openFolder(g.folder);
-              }}
-            >
-              <span className="sb-ico">{g.folder ? '\u{1F4C1}' : '\u{1F3E0}'}</span>
-              <span className="sb-chat-title">{g.folder ? basename(g.folder) : 'No Repo'}</span>
-              {g.folder && (
-                <button
-                  className="sb-repo-close-btn"
-                  title="Remove repository from sidebar"
-                  aria-label="Remove repository"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeRecentFolder(g.folder);
-                  }}
-                >
-                  {'\u00D7'}
-                </button>
-              )}
-            </div>
-            {g.chats.length === 0 ? (
-              <div
-                className="sb-chat-row sb-empty-chat-hint"
-                onClick={() => {
-                  if (g.folder && g.folder !== rootFolder) {
-                    useStore.getState().openFolder(g.folder).then(() => useStore.getState().newAgentChat());
-                  } else {
-                    useStore.getState().newAgentChat();
-                  }
-                }}
-                title="Start a new chat in this repo"
+        {!rootFolder ? (
+          <div className="sb-repo-group" data-testid="sb-repo-group">
+            <div className="sb-empty" style={{ padding: '8px 10px 12px' }}>
+              <div>No workspace opened.</div>
+              <button
+                className="btn small primary"
+                style={{ marginTop: '8px', width: '100%', justifyContent: 'center' }}
+                onClick={() => useStore.getState().openFolder()}
               >
-                <span className="sb-dot" style={{ opacity: 0.35 }} />
-                <span className="sb-chat-title" style={{ color: 'var(--muted)', fontSize: '11.5px' }}>
-                  + New chat
-                </span>
-              </div>
-            ) : (
-              g.chats.map((c) => (
+                📂 Open Folder…
+              </button>
+            </div>
+            {sortedChats.map((c) => (
               <div
                 key={c.id}
                 className={'sb-chat-row' + (c.id === currentChatId ? ' active' : '')}
@@ -448,7 +556,7 @@ function ChatHome() {
                   e.stopPropagation();
                   setChatMenu({ id: c.id, x: e.clientX, y: e.clientY, pinned: !!c.pinned });
                 }}
-                title={c.title || 'New chat'}
+                title={c.title || 'Untitled'}
                 data-testid="sb-chat-row"
                 data-chat-id={c.id}
               >
@@ -469,7 +577,7 @@ function ChatHome() {
                 ) : (
                   <span className="sb-chat-title">
                     {c.pinned ? <span className="sb-pin">{'\u{1F4CC}'}</span> : null}
-                    {c.title || 'New chat'}
+                    {c.title || 'Untitled'}
                   </span>
                 )}
                 <span className="sb-time">{timeAgo(c.updatedAt)}</span>
@@ -532,10 +640,153 @@ function ChatHome() {
                   </div>
                 )}
               </div>
-            ))
+            ))}
+          </div>
+        ) : (
+          <div className="sb-repo-group" data-testid="sb-repo-group">
+            <div
+              className="sb-repo active"
+              title={rootFolder}
+              onClick={() => useStore.getState().setMainView('editor')}
+            >
+              <span className="sb-ico">{'\u{1F4C1}'}</span>
+              <span className="sb-chat-title">{basename(rootFolder)}</span>
+              {gitBranch && (
+                <span className="muted" style={{ fontSize: '10px', padding: '1px 5px', opacity: 0.8, borderRadius: 4, background: 'var(--bg-elevated)' }}>
+                  {gitBranch}
+                </span>
+              )}
+              <div className="sb-repo-actions" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className="sb-action-btn"
+                  title="Open files in Explorer"
+                  aria-label="Open files"
+                  onClick={() => useStore.getState().setMainView('editor')}
+                >
+                  {'\u{1F4C2}'}
+                </button>
+                <button
+                  className="sb-action-btn"
+                  title="New chat in this workspace"
+                  aria-label="New chat in this workspace"
+                  onClick={() => useStore.getState().newAgentChat()}
+                >
+                  {'\uFF0B'}
+                </button>
+              </div>
+            </div>
+
+            {sortedChats.length === 0 ? (
+              <div
+                className="sb-chat-row sb-empty-chat-hint"
+                onClick={() => useStore.getState().newAgentChat()}
+                title="Start a new chat in this repo"
+                style={{ opacity: 0.5, fontStyle: 'italic' }}
+              >
+                <span className="sb-dot" style={{ opacity: 0.2 }} />
+                <span className="sb-chat-title" style={{ color: 'var(--muted)', fontSize: '11px' }}>
+                  No chats in this workspace yet
+                </span>
+              </div>
+            ) : (
+              sortedChats.map((c) => (
+                <div
+                  key={c.id}
+                  className={'sb-chat-row' + (c.id === currentChatId ? ' active' : '')}
+                  onClick={() => loadChat(c.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setChatMenu({ id: c.id, x: e.clientX, y: e.clientY, pinned: !!c.pinned });
+                  }}
+                  title={c.title || 'Untitled'}
+                  data-testid="sb-chat-row"
+                  data-chat-id={c.id}
+                >
+                  <span className="sb-dot" />
+                  {editingId === c.id ? (
+                    <input
+                      className="sb-chat-edit"
+                      value={editTitle}
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRename(c.id);
+                        if (e.key === 'Escape') setEditingId(null);
+                      }}
+                      onBlur={() => commitRename(c.id)}
+                    />
+                  ) : (
+                    <span className="sb-chat-title">
+                      {c.pinned ? <span className="sb-pin">{'\u{1F4CC}'}</span> : null}
+                      {c.title || 'Untitled'}
+                    </span>
+                  )}
+                  <span className="sb-time">{timeAgo(c.updatedAt)}</span>
+                  {editingId !== c.id && (
+                    <div className="sb-chat-actions" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className={'sb-action-btn' + (c.pinned ? ' pinned' : '')}
+                        title={c.pinned ? 'Unpin' : 'Pin'}
+                        aria-label={c.pinned ? 'Unpin' : 'Pin'}
+                        data-testid="chat-pin-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          pinChat(c.id, !c.pinned);
+                        }}
+                      >
+                        <PinIcon pinned={c.pinned} />
+                      </button>
+                      <button
+                        className="sb-action-btn"
+                        title="Rename"
+                        aria-label="Rename"
+                        data-testid="chat-rename-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingId(c.id);
+                          setEditTitle(c.title || '');
+                        }}
+                      >
+                        <EditIcon />
+                      </button>
+                      <button
+                        className="sb-action-btn danger"
+                        title="Delete"
+                        aria-label="Delete"
+                        data-testid="chat-delete-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeChat(c.id);
+                        }}
+                      >
+                        <TrashIcon />
+                      </button>
+                      <button
+                        className="sb-action-btn sb-chat-x"
+                        title="More"
+                        aria-label="More"
+                        data-testid="chat-more-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const r = e.currentTarget.getBoundingClientRect();
+                          setChatMenu((m) =>
+                            m && m.id === c.id
+                              ? null
+                              : { id: c.id, x: r.right, y: r.bottom, pinned: !!c.pinned }
+                          );
+                        }}
+                      >
+                        <MoreIcon />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))
             )}
           </div>
-        ))}
+        )}
       </div>
 
 

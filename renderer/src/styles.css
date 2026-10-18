@@ -261,11 +261,72 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 12.5px;
+  flex: 1;
+  min-width: 0;
 }
 
 .tree-name.active {
   color: var(--text);
   font-weight: 600;
+}
+
+.tree-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding-right: 4px;
+}
+
+.tree-row:hover .tree-actions {
+  display: inline-flex;
+}
+
+.tree-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 1px 3px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.tree-action-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.tree-action-btn.danger:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.tree-edit-input {
+  flex: 1;
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  font-size: 12px;
+  border-radius: 3px;
+  padding: 1px 4px;
+  outline: none;
+}
+
+.sb-repo-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.sb-repo:hover .sb-repo-actions {
+  display: inline-flex;
 }
 
 .sidebar-empty {
@@ -2210,7 +2271,8 @@ kbd {
   flex-shrink: 0;
 }
 
-.sb-chat-row:hover .sb-chat-actions {
+.sb-chat-row:hover .sb-chat-actions,
+.sb-chat-row:focus-within .sb-chat-actions {
   display: inline-flex;
 }
 
@@ -2224,20 +2286,23 @@ kbd {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: var(--muted);
+  color: var(--text);
+  opacity: 0.75;
   cursor: pointer;
   line-height: 1;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
 }
 
 .sb-action-btn:hover {
+  opacity: 1;
   background: var(--bg-elevated);
   color: var(--text);
 }
 
 [data-theme='dark'] .sb-action-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  opacity: 1;
 }
 
 .sb-action-btn.pinned {

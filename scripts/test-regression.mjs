@@ -1480,6 +1480,38 @@ suite.push(
   })
 );
 
+suite.push(
+  test('models:ping error handling returns clean chatOk:false without models ReferenceError', async () => {
+    let thrown = null;
+    let result = null;
+    try {
+      const base = 'http://127.0.0.1:59999';
+      try {
+        const ctrl = new AbortController();
+        setTimeout(() => ctrl.abort(), 100);
+        await fetch(base + '/chat/completions', { signal: ctrl.signal });
+      } catch (e) {
+        result = { chatOk: false, chatError: String(e.message || e) };
+      }
+    } catch (e) {
+      thrown = e;
+    }
+    assert.equal(thrown, null, 'Must not throw ReferenceError');
+    assert.equal(result.chatOk, false);
+    assert.ok(result.chatError, 'Should contain error string');
+    assert.equal('models' in result, false, 'Must not have invalid models property');
+  })
+);
+
+suite.push(
+  test('models: default models do not cross-contaminate keys across unrelated providers', async () => {
+    const mainJs = await fsp.readFile(path.join(ROOT_DIR, 'electron/main.js'), 'utf8');
+    assert.doesNotMatch(mainJs, /return\s*\{\s*models\s*,\s*chatOk:\s*false/, 'main.js must not reference undefined models in models:ping');
+    const storeJs = await fsp.readFile(path.join(ROOT_DIR, 'renderer/src/store.js'), 'utf8');
+    assert.doesNotMatch(storeJs, /k\s*=\s*groqKey\s*\|\|\s*k/, 'store.js must not indiscriminately copy groqKey to all models');
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

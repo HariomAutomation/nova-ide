@@ -429,7 +429,7 @@ ipcMain.handle('models:ping', async (_e, payload) => {
     }
     return { chatOk: false, chatError: msg };
   } catch (e) {
-    return { models, chatOk: false, chatError: String(e.message || e) };
+    return { chatOk: false, chatError: String(e.message || e) };
   }
 });
 
@@ -580,6 +580,36 @@ ipcMain.handle('fs:read', async (_e, file) => {
 ipcMain.handle('fs:write', async (_e, file, content) => {
   await fs.writeFile(file, content, 'utf8');
   return true;
+});
+
+ipcMain.handle('fs:delete', async (_e, targetPath) => {
+  if (!targetPath) return { ok: false, error: 'Path required' };
+  try {
+    await fs.rm(targetPath, { recursive: true, force: true });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
+
+ipcMain.handle('fs:rename', async (_e, { oldPath, newPath }) => {
+  if (!oldPath || !newPath) return { ok: false, error: 'Both old and new paths required' };
+  try {
+    await fs.rename(oldPath, newPath);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
+
+ipcMain.handle('fs:mkdir', async (_e, dirPath) => {
+  if (!dirPath) return { ok: false, error: 'Path required' };
+  try {
+    await fs.mkdir(dirPath, { recursive: true });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
 });
 
 ipcMain.handle('search:run', async (_e, payload) => {

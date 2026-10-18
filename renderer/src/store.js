@@ -960,13 +960,8 @@ export const useStore = create((set, get) => ({
         const apiKey = found.apiKey || vaulted || dm.apiKey || '';
         return { ...dm, ...found, apiKey, label: stale ? dm.label : (found.label || dm.label), tag: dm.tag };
       }
-      let k = dm.apiKey;
+      let k = dm.apiKey || '';
       if (dm.baseUrl && keyVault[hostOf(dm.baseUrl)]) k = keyVault[hostOf(dm.baseUrl)];
-      if (dm.baseUrl?.includes('googleapis.com')) k = googleKey || k;
-      if (dm.baseUrl?.includes('openrouter.ai')) k = openrouterKey || k;
-      if (dm.baseUrl?.includes('openai.com')) k = openaiKey || k;
-      if (dm.baseUrl?.includes('deepseek.com')) k = deepseekKey || k;
-      if (dm.baseUrl?.includes('groq.com')) k = groqKey || k;
       return { ...dm, apiKey: k };
     });
 
@@ -1247,6 +1242,103 @@ export const useStore = create((set, get) => ({
       untitled: true,
     };
     set({ untitledSeq: n, tabs: [...get().tabs, tab], activePath: path, mainView: 'editor' });
+  },
+
+  async refreshFiles() {
+    const root = get().rootFolder;
+    if (!root) return;
+    try {
+      const entries = await api().listDir(root);
+      const expanded = get().expanded || {};
+      const childrenByDir = { ...get().childrenByDir, [root]: entries };
+      for (const dir of Object.keys(expanded)) {
+        if (expanded[dir] && dir !== root) {
+          try {
+            childrenByDir[dir] = await api().listDir(dir);
+          } catch {}
+        }
+      }
+      set({ childrenByDir, status: 'Files refreshed' });
+      get().loadWorkspaceFiles().catch(() => {});
+    } catch (e) {
+      get().setStatus(`Refresh failed: ${e.message}`);
+    }
+  },
+
+  async deleteFileOrDir(targetPath) {
+    if (!targetPath) return false;
+    try {
+      const res = await api().deleteFile(targetPath);
+      if (res && res.error) {
+        get().setStatus(`Delete failed: ${res.error}`);
+        return false;
+      }
+      const { tabs, activePath } = get();
+      if (tabs.some((t) => t.path === targetPath)) {
+        get().closeTab(targetPath);
+      }
+      await get().refreshFiles();
+      get().setStatus(`Deleted ${targetPath.split('/').pop()}`);
+      return true;
+    } catch (e) {
+      get().setStatus(`Delete failed: ${e.message}`);
+      return false;
+    }
+  },
+
+  async renameFileOrDir(oldPath, newPath) {
+    if (!oldPath || !newPath || oldPath === newPath) return false;
+    try {
+      const res = await api().renameFile(oldPath, newPath);
+      if (res && res.error) {
+        get().setStatus(`Rename failed: ${res.error}`);
+        return false;
+      }
+      const tabs = get().tabs.map((t) =>
+        t.path === oldPath
+          ? { ...t, path: newPath, name: newPath.split('/').pop() }
+          : t
+      );
+      const activePath = get().activePath === oldPath ? newPath : get().activePath;
+      set({ tabs, activePath });
+      await get().refreshFiles();
+      get().setStatus(`Renamed to ${newPath.split('/').pop()}`);
+      return true;
+    } catch (e) {
+      get().setStatus(`Rename failed: ${e.message}`);
+      return false;
+    }
+  },
+
+  async createFileInDir(dirPath, fileName) {
+    if (!dirPath || !fileName) return false;
+    const fullPath = dirPath.replace(/\/+$/, '') + '/' + fileName.trim();
+    try {
+      await api().writeFile(fullPath, '');
+      await get().refreshFiles();
+      await get().openFile(fullPath);
+      return true;
+    } catch (e) {
+      get().setStatus(`Create file failed: ${e.message}`);
+      return false;
+    }
+  },
+
+  async createFolderInDir(dirPath, folderName) {
+    if (!dirPath || !folderName) return false;
+    const fullPath = dirPath.replace(/\/+$/, '') + '/' + folderName.trim();
+    try {
+      const res = await api().mkdir(fullPath);
+      if (res && res.error) {
+        get().setStatus(`Create folder failed: ${res.error}`);
+        return false;
+      }
+      await get().refreshFiles();
+      return true;
+    } catch (e) {
+      get().setStatus(`Create folder failed: ${e.message}`);
+      return false;
+    }
   },
 
   async saveActive() {
