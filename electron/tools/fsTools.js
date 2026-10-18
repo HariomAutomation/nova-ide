@@ -271,7 +271,14 @@ async function editNotebook({ path: filePath, action = 'replace', cellIndex, cel
     if (cell.cell_type === 'code' && !cell.outputs) cell.outputs = [];
   }
 
-  const updatedJson = JSON.stringify(nb, null, 1) + '\n';
+  // Detect original indentation to prevent noisy git diffs
+  let indent = 1;
+  const indentMatch = content.match(/\n([ \t]+)"/);
+  if (indentMatch) {
+    indent = indentMatch[1].includes('\t') ? '\t' : Math.min(indentMatch[1].length, 8);
+  }
+
+  const updatedJson = JSON.stringify(nb, null, indent) + '\n';
   await fs.writeFile(filePath, updatedJson, 'utf8');
   return { ok: true, path: filePath, totalCells: nb.cells.length, action };
 }
