@@ -228,10 +228,18 @@ async function clone(cloneUrl, name) {
         });
       });
       const norm = (u) => String(u || '').replace(/\.git$/i, '').toLowerCase().replace(/^https?:\/\/github\.com\//i, '').replace(/^git@github\.com:/i, '');
-      // If existing directory points to a different repo, clone to a unique folder to avoid collision
+      // If existing directory points to a different repo, clone to a deterministic unique folder to avoid duplicate proliferation
       if (originUrl && norm(originUrl) !== norm(url)) {
-        const uniqueSafe = `${safe}-${Date.now().toString(36)}`;
+        const repoOwnerSlug = norm(url).replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-30);
+        const uniqueSafe = `${safe}-${repoOwnerSlug || 'clone'}`;
         const uniqueDest = path.join(dir, uniqueSafe);
+        try {
+          const ust = await fsp.stat(uniqueDest);
+          if (ust.isDirectory()) {
+            execFile('git', ['pull', '--ff-only'], { cwd: uniqueDest, timeout: 8000 }, () => {});
+            return { ok: true, path: uniqueDest, existed: true };
+          }
+        } catch {}
         return new Promise((resolve) => {
           execFile('git', ['clone', '--depth', '1', url, uniqueDest], { timeout: 300000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
             if (err) {
@@ -242,7 +250,9 @@ async function clone(cloneUrl, name) {
           });
         });
       }
-      execFile('git', ['pull', '--ff-only'], { cwd: dest, timeout: 8000 }, () => {});
+      if (originUrl && norm(originUrl) === norm(url)) {
+        execFile('git', ['pull', '--ff-only'], { cwd: dest, timeout: 8000 }, () => {});
+      }
       return { ok: true, path: dest, existed: true };
     }
   } catch {}

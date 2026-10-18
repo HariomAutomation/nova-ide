@@ -4114,6 +4114,39 @@ input:focus, select:focus, textarea:focus {
   letter-spacing: 0.4px;
 }
 
+.turn-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 5px;
+  margin-left: 8px;
+  letter-spacing: 0.2px;
+  vertical-align: middle;
+}
+.turn-mode-badge.chat {
+  background: rgba(80, 140, 240, 0.12);
+  color: #2563eb;
+  border: 1px solid rgba(80, 140, 240, 0.28);
+}
+[data-theme='dark'] .turn-mode-badge.chat {
+  background: rgba(80, 140, 240, 0.18);
+  color: #60a5fa;
+  border-color: rgba(80, 140, 240, 0.35);
+}
+.turn-mode-badge.agent {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+[data-theme='dark'] .turn-mode-badge.agent {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
 /* agent home pieces */
 .sugg-row {
   background: transparent;

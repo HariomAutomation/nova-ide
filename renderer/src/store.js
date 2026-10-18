@@ -51,6 +51,7 @@ function sanitizeItems(items) {
     .map((it, i) => ({
       id: it.id || `it_${i}`,
       kind: it.kind,
+      mode: it.mode || undefined,
       text: it.text != null ? String(it.text).slice(0, 4000) : undefined,
       name: it.name,
       callId: it.callId,
@@ -88,6 +89,7 @@ export const useStore = create((set, get) => ({
   agentTodos: [],
   agentBusy: false,
   agentStep: 0,
+  activeTurnMode: null,
   queued: [],
   currentChatId: null,
   chats: [],
@@ -1418,13 +1420,17 @@ export const useStore = create((set, get) => ({
       cur._dispatch(next.text, next.extraContext);
     };
     switch (e.type) {
+      case 'mode':
+        set({ activeTurnMode: e.mode });
+        break;
       case 'turn_start':
         set({ agentBusy: true, agentStep: 0 });
         break;
       case 'step':
         set({ agentStep: e.step });
         break;
-      case 'assistant_delta':
+      case 'assistant_delta': {
+        const turnMode = get().activeTurnMode || null;
         if (
           s.agentItems.length &&
           s.agentItems[s.agentItems.length - 1].kind === 'assistant' &&
@@ -1432,17 +1438,22 @@ export const useStore = create((set, get) => ({
         ) {
           s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, {
             text: s.agentItems[s.agentItems.length - 1].text + e.text,
+            ...(turnMode ? { mode: turnMode } : {}),
           });
         } else {
-          s.agentAppend({ kind: 'assistant', text: e.text, streaming: true });
+          s.agentAppend({ kind: 'assistant', text: e.text, streaming: true, ...(turnMode ? { mode: turnMode } : {}) });
         }
         break;
-      case 'assistant_message':
+      }
+      case 'assistant_message': {
+        const turnMode = get().activeTurnMode || null;
         s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, {
           text: e.text,
           streaming: false,
+          ...(turnMode ? { mode: turnMode } : {}),
         });
         break;
+      }
       case 'tool_start':
         s.agentAppend({
           kind: 'tool',
@@ -1512,6 +1523,7 @@ export const useStore = create((set, get) => ({
   },
 
   async _dispatch(text, extraContext) {
+    set({ activeTurnMode: null });
     const s = get();
     const model = s.models.find((m) => m.id === s.activeModelId);
     if (!model) {

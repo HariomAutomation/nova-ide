@@ -772,6 +772,32 @@ suite.push(
   })
 );
 
+suite.push(
+  test('github: clone routes conflicting remote origin to deterministic folder', async () => {
+    const reposDir = path.join(os.homedir(), 'nova-repos');
+    const dummyName = 'test-conflict-' + Date.now();
+    const dest = path.join(reposDir, dummyName);
+    await fsp.mkdir(dest, { recursive: true });
+    const { execFileSync } = await import('node:child_process');
+    try {
+      execFileSync('git', ['init'], { cwd: dest, stdio: 'ignore' });
+      execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/other-org/other-repo.git'], { cwd: dest, stdio: 'ignore' });
+
+      // Attempting to clone another repo to this existing folder name should not clobber dest
+      const res = await gh.clone('https://github.com/my-org/my-repo.git', dummyName);
+      assert.notEqual(res.path, dest);
+    } finally {
+      await fsp.rm(dest, { recursive: true, force: true }).catch(() => {});
+      const entries = await fsp.readdir(reposDir).catch(() => []);
+      for (const e of entries) {
+        if (e.startsWith(dummyName)) {
+          await fsp.rm(path.join(reposDir, e), { recursive: true, force: true }).catch(() => {});
+        }
+      }
+    }
+  })
+);
+
 /* --------------------------------- cloud code --------------------------------- */
 
 suite.push(

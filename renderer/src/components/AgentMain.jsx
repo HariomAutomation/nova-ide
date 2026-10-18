@@ -373,6 +373,7 @@ export default function AgentMain() {
   const agentItems = useStore((s) => s.agentItems);
   const agentBusy = useStore((s) => s.agentBusy);
   const agentStep = useStore((s) => s.agentStep);
+  const activeTurnMode = useStore((s) => s.activeTurnMode);
   const agentSettings = useStore((s) => s.agentSettings);
   const models = useStore((s) => s.models);
   const activeModelId = useStore((s) => s.activeModelId);
@@ -1460,7 +1461,14 @@ export default function AgentMain() {
                 if (item.kind === 'assistant') {
                   return (
                     <div key={item.id} className="chat-msg assistant">
-                      <div className="chat-role">Nova</div>
+                      <div className="chat-role">
+                        <span>Nova</span>
+                        {item.mode && (
+                          <span className={`turn-mode-badge ${item.mode}`} title={`Processed in ${item.mode} mode`}>
+                            {item.mode === 'chat' ? '💬 Chat' : '⚡ Agent'}
+                          </span>
+                        )}
+                      </div>
                       <Markdown text={item.text + (item.streaming ? ' \u258D' : '')} />
                     </div>
                   );
@@ -1480,7 +1488,8 @@ export default function AgentMain() {
               ))}
               {agentBusy && (
                 <div className="agent-status">
-                  <span className="spin" /> step {agentStep}/{agentSettings.maxSteps}
+                  <span className="spin" />
+                  {activeTurnMode === 'chat' ? ' Replying...' : ` step ${agentStep}/${agentSettings.maxSteps}`}
                 </div>
               )}
             </div>
