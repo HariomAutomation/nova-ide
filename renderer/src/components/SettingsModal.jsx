@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
-import { chatModels } from '../model-family';
+import { chatModels, preferredChatModel } from '../model-family';
 
 /* --------------------------------- shared UI --------------------------------- */
 
@@ -207,8 +207,9 @@ function GeminiApiLine({ draft, active, setDraft, setActive, commit }) {
       const { next, entry } = ensureEntry(draft, key);
       if (r && Array.isArray(r.models) && r.models.length) {
         const usable = chatModels(r.models); // drop tts/embedding/image models
+        const chosen = preferredChatModel(usable, entry.model);
         const withIds = next.map((m) =>
-          m.id === entry.id ? { ...m, modelIds: usable.slice(0, 500), model: m.model || usable[0] } : m
+          m.id === entry.id ? { ...m, modelIds: usable.slice(0, 500), model: chosen } : m
         );
         setDraft(withIds);
         setActive(entry.id);
@@ -322,10 +323,14 @@ function ModelsTab() {
         });
         const list = (r && (r.models || r.data)) || [];
         const ids = list.map((m) => (typeof m === 'string' ? m : m && (m.id || m.name))).filter(Boolean);
-        setModelOpts((o) => ({ ...o, [id]: ids }));
+        const usable = chatModels(ids);
+        setModelOpts((o) => ({ ...o, [id]: usable }));
+        if (id !== 'custom' && usable.length) {
+          update(id, { modelIds: usable.slice(0, 500) });
+        }
         setTests((st) => ({
           ...st,
-          [id]: ids.length ? { state: 'ok', msg: `${ids.length} models found` } : { state: 'fail', msg: (r && r.error) || 'no models returned' },
+          [id]: ids.length ? { state: 'ok', msg: `${ids.length} models found` } : { state: 'fail', msg: (r && (r.error || r.chatError)) || 'no models returned' },
         }));
       } catch (e) {
         setTests((st) => ({ ...st, [id]: { state: 'fail', msg: String(e.message || e) } }));
@@ -433,15 +438,20 @@ function ModelsTab() {
     );
   }
 
-  async function save() {
-    const cleaned = draft.map((m) => ({
+  function cleanModel(m) {
+    return {
       id: m.id,
       label: m.label || m.model || 'Model',
-      baseUrl: m.baseUrl.trim().replace(/\/+$/, ''),
-      model: m.model.trim(),
+      baseUrl: String(m.baseUrl || '').trim().replace(/\/+$/, ''),
+      model: String(m.model || '').trim(),
       apiKey: m.apiKey || '',
       ...(m.auth ? { auth: m.auth } : {}),
-    }));
+      ...(Array.isArray(m.modelIds) && m.modelIds.length ? { modelIds: m.modelIds.slice(0, 500) } : {}),
+    };
+  }
+
+  async function save() {
+    const cleaned = draft.map(cleanModel);
     const activeId = active && cleaned.some((m) => m.id === active) ? active : cleaned[0]?.id ?? null;
     useStore.getState().setModels(cleaned, activeId);
     await useStore.getState().saveSettings();

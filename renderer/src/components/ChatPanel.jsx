@@ -77,7 +77,15 @@ export default function ChatPanel() {
       });
 
     abortRef.current = streamChat({
-      config: { baseUrl: activeModel.baseUrl, apiKey: activeModel.apiKey, model: activeModel.model, auth: activeModel.auth },
+      config: {
+        id: activeModel.id,
+        label: activeModel.label,
+        baseUrl: activeModel.baseUrl,
+        apiKey: activeModel.apiKey,
+        model: activeModel.model,
+        auth: activeModel.auth,
+        modelIds: Array.isArray(activeModel.modelIds) ? activeModel.modelIds.slice(0, 100) : undefined,
+      },
       messages: payload,
       onDelta: (d) => {
         patch(asstMsg.id, (m) => ({ ...m, content: m.content + d }));

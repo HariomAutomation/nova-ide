@@ -20,7 +20,10 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const fsp = require('node:fs/promises');
-const { shell } = require('electron');
+let shell = null;
+try {
+  ({ shell } = require('electron'));
+} catch {}
 const { configRoot } = require('./paths');
 
 function getConfigDir() {

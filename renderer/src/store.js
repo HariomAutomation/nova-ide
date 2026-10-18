@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { langFromPath } from './languages.js';
 import { dueAutomations, normalizeTrigger } from './automation-schedule.js';
+import { isGemini, preferredChatModel } from './model-family.js';
 
 // Automation scheduler state (module-level: not part of the render tree).
 let autoTimer = null;
@@ -41,7 +42,7 @@ export const DEFAULT_INTEGRATED_MODELS = [];
 const MAX_CHATS = 25;
 
 function uuid() {
-  return (crypto && crypto.randomUUID && crypto.randomUUID()) || `id_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return (typeof crypto !== 'undefined' && crypto && crypto.randomUUID && crypto.randomUUID()) || `id_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
 // Strip heavy fields (base64 images) before persisting chat transcripts.
@@ -987,7 +988,13 @@ export const useStore = create((set, get) => ({
       }
     }
 
-    const filtered = models;
+    // Auto-heal Gemini entries stuck on zero-free-quota / experimental models (e.g. gemini-4-argon)
+    const filtered = models.map((m) => {
+      if (isGemini(m) && m.auth !== 'gemini-web' && m.auth !== 'cloudcode' && /argon|pro-exp|exp-/i.test(String(m.model || ''))) {
+        return { ...m, model: preferredChatModel(m.modelIds, '') };
+      }
+      return m;
+    });
 
     const activeModelId = s.activeModelId && filtered.some((m) => m.id === s.activeModelId)
       ? s.activeModelId
@@ -1080,7 +1087,7 @@ export const useStore = create((set, get) => ({
       get().setStatus('Google account connected — Gemini (free) is active.');
       return existing.id;
     }
-    const id = crypto.randomUUID();
+    const id = uuid();
     const entry = {
       id,
       label: 'Gemini (Google account)',
@@ -1642,6 +1649,23 @@ export const useStore = create((set, get) => ({
       case 'todos':
         set({ agentTodos: Array.isArray(e.todos) ? e.todos : [] });
         break;
+      case 'status':
+        if (e.text) set({ status: e.text });
+        break;
+      case 'model_switched': {
+        const curModels = get().models || [];
+        const targetId = e.id && curModels.some((m) => m.id === e.id) ? e.id : get().activeModelId;
+        const nextModels = curModels.map((m) =>
+          m.id === targetId && e.model ? { ...m, model: String(e.model) } : m
+        );
+        set({
+          models: nextModels,
+          activeModelId: targetId,
+          status: `⚡ ${e.from || 'Model'} quota full — auto-switched to ${e.model}`,
+        });
+        get().saveSettings();
+        break;
+      }
       case 'error':
         s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, { streaming: false });
         s.agentAppend({ kind: 'error', text: e.message });
@@ -1737,13 +1761,37 @@ export const useStore = create((set, get) => ({
     if (attached.length) noteParts.push(`Files the user attached: ${attached.slice(0, 20).join(', ')}`);
     const contextNote = noteParts.join('\n') || undefined;
 
+    const fallbackConfigs = (get().models || [])
+      .filter(
+        (m) =>
+          m &&
+          m.id !== model.id &&
+          m.apiKey &&
+          m.auth !== 'gemini-web' &&
+          m.auth !== 'cloudcode' &&
+          !String(m.baseUrl || '').includes('localhost')
+      )
+      .map((m) => ({
+        id: m.id,
+        label: m.label,
+        baseUrl: m.baseUrl,
+        apiKey: m.apiKey,
+        model: Array.isArray(m.modelIds) && m.modelIds.length ? preferredChatModel(m.modelIds, m.model) : m.model,
+        auth: m.auth,
+        modelIds: Array.isArray(m.modelIds) ? m.modelIds.slice(0, 50) : undefined,
+      }));
+
     await api().agentStart({
       agentId: get().agentId,
       config: {
+        id: model.id,
+        label: model.label,
         baseUrl: model.baseUrl,
         apiKey: model.apiKey,
         model: model.model,
         auth: model.auth,
+        modelIds: Array.isArray(model.modelIds) ? model.modelIds.slice(0, 100) : undefined,
+        fallbackConfigs,
       },
       workspaceRoot: get().rootFolder,
       userText: text,

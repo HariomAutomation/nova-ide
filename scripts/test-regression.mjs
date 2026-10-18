@@ -13,7 +13,7 @@ import { webFetch, webSearch } from '../electron/tools/web.js';
 import { parseWebToolCalls, protocolBlock, setEngineMode, getEngineMode } from '../electron/gemini-web.js';
 import { describeHttpError } from '../electron/tools/errors.js';
 import { gpuPlan } from '../electron/tools/gpu-flags.js';
-import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage, estimateChars, fitFromSizeError, detectMode } from '../electron/agent.js';
+import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage, estimateChars, fitFromSizeError, detectMode, buildFallbackChain, callModel, runAgent, isQuotaOrModelError } from '../electron/agent.js';
 import { isWithin } from '../electron/tools/paths.js';
 import computer from '../electron/tools/computer.js';
 import git from '../electron/tools/git.js';
@@ -33,6 +33,8 @@ import {
   chipLabel,
   isChatModel,
   chatModels,
+  preferredChatModel,
+  fallbackChoices,
 } from '../renderer/src/model-family.js';
 import { handle as mcpHandle, askGemini } from './mcp-gemini-web.mjs';
 import * as geminiPw from '../electron/gemini-pw.js';
@@ -1538,6 +1540,103 @@ suite.push(
     assert.ok(desc.includes('503'), 'Must contain 503 status code');
     assert.ok(desc.includes('Google servers pe temporary high demand'), 'Must explain temporary high demand in clear Hindi');
     assert.ok(desc.includes('Retry'), 'Must suggest Retry');
+  })
+);
+
+suite.push(
+  test('quota fallback: gemini-4-argon 429 automatically switches to a free Gemini Flash model', async () => {
+    const http = await import('node:http');
+    const hitModels = [];
+    const srv = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        const j = JSON.parse(body || '{}');
+        hitModels.push(j.model);
+        if (j.model === 'gemini-4-argon') {
+          res.writeHead(429, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: {
+                code: 429,
+                message: 'Quota exceeded for metric GenerateRequestsPerDayPerProjectPerModel-FreeTier',
+                status: 'RESOURCE_EXHAUSTED',
+              },
+            })
+          );
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'Hello from ' + j.model } }] })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+    });
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const port = srv.address().port;
+
+    try {
+      const cfg = {
+        id: 'gem-entry',
+        label: 'Gemini',
+        baseUrl: `http://127.0.0.1:${port}/v1beta/openai`,
+        apiKey: 'test-key',
+        model: 'gemini-4-argon',
+        modelIds: ['gemini-4-argon', 'gemini-2.5-flash', 'gemini-flash-latest'],
+      };
+
+      const chain = buildFallbackChain(cfg);
+      assert.ok(chain.length >= 2, 'fallback chain includes candidate models');
+      assert.equal(chain[0].model, 'gemini-2.5-flash', 'prioritizes gemini-2.5-flash over experimental models');
+
+      const events = [];
+      await runAgent({
+        agentId: 'test-quota-fallback',
+        config: cfg,
+        workspaceRoot: TEST_DIR,
+        userText: 'hi',
+        settings: { composerMode: 'auto' },
+        send: (e) => events.push(e),
+      });
+
+      assert.deepEqual(hitModels, ['gemini-4-argon', 'gemini-2.5-flash']);
+      const switched = events.find((e) => e.type === 'model_switched');
+      assert.ok(switched, 'emitted model_switched event');
+      assert.equal(switched.from, 'gemini-4-argon');
+      assert.equal(switched.model, 'gemini-2.5-flash');
+
+      const msg = events.find((e) => e.type === 'assistant_message');
+      assert.ok(msg, 'completed chat turn with assistant_message');
+      assert.equal(msg.text, 'Hello from gemini-2.5-flash');
+      assert.equal(events.some((e) => e.type === 'error'), false, 'no error emitted when fallback succeeds');
+    } finally {
+      srv.close();
+    }
+  })
+);
+
+suite.push(
+  test('fallbackChoices & preferredChatModel: single Gemini entry offers variant fallbacks and avoids argon default', () => {
+    const models = [
+      {
+        id: 'g1',
+        label: 'Gemini',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        apiKey: 'AIzaTest',
+        model: 'gemini-4-argon',
+        modelIds: ['gemini-4-argon', 'gemini-2.5-flash', 'gemini-flash-latest'],
+      },
+    ];
+    const choices = fallbackChoices(models, 'g1');
+    assert.ok(choices.length >= 2, 'returns variant fallback choices from same Gemini entry');
+    assert.equal(choices[0].id, 'g1');
+    assert.equal(choices[0].model, 'gemini-2.5-flash');
+    assert.ok(!choices.some((c) => c.model === 'gemini-4-argon'), 'excludes the failing active model');
+
+    assert.equal(
+      preferredChatModel(['gemini-4-argon', 'gemini-2.5-flash', 'gemini-flash-latest'], 'gemini-4-argon'),
+      'gemini-2.5-flash'
+    );
   })
 );
 

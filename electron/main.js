@@ -1202,32 +1202,64 @@ ipcMain.handle('ai:chat', async (_e, payload) => {
       return;
     }
 
-    const base = String(config.baseUrl || '').replace(/\/+$/, '');
-    if (!base) throw new Error('No base URL configured for this model.');
-    const url = base + '/chat/completions';
+    const openStream = async (cfg) => {
+      const base = String(cfg.baseUrl || '').replace(/\/+$/, '');
+      if (!base) throw new Error('No base URL configured for this model.');
+      const url = base + '/chat/completions';
 
-    const headers = { 'Content-Type': 'application/json' };
-    if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
-    if (/openrouter\.ai/.test(base)) {
-      headers['HTTP-Referer'] = 'https://nova-ide.local';
-      headers['X-Title'] = 'Nova IDE';
-    }
+      const headers = { 'Content-Type': 'application/json' };
+      if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
+      if (/openrouter\.ai/.test(base)) {
+        headers['HTTP-Referer'] = 'https://nova-ide.local';
+        headers['X-Title'] = 'Nova IDE';
+      }
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
-      signal: ac.signal,
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        stream: true,
-        temperature: config.temperature ?? 0.2,
-      }),
-    });
+      const r = await fetch(url, {
+        method: 'POST',
+        headers,
+        signal: ac.signal,
+        body: JSON.stringify({
+          model: cfg.model,
+          messages,
+          stream: true,
+          temperature: cfg.temperature ?? 0.2,
+        }),
+      });
 
-    if (!res.ok || !res.body) {
-      const text = await res.text().catch(() => '');
-      throw new Error(describeHttpError(url, res.status, res.statusText, text));
+      if (!r.ok || !r.body) {
+        const text = await r.text().catch(() => '');
+        const err = new Error(describeHttpError(url, r.status, r.statusText, text));
+        err.status = r.status;
+        err.body = text;
+        throw err;
+      }
+      return r;
+    };
+
+    let res;
+    try {
+      res = await openStream(config);
+    } catch (err) {
+      if (ac.signal.aborted || !agent.isQuotaOrModelError(err)) throw err;
+      const fallbacks = agent.buildFallbackChain(config);
+      if (!fallbacks.length) throw err;
+      let switched = null;
+      for (const cand of fallbacks) {
+        if (ac.signal.aborted) throw err;
+        try {
+          res = await openStream(cand);
+          switched = cand;
+          break;
+        } catch {}
+      }
+      if (!res || !switched) throw err;
+      send('agent:event', {
+        type: 'model_switched',
+        from: config.model,
+        model: switched.model,
+        id: switched.id || config.id || null,
+        baseUrl: switched.baseUrl || config.baseUrl,
+      });
     }
 
     const decoder = new TextDecoder();

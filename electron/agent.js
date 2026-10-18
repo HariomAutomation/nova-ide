@@ -422,7 +422,98 @@ function stopAgent(agentId) {
 
 /* ------------------------------ streaming model call ------------------------------ */
 
-async function callModel({ config, messages, tools, signal, onDelta, threadKey }) {
+const GEMINI_FREE_FALLBACKS = [
+  'gemini-2.5-flash',
+  'gemini-flash-latest',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+];
+
+function isQuotaOrModelError(err) {
+  if (!err) return false;
+  const st = Number(err.status) || 0;
+  if (st === 429 || st === 404 || st === 503) return true;
+  const txt = String(err.body || err.message || '');
+  return /\b(429|503)\b|resource_exhausted|quota|rate.?limit|overloaded|model.*not found/i.test(txt);
+}
+
+function isChatCapableId(id) {
+  const s = String(id || '').toLowerCase().trim();
+  if (!s) return false;
+  return !/(^|[-_])(tts|embedding|embeddings|aqa|imagen|veo|whisper|dall-e|moderation)([-_]|$)/.test(s);
+}
+
+/**
+ * Build a prioritized list of fallback model configs when the active model hits
+ * a per-model quota / rate limit (429), 404, or 503.
+ */
+function buildFallbackChain(config) {
+  if (!config || config.auth === 'gemini-web' || config.auth === 'cloudcode') return [];
+  const base = String(config.baseUrl || '').trim().replace(/\/+$/, '');
+  const curModel = String(config.model || '').trim();
+  const isGemini = /generativelanguage\.googleapis\.com/i.test(base);
+  const out = [];
+  const seen = new Set();
+  if (base && curModel) seen.add(`${base}::${curModel}`);
+
+  const pushCandidate = (cfg) => {
+    if (!cfg || !cfg.baseUrl || !cfg.model) return;
+    const b = String(cfg.baseUrl).trim().replace(/\/+$/, '');
+    const m = String(cfg.model).trim();
+    if (!b || !m) return;
+    const key = `${b}::${m}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ ...cfg, baseUrl: b, model: m });
+  };
+
+  if (base) {
+    const rawIds = Array.isArray(config.fallbackModels)
+      ? config.fallbackModels
+      : Array.isArray(config.modelIds)
+        ? config.modelIds
+        : [];
+    const usableIds = rawIds.filter(isChatCapableId);
+
+    const pool = isGemini
+      ? [
+          ...GEMINI_FREE_FALLBACKS.filter((g) => !usableIds.length || usableIds.includes(g)),
+          ...GEMINI_FREE_FALLBACKS,
+          ...usableIds,
+        ]
+      : usableIds;
+
+    const scored = [...new Set(pool)].sort((a, b) => {
+      const rank = (s) => {
+        const idx = GEMINI_FREE_FALLBACKS.indexOf(s);
+        if (idx >= 0) return idx;
+        if (/:free\b/i.test(s)) return 10;
+        if (/flash-lite|mini|instant/i.test(s) && !/exp|preview|argon/i.test(s)) return 15;
+        if (/flash/i.test(s) && !/exp|preview|argon/i.test(s)) return 20;
+        if (/argon|exp|preview/i.test(s)) return 90;
+        return 50;
+      };
+      return rank(a) - rank(b);
+    });
+
+    for (const mid of scored.slice(0, 4)) {
+      pushCandidate({ ...config, model: mid });
+    }
+  }
+
+  if (Array.isArray(config.fallbackConfigs)) {
+    for (const fc of config.fallbackConfigs) {
+      if (!fc || !fc.baseUrl || !fc.apiKey) continue;
+      if (fc.auth === 'gemini-web' || fc.auth === 'cloudcode') continue;
+      pushCandidate(fc);
+      if (out.length >= 6) break;
+    }
+  }
+
+  return out;
+}
+
+async function callModel({ config, messages, tools, signal, onDelta, threadKey, onModelSwitch }) {
   if (config.auth === 'gemini-web') {
     // Gemini Web "jugaad": the signed-in web app is the brain. It can't do
     // native function calling, so we ask it (in-prompt) to reply with a JSON
@@ -487,140 +578,181 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey }
     });
   }
 
-  const base = String(config.baseUrl || '').replace(/\/+$/, '');
-  if (!base) throw new Error('No base URL configured for this model.');
-  const url = base + '/chat/completions';
+  async function callSingleHttpConfig(cfg) {
+    const base = String(cfg.baseUrl || '').replace(/\/+$/, '');
+    if (!base) throw new Error('No base URL configured for this model.');
+    const url = base + '/chat/completions';
 
-  const headers = { 'Content-Type': 'application/json' };
-  if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
-  if (/openrouter\.ai/.test(base)) {
-    headers['HTTP-Referer'] = 'https://nova-ide.local';
-    headers['X-Title'] = 'Nova IDE';
-  }
-
-  async function streamOnce(msgs, sendTools) {
-    const body = {
-      model: config.model,
-      messages: msgs,
-      stream: true,
-      temperature: config.temperature ?? 0.2,
-    };
-    if (sendTools) {
-      body.tools = tools;
-      body.tool_choice = 'auto';
+    const headers = { 'Content-Type': 'application/json' };
+    if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
+    if (/openrouter\.ai/.test(base)) {
+      headers['HTTP-Referer'] = 'https://nova-ide.local';
+      headers['X-Title'] = 'Nova IDE';
     }
 
-    let res;
-    const maxAttempts = 3;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        res = await fetch(url, { method: 'POST', headers, signal, body: JSON.stringify(body) });
-      } catch (netErr) {
-        if (signal && signal.aborted) throw netErr;
-        if (attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, 1200 * attempt));
-          continue;
-        }
-        throw netErr;
+    async function streamOnce(msgs, sendTools) {
+      const body = {
+        model: cfg.model,
+        messages: msgs,
+        stream: true,
+        temperature: cfg.temperature ?? 0.2,
+      };
+      if (sendTools) {
+        body.tools = tools;
+        body.tool_choice = 'auto';
       }
 
-      if (!res.ok || !res.body) {
-        const text = await res.text().catch(() => '');
-        const isTransient =
-          res.status === 503 ||
-          res.status === 502 ||
-          res.status === 504 ||
-          (res.status === 429 && /high demand|spikes in demand|try again later/i.test(text));
-        if (isTransient && attempt < maxAttempts && (!signal || !signal.aborted)) {
-          await new Promise((r) => setTimeout(r, 1500 * attempt));
-          continue;
-        }
-        const err = new Error(describeHttpError(url, res.status, res.statusText, text));
-        err.status = res.status;
-        err.body = text;
-        throw err;
-      }
-      break;
-    }
-
-    const decoder = new TextDecoder();
-    let buf = '';
-    let content = '';
-    const toolAcc = new Map();
-
-    let done = false;
-    for await (const chunk of res.body) {
-      buf += decoder.decode(chunk, { stream: true });
-      let idx;
-      while ((idx = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, idx).trim();
-        buf = buf.slice(idx + 1);
-        if (!line.startsWith('data:')) continue;
-        const data = line.slice(5).trim();
-        if (data === '[DONE]') {
-          done = true;
-          break;
-        }
-        let j;
+      let res;
+      const maxAttempts = 3;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-          j = JSON.parse(data);
-        } catch {
-          continue;
+          res = await fetch(url, { method: 'POST', headers, signal, body: JSON.stringify(body) });
+        } catch (netErr) {
+          if (signal && signal.aborted) throw netErr;
+          if (attempt < maxAttempts) {
+            await new Promise((r) => setTimeout(r, 1200 * attempt));
+            continue;
+          }
+          throw netErr;
         }
-        if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
-        const delta = j.choices && j.choices[0] && j.choices[0].delta;
-        if (!delta) continue;
-        if (delta.content) {
-          content += delta.content;
-          if (onDelta) onDelta(delta.content);
+
+        if (!res.ok || !res.body) {
+          const text = await res.text().catch(() => '');
+          const isTransient =
+            res.status === 503 ||
+            res.status === 502 ||
+            res.status === 504 ||
+            (res.status === 429 && /high demand|spikes in demand|try again later/i.test(text));
+          if (isTransient && attempt < maxAttempts && (!signal || !signal.aborted)) {
+            await new Promise((r) => setTimeout(r, 1500 * attempt));
+            continue;
+          }
+          const err = new Error(describeHttpError(url, res.status, res.statusText, text));
+          err.status = res.status;
+          err.body = text;
+          throw err;
         }
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const i = tc.index ?? 0;
-            const cur = toolAcc.get(i) || { id: '', name: '', args: '' };
-            if (tc.id) cur.id = tc.id;
-            if (tc.function && tc.function.name) cur.name += tc.function.name;
-            if (tc.function && tc.function.arguments) cur.args += tc.function.arguments;
-            toolAcc.set(i, cur);
+        break;
+      }
+
+      const decoder = new TextDecoder();
+      let buf = '';
+      let content = '';
+      const toolAcc = new Map();
+
+      let done = false;
+      for await (const chunk of res.body) {
+        buf += decoder.decode(chunk, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 1);
+          if (!line.startsWith('data:')) continue;
+          const data = line.slice(5).trim();
+          if (data === '[DONE]') {
+            done = true;
+            break;
+          }
+          let j;
+          try {
+            j = JSON.parse(data);
+          } catch {
+            continue;
+          }
+          if (j.error) {
+            const streamErr = new Error(j.error.message || JSON.stringify(j.error));
+            streamErr.status = j.error.code || j.error.status || 0;
+            streamErr.body = JSON.stringify(j.error);
+            throw streamErr;
+          }
+          const delta = j.choices && j.choices[0] && j.choices[0].delta;
+          if (!delta) continue;
+          if (delta.content) {
+            content += delta.content;
+            if (onDelta) onDelta(delta.content);
+          }
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const i = tc.index ?? 0;
+              const cur = toolAcc.get(i) || { id: '', name: '', args: '' };
+              if (tc.id) cur.id = tc.id;
+              if (tc.function && tc.function.name) cur.name += tc.function.name;
+              if (tc.function && tc.function.arguments) cur.args += tc.function.arguments;
+              toolAcc.set(i, cur);
+            }
           }
         }
+        if (done) break;
       }
-      if (done) break;
+
+      const toolCalls = [...toolAcc.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([i, t]) => ({ id: t.id || `call_${i}_${Date.now()}`, name: t.name, argsRaw: t.args }));
+
+      return { content, toolCalls };
     }
 
-    const toolCalls = [...toolAcc.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([i, t]) => ({ id: t.id || `call_${i}_${Date.now()}`, name: t.name, argsRaw: t.args }));
+    const haveTools = Array.isArray(tools) && tools.length > 0;
+    try {
+      return await streamOnce(messages, haveTools);
+    } catch (e) {
+      if (signal && signal.aborted) throw e;
 
-    return { content, toolCalls };
+      // Fallback for models/endpoints that reject native tool calling (very
+      // common on free tiers): retry WITHOUT the `tools` parameter and hand the
+      // model the same tool surface as a prompt protocol — the trick the Gemini
+      // Web provider already uses — then parse its JSON reply back into tool
+      // calls. Guarded so a working setup never takes this path.
+      const status = Number(e && e.status) || 0;
+      const bodyText = String((e && e.body) || '');
+      const toolsRejected = haveTools && status >= 400 && status < 500 && status !== 429 && /tool|function/i.test(bodyText);
+      if (!toolsRejected) throw e;
+
+      const proto = geminiWeb.protocolBlock(tools);
+      const msgs = messages.slice();
+      const sysIdx = msgs.findIndex((m) => m && m.role === 'system' && typeof m.content === 'string');
+      if (sysIdx >= 0) msgs[sysIdx] = { ...msgs[sysIdx], content: msgs[sysIdx].content + '\n\n' + proto };
+      else msgs.unshift({ role: 'system', content: proto });
+
+      const r = await streamOnce(msgs, false);
+      const calls = geminiWeb.parseWebToolCalls(r.content);
+      if (calls) return { content: '', toolCalls: calls };
+      return { content: r.content, toolCalls: [] };
+    }
   }
 
-  const haveTools = Array.isArray(tools) && tools.length > 0;
   try {
-    return await streamOnce(messages, haveTools);
-  } catch (e) {
-    if (signal && signal.aborted) throw e;
+    return await callSingleHttpConfig(config);
+  } catch (err) {
+    if (signal && signal.aborted) throw err;
+    if (!isQuotaOrModelError(err)) throw err;
 
-    // Fallback for models/endpoints that reject native tool calling (very
-    // common on free tiers): retry WITHOUT the `tools` parameter and hand the
-    // model the same tool surface as a prompt protocol — the trick the Gemini
-    // Web provider already uses — then parse its JSON reply back into tool
-    // calls. Guarded so a working setup never takes this path.
-    const status = Number(e && e.status) || 0;
-    const bodyText = String((e && e.body) || '');
-    const toolsRejected = haveTools && status >= 400 && status < 500 && /tool|function/i.test(bodyText);
-    if (!toolsRejected) throw e;
+    const fallbacks = buildFallbackChain(config);
+    if (!fallbacks.length) throw err;
 
-    const proto = geminiWeb.protocolBlock(tools);
-    const msgs = messages.slice();
-    const sysIdx = msgs.findIndex((m) => m && m.role === 'system' && typeof m.content === 'string');
-    if (sysIdx >= 0) msgs[sysIdx] = { ...msgs[sysIdx], content: msgs[sysIdx].content + '\n\n' + proto };
-    else msgs.unshift({ role: 'system', content: proto });
-
-    const r = await streamOnce(msgs, false);
-    const calls = geminiWeb.parseWebToolCalls(r.content);
-    if (calls) return { content: '', toolCalls: calls };
-    return { content: r.content, toolCalls: [] };
+    const originalModel = config.model || 'model';
+    for (const cand of fallbacks) {
+      if (signal && signal.aborted) throw err;
+      try {
+        const res = await callSingleHttpConfig(cand);
+        config.model = cand.model;
+        if (cand.baseUrl) config.baseUrl = cand.baseUrl;
+        if (cand.apiKey !== undefined) config.apiKey = cand.apiKey;
+        if (cand.auth !== undefined) config.auth = cand.auth;
+        if (cand.id) config.id = cand.id;
+        if (onModelSwitch) {
+          onModelSwitch({
+            from: originalModel,
+            model: cand.model,
+            id: cand.id || config.id || null,
+            baseUrl: cand.baseUrl || config.baseUrl,
+            label: cand.label || config.label || cand.model,
+          });
+        }
+        return res;
+      } catch {}
+    }
+    throw err;
   }
 }
 
@@ -1290,6 +1422,7 @@ function sanitizeAssistantReply(text) {
         signal,
         threadKey: agentId,
         onDelta: (text) => emit({ type: 'assistant_delta', text }),
+        onModelSwitch: (sw) => emit({ type: 'model_switched', ...sw }),
       });
 
       if (res.content) {
@@ -1318,6 +1451,7 @@ function sanitizeAssistantReply(text) {
           signal,
           threadKey: agentId,
           onDelta: (text) => emit({ type: 'assistant_delta', text }),
+          onModelSwitch: (sw) => emit({ type: 'model_switched', ...sw }),
         });
       };
 
@@ -1481,4 +1615,7 @@ module.exports = {
   normalizeTodos,
   codeLineage,
   detectMode,
+  buildFallbackChain,
+  callModel,
+  isQuotaOrModelError,
 };

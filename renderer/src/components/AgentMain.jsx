@@ -6,7 +6,7 @@ import { basename } from '../timeAgo';
 import ToolCard from './ToolCard';
 import RepoMenu from './RepoMenu';
 import { usableModels as pickUsableModels, RETIRED_AUTHS } from '../model-filter';
-import { groupModels, variantsOf, variantCount, pickerMaxHeight, chipLabel } from '../model-family';
+import { groupModels, variantsOf, variantCount, pickerMaxHeight, chipLabel, fallbackChoices } from '../model-family';
 import { retryWindow, sizeNumbers } from '../error-text';
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -220,6 +220,17 @@ function diagnoseError(text) {
   };
 }
 
+function removeFailedTurn(items, errId, lastUserText) {
+  const list = Array.isArray(items) ? items.slice() : [];
+  const idx = list.findIndex((it) => it && it.id === errId);
+  if (idx < 0) return list;
+  list.splice(idx, 1);
+  if (idx - 1 >= 0 && list[idx - 1] && list[idx - 1].kind === 'user' && list[idx - 1].text === lastUserText) {
+    list.splice(idx - 1, 1);
+  }
+  return list;
+}
+
 function ErrorCard({ item }) {
   const models = useStore((s) => s.models);
   const activeModelId = useStore((s) => s.activeModelId);
@@ -227,19 +238,27 @@ function ErrorCard({ item }) {
   const [showRaw, setShowRaw] = useState(false);
   const d = diagnoseError(item.text);
 
-  const fallbacks = models
-    .filter((m) => m.apiKey && m.auth !== 'gemini-web' && m.id !== activeModelId && !m.baseUrl?.includes('localhost'))
-    .slice(0, 3);
+  const fallbacks = fallbackChoices(models, activeModelId);
 
   const lastUserText = [...agentItems].reverse().find((it) => it.kind === 'user')?.text || '';
 
-  const switchAndRetry = (id) => {
-    const m = models.find((x) => x.id === id);
+  const switchAndRetry = (fb) => {
+    if (!fb) return;
+    const m = models.find((x) => x.id === fb.id);
     if (!m) return;
-    useStore.setState({ activeModelId: id });
+    const nextModels = models.map((x) => (x.id === fb.id && fb.model ? { ...x, model: fb.model } : x));
+    const cleanedItems = removeFailedTurn(agentItems, item.id, lastUserText);
+    useStore.setState({ models: nextModels, activeModelId: fb.id, agentItems: cleanedItems });
     useStore.getState().saveSettings();
-    useStore.getState().setStatus(`Model switched: ${m.label}`);
+    useStore.getState().setStatus(`Model switched: ${fb.label}`);
     if (lastUserText) useStore.getState().agentSend(lastUserText);
+  };
+
+  const retryNow = () => {
+    if (!lastUserText) return;
+    const cleanedItems = removeFailedTurn(agentItems, item.id, lastUserText);
+    useStore.setState({ agentItems: cleanedItems });
+    useStore.getState().agentSend(lastUserText);
   };
 
   const headline = d?.headline || 'Agent me error aya';
@@ -258,15 +277,15 @@ function ErrorCard({ item }) {
         <div className="err-actions">
           <span className="err-try">Try:</span>
           {fallbacks.map((m) => (
-            <button key={m.id} className="chip err-model-chip" onClick={() => switchAndRetry(m.id)}>
-              {m.label} ({m.model})
+            <button key={`${m.id}:${m.model}`} className="chip err-model-chip" onClick={() => switchAndRetry(m)}>
+              {m.label}
             </button>
           ))}
         </div>
       )}
       <div className="err-actions">
         {lastUserText && (
-          <button className="chip primary" onClick={() => useStore.getState().agentSend(lastUserText)}>
+          <button className="chip primary" onClick={retryNow}>
             ↻ Retry
           </button>
         )}

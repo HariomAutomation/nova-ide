@@ -43,3 +43,4 @@ playwright-report/
 blob-report/
 # Graphify knowledge graph cache
 graphify-out/
+nova-ide-fixed*

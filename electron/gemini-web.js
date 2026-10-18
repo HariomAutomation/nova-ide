@@ -21,7 +21,11 @@
  * area), selectors drift when Google ships UI changes, rate limits / CAPTCHAs
  * are possible. Errors fall back with friendly messages.
  */
-const { webContents, shell } = require('electron');
+let webContents = null;
+let shell = null;
+try {
+  ({ webContents, shell } = require('electron'));
+} catch {}
 const geminiPw = require('./gemini-pw');
 
 let wcId = null;
@@ -37,7 +41,7 @@ const POLL_MS = 250;
 /* ------------------------------- plumbing ------------------------------- */
 
 function wcOrThrow() {
-  const wc = wcId != null ? webContents.fromId(wcId) : null;
+  const wc = wcId != null && webContents ? webContents.fromId(wcId) : null;
   if (!wc || wc.isDestroyed()) {
     throw new Error('Gemini tab abhi ready nahi hai — Nova ke left sidebar se "Gemini" kholo, page load hone do, phir try karo.');
   }
