@@ -21,9 +21,10 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const fsp = require('node:fs/promises');
 const { shell } = require('electron');
+const { configRoot } = require('./paths');
 
 function getConfigDir() {
-  return process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
+  return configRoot();
 }
 function getConfigPath() {
   return path.join(getConfigDir(), 'gdrive.json');
@@ -411,4 +412,6 @@ module.exports = {
   writeMemory,
   getAccessToken,
   getLastAuthUrl,
+  getConfigDir,
+  getConfigPath,
 };

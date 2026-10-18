@@ -16,11 +16,12 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const fsp = require('node:fs/promises');
+const { configRoot } = require('./paths');
 
 // Resolved lazily so an env override (NOVA_CONFIG_DIR) is honoured even when
 // this module was loaded earlier (e.g. via agent.js).
 function configDir() {
-  return process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
+  return configRoot();
 }
 function memoryDir() {
   return path.join(configDir(), 'memory');

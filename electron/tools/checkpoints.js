@@ -8,10 +8,10 @@
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const { configRoot } = require('./paths');
 
 function getRootDir() {
-  const home = process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR;
-  return home ? path.join(home, 'checkpoints') : path.join(os.homedir(), '.nova-ide', 'checkpoints');
+  return path.join(configRoot(), 'checkpoints');
 }
 
 function safeId(agentId) {
@@ -95,4 +95,4 @@ async function restore(agentId) {
   return { restored, message: null };
 }
 
-module.exports = { snapshot, restore, count, listEntries };
+module.exports = { snapshot, restore, count, listEntries, dirFor, getRootDir };

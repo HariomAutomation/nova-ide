@@ -12,6 +12,7 @@ const path = require('node:path');
 const os = require('node:os');
 const fsp = require('node:fs/promises');
 const { execFile } = require('node:child_process');
+const { configRoot } = require('./paths');
 
 // A build can ship a GitHub OAuth App client ID (public for the device flow) so
 // "Sign in with GitHub" is one click. Otherwise the user pastes their own once.
@@ -22,7 +23,7 @@ const { execFile } = require('node:child_process');
 const DEFAULT_CLIENT_ID = process.env.NOVA_GITHUB_CLIENT_ID || 'Ov23lirvysSV2ryNxylL';
 
 function configDir() {
-  return process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
+  return configRoot();
 }
 function configPath() {
   return path.join(configDir(), 'github.json');

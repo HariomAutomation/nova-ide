@@ -55,6 +55,9 @@ export const test = base.extend<NovaFixtures>({
             },
           ],
           activeModelId: 'mock',
+          // Note on externalFileProtection: disabled here so the mock LLM's target directory
+          // (/tmp/nova-e2e-llm) auto-approves writes without pausing test turns. External-file
+          // protection itself is tested explicitly in approval.spec.ts and the regression suite.
           agentSettings: { maxSteps: 12, autoApproveEdit: true, autoApproveTerminal: true, externalFileProtection: false },
         },
         null,

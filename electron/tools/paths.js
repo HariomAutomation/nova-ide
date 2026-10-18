@@ -14,6 +14,7 @@
  */
 
 const path = require('node:path');
+const os = require('node:os');
 
 /**
  * @param {string} root   absolute directory the target must live inside
@@ -29,4 +30,14 @@ function isWithin(root, target) {
   return rel !== '' && !rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel);
 }
 
-module.exports = { isWithin };
+/**
+ * Single source of truth for Nova IDE's configuration root directory.
+ * Respects NOVA_HOME or NOVA_CONFIG_DIR env overrides, defaulting to ~/.nova-ide.
+ * @returns {string}
+ */
+function configRoot() {
+  return process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
+}
+
+module.exports = { isWithin, configRoot };
+

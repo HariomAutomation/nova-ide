@@ -17,7 +17,7 @@ const ghTool = require('./tools/github');
 const cloudcode = require('./tools/cloudcode');
 const voice = require('./tools/voice');
 const { describeHttpError } = require('./tools/errors');
-const { isWithin } = require('./tools/paths');
+const { isWithin, configRoot } = require('./tools/paths');
 const mcp = require('./mcp');
 const geminiWeb = require('./gemini-web');
 const agent = require('./agent');
@@ -25,7 +25,7 @@ const agent = require('./agent');
 const DIST = path.join(__dirname, '..', 'dist');
 const DEV_SERVER = process.env.NOVA_DEV_SERVER || null;
 
-const CONFIG_ROOT = process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
+const CONFIG_ROOT = configRoot();
 if (process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR) {
   try {
     app.setPath('userData', CONFIG_ROOT);

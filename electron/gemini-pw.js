@@ -21,6 +21,7 @@
 const path = require('node:path');
 const os = require('node:os');
 const fsp = require('node:fs/promises');
+const { configRoot } = require('./tools/paths');
 
 let chromium = null;
 let pwVersion = null;
@@ -31,8 +32,7 @@ try {
 } catch {}
 
 function getProfileDir() {
-  const home = process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR;
-  return home ? path.join(home, 'gemini-profile') : path.join(os.homedir(), '.nova-ide', 'gemini-profile');
+  return path.join(configRoot(), 'gemini-profile');
 }
 const GEMINI_URL = 'https://gemini.google.com/app';
 const ANSWER_TIMEOUT_MS = 5 * 60 * 1000;

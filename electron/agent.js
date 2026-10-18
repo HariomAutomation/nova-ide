@@ -9,7 +9,7 @@ const computer = require('./tools/computer');
 const web = require('./tools/web');
 const checkpoints = require('./tools/checkpoints');
 const { describeHttpError } = require('./tools/errors');
-const { isWithin } = require('./tools/paths');
+const { isWithin, configRoot } = require('./tools/paths');
 const memory = require('./tools/memory');
 const mcp = require('./mcp');
 const geminiWeb = require('./gemini-web');
@@ -911,7 +911,7 @@ async function loadRules(workspaceRoot) {
 }
 
 function getNovaHome() {
-  return process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
+  return configRoot();
 }
 
 async function loadSkills() {

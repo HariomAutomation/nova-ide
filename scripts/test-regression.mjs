@@ -1432,6 +1432,54 @@ suite.push(
   })
 );
 
+suite.push(
+  test('isolation: NOVA_HOME alone redirects all subsystems without NOVA_CONFIG_DIR', async () => {
+    const isolatedDir = path.join(TEST_DIR, 'nova-home-alone-test');
+    await fsp.mkdir(isolatedDir, { recursive: true });
+
+    const prevHome = process.env.NOVA_HOME;
+    const prevCfg = process.env.NOVA_CONFIG_DIR;
+
+    try {
+      // Set ONLY NOVA_HOME, clear NOVA_CONFIG_DIR to prove full independent isolation
+      process.env.NOVA_HOME = isolatedDir;
+      delete process.env.NOVA_CONFIG_DIR;
+
+      const { configRoot } = await import('../electron/tools/paths.js');
+      assert.equal(configRoot(), isolatedDir, 'configRoot() resolves to NOVA_HOME');
+
+      // Test github
+      const gh = await import('../electron/tools/github.js');
+      const ghSt = await gh.status();
+      assert.ok(ghSt.configPath.startsWith(isolatedDir), `github configPath (${ghSt.configPath}) must start with NOVA_HOME`);
+
+      // Test memory
+      const mem = await import('../electron/tools/memory.js');
+      const memSt = await mem.list();
+      assert.ok(memSt.path.startsWith(isolatedDir), `memory path (${memSt.path}) must start with NOVA_HOME`);
+
+      // Test mcp
+      const mcpMod = await import('../electron/mcp.js');
+      assert.ok(mcpMod.getConfigPath().startsWith(isolatedDir), `mcp configPath must start with NOVA_HOME`);
+
+      // Test gdrive
+      const gdriveMod = await import('../electron/tools/gdrive.js');
+      assert.ok(gdriveMod.getConfigPath().startsWith(isolatedDir), `gdrive configPath must start with NOVA_HOME`);
+
+      // Test checkpoints
+      const cpMod = await import('../electron/tools/checkpoints.js');
+      const cpDir = cpMod.dirFor('test-agent-iso');
+      assert.ok(cpDir.startsWith(isolatedDir), `checkpoints dir (${cpDir}) must start with NOVA_HOME`);
+    } finally {
+      if (prevHome !== undefined) process.env.NOVA_HOME = prevHome;
+      else delete process.env.NOVA_HOME;
+      if (prevCfg !== undefined) process.env.NOVA_CONFIG_DIR = prevCfg;
+      else delete process.env.NOVA_CONFIG_DIR;
+      await fsp.rm(isolatedDir, { recursive: true, force: true }).catch(() => {});
+    }
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

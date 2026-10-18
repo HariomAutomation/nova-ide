@@ -20,6 +20,7 @@ const os = require('node:os');
 const http = require('node:http');
 const crypto = require('node:crypto');
 const fsp = require('node:fs/promises');
+const { configRoot } = require('./paths');
 
 const CLIENT_ID =
   process.env.NOVA_GOOGLE_CLIENT_ID ||
@@ -59,7 +60,7 @@ const META = { pluginType: 'GEMINI' };
 const DEFAULT_MODEL = 'gemini-3-pro-preview';
 
 function configDir() {
-  return process.env.NOVA_CONFIG_DIR || path.join(os.homedir(), '.nova-ide');
+  return configRoot();
 }
 function configPath() {
   return path.join(configDir(), 'cloudcode.json');

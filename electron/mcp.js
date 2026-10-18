@@ -11,10 +11,10 @@ const { spawn } = require('node:child_process');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const { configRoot } = require('./tools/paths');
 
 function getConfigPath() {
-  const home = process.env.NOVA_HOME || process.env.NOVA_CONFIG_DIR;
-  return home ? path.join(home, 'mcp.json') : path.join(os.homedir(), '.nova-ide', 'mcp.json');
+  return path.join(configRoot(), 'mcp.json');
 }
 
 const sessions = new Map();
