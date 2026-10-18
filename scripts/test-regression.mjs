@@ -1227,6 +1227,18 @@ suite.push(
     assert.equal(readBack.cells.length, 2);
     assert.ok(readBack.cells[1].source.join('').includes('updated code'));
 
+    // 2b. Verify bug fix: replace markdown cell 0 without cellType keeps cell_type as 'markdown'
+    const repMd = await fsTools.editNotebook({
+      path: nbPath,
+      action: 'replace',
+      cellIndex: 0,
+      source: '# Welcome to Nova IDE\n',
+    });
+    assert.equal(repMd.ok, true);
+    const readMd = JSON.parse(await fsp.readFile(nbPath, 'utf8'));
+    assert.equal(readMd.cells[0].cell_type, 'markdown', 'markdown cell must not silently become code cell');
+    assert.ok(readMd.cells[0].source.join('').includes('Nova IDE'));
+
     // 3. Delete the cell
     const del = await fsTools.editNotebook({
       path: nbPath,

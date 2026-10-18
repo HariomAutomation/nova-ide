@@ -134,7 +134,7 @@ async function searchFiles({ pattern, dir, caseSensitive = false, maxResults = 1
   return { pattern, dir: root, count: results.length, truncated: results.length >= maxResults, results };
 }
 
-async function codebaseSearch({ query, dir, maxResults = 30, maxFileBytes = 512 * 1024 }) {
+async function codebaseSearch({ query, dir, maxResults = 30, maxFileBytes = 512 * 1024, timeoutMs = 6000 }) {
   const q = String(query || '').trim();
   if (!q) return { error: 'query is required' };
   const root = dir || process.cwd();
@@ -143,9 +143,10 @@ async function codebaseSearch({ query, dir, maxResults = 30, maxFileBytes = 512 
 
   const matches = [];
   let scanned = 0;
+  const deadline = Date.now() + Math.max(1000, Math.min(timeoutMs, 30000));
 
   async function walk(d) {
-    if (matches.length >= maxResults * 2) return;
+    if (matches.length >= maxResults * 2 || Date.now() > deadline) return;
     let entries;
     try {
       entries = await fs.readdir(d, { withFileTypes: true });
@@ -153,14 +154,14 @@ async function codebaseSearch({ query, dir, maxResults = 30, maxFileBytes = 512 
       return;
     }
     for (const e of entries) {
-      if (matches.length >= maxResults * 2) return;
+      if (matches.length >= maxResults * 2 || Date.now() > deadline) return;
       const p = path.join(d, e.name);
       if (e.isDirectory()) {
         if (IGNORE_DIRS.has(e.name) || e.name.startsWith('.git')) continue;
         await walk(p);
       } else if (e.isFile()) {
         scanned += 1;
-        if (scanned > 20000) return;
+        if (scanned > 20000 || Date.now() > deadline) return;
         let stat;
         try {
           stat = await fs.stat(p);
@@ -220,7 +221,7 @@ async function codebaseSearch({ query, dir, maxResults = 30, maxFileBytes = 512 
   return { query: q, dir: root, count: results.length, results };
 }
 
-async function editNotebook({ path: filePath, action = 'replace', cellIndex, cellType = 'code', source = '' }) {
+async function editNotebook({ path: filePath, action = 'replace', cellIndex, cellType, source = '' }) {
   let content;
   try {
     content = await fs.readFile(filePath, 'utf8');
@@ -250,7 +251,7 @@ async function editNotebook({ path: filePath, action = 'replace', cellIndex, cel
       cell_type: cellType === 'markdown' ? 'markdown' : 'code',
       metadata: {},
       source: sourceLines,
-      ...(cellType === 'code' ? { outputs: [], execution_count: null } : {}),
+      ...(cellType === 'markdown' ? {} : { outputs: [], execution_count: null }),
     };
     if (idx >= 0 && idx <= nb.cells.length) {
       nb.cells.splice(idx, 0, newCell);
@@ -258,12 +259,14 @@ async function editNotebook({ path: filePath, action = 'replace', cellIndex, cel
       nb.cells.push(newCell);
     }
   } else {
-    // replace
+    // replace — preserve existing cell_type unless caller explicitly specified one
     if (idx < 0 || idx >= nb.cells.length) {
       return { error: `Cell index ${idx} out of range (0..${nb.cells.length - 1})` };
     }
     const cell = nb.cells[idx];
-    if (cellType) cell.cell_type = cellType;
+    if (cellType === 'markdown' || cellType === 'code') {
+      cell.cell_type = cellType;
+    }
     cell.source = sourceLines;
     if (cell.cell_type === 'code' && !cell.outputs) cell.outputs = [];
   }

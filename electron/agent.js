@@ -252,11 +252,11 @@ const TOOL_DEFS = [
     name: 'codebase_search',
     category: 'read',
     description:
-      'Search code symbols, identifiers and concepts across workspace files. Returns top ranking matches with file paths, lines and code excerpts.',
+      'Fast keyword and code symbol search across workspace files with relevance ranking. Returns top matches with file paths, lines and code excerpts.',
     parameters: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Semantic or keyword search query (e.g. "auth login handler", "theme switch", "model list").' },
+        query: { type: 'string', description: 'Keyword, function name, class name or symbol to find across the codebase (e.g. "handleLoginUser", "theme switch", "model list").' },
         path: { type: 'string', description: 'Optional subfolder to constrain search.' },
         max_results: { type: 'integer', description: 'Max matches (default 25).' },
       },
