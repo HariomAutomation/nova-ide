@@ -52,8 +52,10 @@ const SUGGESTIONS = [
 const SPECIAL_MENTIONS = [
   { name: '@git', label: '@git', desc: 'Include git diff / status context', icon: '\u{1F500}' },
   { name: '@terminal', label: '@terminal', desc: 'Include recent terminal output', icon: '>_' },
-  { name: '@web', label: '@web', desc: 'Search the web for docs and APIs', icon: '\u{1F310}' },
   { name: '@codebase', label: '@codebase', desc: 'Scan and explore the entire codebase', icon: '\u{1F4E6}' },
+  { name: '@docs', label: '@docs', desc: 'Search documentation and external APIs', icon: '\u{1F4D6}' },
+  { name: '@web', label: '@web', desc: 'Search the web for live resources', icon: '\u{1F310}' },
+  { name: '@folder', label: '@folder', desc: 'Include directory structure and files', icon: '\u{1F4C1}' },
 ];
 
 const COMMANDS = [
@@ -755,7 +757,7 @@ export default function AgentMain() {
     let m;
     while ((m = re.exec(text))) {
       const raw = m[1].toLowerCase();
-      if (['git', 'terminal', 'web', 'codebase'].includes(raw)) {
+      if (['git', 'terminal', 'web', 'codebase', 'docs', 'folder'].includes(raw)) {
         if (!specialTags.includes(raw)) specialTags.push(raw);
       } else {
         const abs = m[1].startsWith('/') ? m[1] : rootFolder ? `${rootFolder.replace(/\/$/, '')}/${m[1]}` : m[1];
@@ -786,17 +788,63 @@ export default function AgentMain() {
         contextParts.push('Contents of @-mentioned files (already attached for you):\n\n' + parts.join('\n\n'));
       }
     }
-    if (specialTags.includes('git')) {
-      contextParts.push('User tagged @git: inspect git status / diff commands if needed.');
+    if (specialTags.includes('git') && rootFolder) {
+      try {
+        const st = await window.nova.gitStatus(rootFolder);
+        const diff = await window.nova.gitDiff({ cwd: rootFolder });
+        const parts = [];
+        if (st && st.branch) parts.push(`Branch: ${st.branch}`);
+        if (st && Array.isArray(st.files) && st.files.length) {
+          parts.push(`Modified files:\n` + st.files.map((f) => `  ${f.status} ${f.path}`).join('\n'));
+        }
+        if (diff && typeof diff.diff === 'string' && diff.diff.trim()) {
+          parts.push(`Git Diff:\n\`\`\`diff\n${diff.diff.slice(0, 6000)}\n\`\`\``);
+        }
+        contextParts.push(`[Git Context (@git)]\n` + (parts.length ? parts.join('\n\n') : 'Working tree clean, on branch ' + (st?.branch || 'main')));
+      } catch {
+        contextParts.push('User tagged @git (could not fetch status directly).');
+      }
     }
     if (specialTags.includes('terminal')) {
-      contextParts.push('User tagged @terminal: inspect terminal output if needed.');
+      const termLines = useStore.getState().termLines || [];
+      const recent = termLines.slice(-30).map((l) => l.text).join('\n');
+      if (recent.trim()) {
+        contextParts.push(`[Terminal Output (@terminal)]\n\`\`\`\n${recent.slice(-4000)}\n\`\`\``);
+      } else {
+        contextParts.push('User tagged @terminal: no recent terminal output.');
+      }
+    }
+    if (specialTags.includes('docs')) {
+      contextParts.push('User tagged @docs: search documentation and official library references.');
     }
     if (specialTags.includes('web')) {
-      contextParts.push('User tagged @web: use web_search or web_fetch for online documentation.');
+      contextParts.push('User tagged @web: search the web or fetch online documentation to answer accurately.');
     }
-    if (specialTags.includes('codebase')) {
-      contextParts.push('User tagged @codebase: explore the repository with list_dir and grep_search.');
+    if (specialTags.includes('folder') && rootFolder) {
+      const topFiles = (workspaceFiles || []).slice(0, 40).map((p) => rootFolder && p.startsWith(rootFolder) ? p.slice(rootFolder.length + 1) : p);
+      if (topFiles.length) {
+        contextParts.push(`[Workspace Folder Overview (@folder)]\n` + topFiles.join('\n'));
+      }
+    }
+    if (specialTags.includes('codebase') && rootFolder) {
+      try {
+        const sr = await window.nova.codebaseSearch({ query: text.replace(/@codebase/gi, '').trim() || 'overview', dir: rootFolder, maxResults: 5 });
+        if (sr && Array.isArray(sr.results) && sr.results.length) {
+          const snippets = sr.results.map((m) => `--- ${m.relPath}:${m.line} ---\n${m.snippet}`).join('\n\n');
+          contextParts.push(`[Codebase Matches (@codebase)]\n${snippets.slice(0, 6000)}`);
+        }
+      } catch {}
+    }
+    // Cursor parity: attach active editor selection if user highlighted code
+    if (window.__novaEditor) {
+      try {
+        const ed = window.__novaEditor;
+        const sel = ed.getSelection();
+        const selText = sel ? ed.getModel()?.getValueInRange(sel) : '';
+        if (selText && selText.trim()) {
+          contextParts.push(`Selected code in active editor:\n\`\`\`\n${selText.slice(0, 4000)}\n\`\`\``);
+        }
+      } catch {}
     }
     const extraContext = contextParts.length ? contextParts.join('\n') : undefined;
     setInput('');

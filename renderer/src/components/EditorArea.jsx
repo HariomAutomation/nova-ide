@@ -25,18 +25,21 @@ export default function EditorArea() {
       const model = editor.getModel();
       if (!model) return;
       const sel = editor.getSelection();
-      const text = model.getValueInRange(sel);
-      if (!text.trim()) {
-        useStore.getState().setStatus('Select some code first, then press Ctrl+K');
-        return;
-      }
+      const text = sel ? model.getValueInRange(sel) : '';
+      const pos = editor.getPosition() || { lineNumber: 1, column: 1 };
+      const hasSelection = !!(text && text.trim());
+      const effectiveRange = hasSelection
+        ? sel
+        : new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column);
+      const effectiveText = hasSelection ? text : '';
       setInline({
-        range: sel,
-        selectedText: text,
+        range: effectiveRange,
+        selectedText: effectiveText,
         prompt: '',
         output: '',
         streaming: false,
         error: null,
+        isInsertion: !hasSelection,
       });
     });
   }, []);
@@ -76,11 +79,13 @@ export default function EditorArea() {
         {
           role: 'system',
           content:
-            'You are a precise code editor. Reply with ONLY the replacement code for the selection. No markdown fences, no explanation, no preamble.',
+            'You are a precise code editor. Reply with ONLY the replacement or generated code. No markdown fences, no explanation, no preamble.',
         },
         {
           role: 'user',
-          content: `INSTRUCTION: ${prompt}\n\nSELECTED CODE:\n${inline.selectedText}`,
+          content: inline.selectedText
+            ? `INSTRUCTION: ${prompt}\n\nSELECTED CODE:\n${inline.selectedText}`
+            : `INSTRUCTION: ${prompt}\n\nFILE: ${tab?.path || 'current file'}\nGenerate the requested code to insert at cursor.`,
         },
       ],
       onDelta: (d) => setInline((i) => (i ? { ...i, output: i.output + d } : i)),
