@@ -4,10 +4,21 @@ const port = process.argv[2] ?? '9222';
 const fs = await import('node:fs');
 const APP = decodeURIComponent(new URL('..', import.meta.url).pathname);
 
-const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-const page = list.find((t) => t.type === 'page');
+let page = null;
+try {
+  const res = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2000) });
+  if (res.ok) {
+    const list = await res.json();
+    page = list.find((t) => t.type === 'page');
+  }
+} catch {}
+
 if (!page) {
-  console.error('no page target');
+  console.error(`\n[Nova Test Preflight] Nova IDE is not running on CDP port ${port}.`);
+  console.error('To run GUI smoke tests, launch Nova IDE with remote debugging enabled:');
+  console.error(`  npm start -- --remote-debugging-port=${port}`);
+  console.error('\nIn headless environments without a display, run the headless test suite instead:');
+  console.error('  npm run test:headless\n');
   process.exit(1);
 }
 

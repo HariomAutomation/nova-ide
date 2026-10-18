@@ -13,6 +13,26 @@ const MOCK_PORT = Number(process.argv[3] ?? 9977);
 const APP = decodeURIComponent(new URL('..', import.meta.url).pathname);
 const TEST_DIR = '/tmp/opencode/nova-agent-test';
 
+/* ---------------------------------- Preflight CDP Check ---------------------------------- */
+
+let page = null;
+try {
+  const res = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`, { signal: AbortSignal.timeout(2000) });
+  if (res.ok) {
+    const list = await res.json();
+    page = list.find((t) => t.type === 'page');
+  }
+} catch {}
+
+if (!page) {
+  console.error(`\n[Nova Test Preflight] Nova IDE is not running on CDP port ${CDP_PORT}.`);
+  console.error('To run GUI tests, launch Nova IDE with remote debugging enabled:');
+  console.error(`  npm start -- --remote-debugging-port=${CDP_PORT}`);
+  console.error('\nIn headless environments without a display, run the headless test suite instead:');
+  console.error('  npm run test:headless\n');
+  process.exit(1);
+}
+
 /* ---------------------------- start mock server ---------------------------- */
 
 fs.rmSync(TEST_DIR, { recursive: true, force: true });
@@ -33,13 +53,6 @@ await new Promise((resolve, reject) => {
 });
 
 /* ---------------------------------- CDP ---------------------------------- */
-
-const list = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`)).json();
-const page = list.find((t) => t.type === 'page');
-if (!page) {
-  console.error('no page target on', CDP_PORT);
-  process.exit(1);
-}
 
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 let id = 0;

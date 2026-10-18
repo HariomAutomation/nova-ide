@@ -524,6 +524,7 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey }
     let content = '';
     const toolAcc = new Map();
 
+    let done = false;
     for await (const chunk of res.body) {
       buf += decoder.decode(chunk, { stream: true });
       let idx;
@@ -532,7 +533,10 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey }
         buf = buf.slice(idx + 1);
         if (!line.startsWith('data:')) continue;
         const data = line.slice(5).trim();
-        if (data === '[DONE]') break;
+        if (data === '[DONE]') {
+          done = true;
+          break;
+        }
         let j;
         try {
           j = JSON.parse(data);
@@ -557,6 +561,7 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey }
           }
         }
       }
+      if (done) break;
     }
 
     const toolCalls = [...toolAcc.entries()]
@@ -1125,7 +1130,9 @@ function detectMode(userText, settings = {}, contextNote = '', sessionOrHistory 
   const actionPattern = /\b(create|make|edit|update|change|replace|delete|remove|fix|debug|refactor|install|run|execute|build|compile|test|git|commit|push|pull|clone|search|find|grep|list|scan|open|inspect|benchmark|audit|write|read|add|rename|move|copy|show|generate|implement|setup|configure|format|lint|banao|likho|padho|chalao|chalhao|badlo|hatao|dhundo|jodo|daalo|dikhao)\b/i;
   const toolPattern = /(\.[a-zA-Z0-9_-]+\b|npm\s|git\s|pip\s|cargo\s|yarn\s|pnpm\s|\bcd\b|\bls\b|\bcat\b|\bmkdir\b|\btouch\b|\brm\b)/i;
 
-  if (explanationPattern.test(text) && !toolPattern.test(text) && !actionPattern.test(text)) {
+  const strippedGreeting = text.replace(/^(?:(?:hi|hello|hey|hiya|howdy|yo|namaste|sup|greetings|suno)(?:\s+(?:there|friend|nova|agent|bot|ji|bro|mate|everyone|all))?[,\s!.]+)+\s*/i, '');
+
+  if ((explanationPattern.test(text) || (strippedGreeting && explanationPattern.test(strippedGreeting))) && !toolPattern.test(text) && !actionPattern.test(text)) {
     return 'chat';
   }
 

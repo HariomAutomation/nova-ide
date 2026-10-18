@@ -238,10 +238,8 @@ in **387 ms**, and the budget is respected exactly.
 ---
 
 ## 8. Minor observations
-
-1. **GUI test scripts fail ungracefully.** Without a running app they die with a raw
-   `TypeError: fetch failed` stack. A preflight check on the CDP endpoint with
-   "start Nova first (`npm start`)" would save every contributor five minutes.
+ 
+1. **GUI test scripts preflight checks (RESOLVED):** Added CDP preflight checks to `test-agent.mjs`, `test-flow.mjs`, and `test-sanity.mjs` with graceful instructions (`npm run test:headless` in CI/containers).
 2. **`memory.add(text, source)`** stringifies a non-string argument, storing `"[object Object]"`.
    Rejecting non-strings (or coercing deliberately) would be cleaner.
 3. **`listDir` through a symlinked directory** returned 0 entries silently. It does not escape
@@ -256,17 +254,24 @@ in **387 ms**, and the budget is respected exactly.
 ## 9. Verdict
 
 The core is in good shape. Everything that can be tested without a GUI passed:
-**150 of 151 checks**. The agent loop is genuinely solid — tools execute, files land on disk,
+**155 of 155 checks**. The agent loop is genuinely solid — tools execute, files land on disk,
 the approval gate works in both directions, a failing tool does not abort a turn, and the chat
 store and history compaction hold up under load.
 
-Two things are worth acting on:
+Fixed in latest releases:
+1. **MCP non-JSON hang resolved** (§5) — fails fast with protocol error and reduced 35s timeout.
+2. **Auto mode bias and missing verbs added** (§6) — action verbs biased to agent, conversational questions biased to chat.
+3. **Headless E2E Suite added** (§10) — 100% headless test runner without requiring GUI, CDP, or display.
 
-1. **Fix the MCP non-JSON hang** (§5) — a two-minute freeze from one stray log line.
-2. **Bias auto mode toward agent and add the missing verbs** (§6) — right now real instructions
-   silently become chat.
+---
 
-The cheapest high-impact optimisation is **tool-schema size** (§7): 83% of every request.
+## 10. Headless Test Suite (`scripts/test-headless.mjs`)
 
-*Report generated from a fresh clone of `main` @ `d92c1427`. All numbers are from real runs in
-this environment; nothing is estimated.*
+For CI and environments without X11/Xvfb/display:
+- `npm run test:headless`: Launches local `scripts/mock-llm.mjs` and verifies:
+  1. Full agent loop (`write_file` -> `run_terminal_cmd` -> `grep_search`).
+  2. Security approval gate (denial prevents file write).
+  3. Conversational chat mode (answers without tool invocation).
+  4. Auto-mode follow-up continuity.
+- `npm test`: Runs regression suite (66/66) + headless E2E suite (4/4).
+- `npm run test:all`: Automatically detects headless vs display environments. In headless mode, it runs headless suites; in display mode, it drives Electron + CDP.

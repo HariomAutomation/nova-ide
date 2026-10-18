@@ -16,7 +16,9 @@
     "test:regression": "node scripts/test-regression.mjs",
     "test:sanity": "node scripts/test-sanity.mjs",
     "test:smoke": "node scripts/test-flow.mjs",
-    "test:all": "node scripts/test-all.mjs"
+    "test:headless": "node scripts/test-headless.mjs",
+    "test:all": "node scripts/test-all.mjs",
+    "test": "node scripts/test-regression.mjs && node scripts/test-headless.mjs"
   },
   "engines": {
     "node": ">=22.12"

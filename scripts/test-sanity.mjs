@@ -2,10 +2,21 @@
 // Usage: node scripts/test-sanity.mjs [port]
 const port = process.argv[2] ?? '9222';
 
-const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-const page = list.find((t) => t.type === 'page');
+let page = null;
+try {
+  const res = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2000) });
+  if (res.ok) {
+    const list = await res.json();
+    page = list.find((t) => t.type === 'page');
+  }
+} catch {}
+
 if (!page) {
-  console.error('no page target on port', port);
+  console.error(`\n[Nova Test Preflight] Nova IDE is not running on CDP port ${port}.`);
+  console.error('To run GUI sanity tests, launch Nova IDE with remote debugging enabled:');
+  console.error(`  npm start -- --remote-debugging-port=${port}`);
+  console.error('\nIn headless environments without a display, run the headless test suite instead:');
+  console.error('  npm run test:headless\n');
   process.exit(1);
 }
 
@@ -56,10 +67,17 @@ const title = await evaljs('document.title');
 checks.title_is_nova = title === 'Nova IDE';
 console.log(`  ✓ Window title: "${title}"`);
 
+// Wait for store to be initialized
+for (let i = 0; i < 50; i++) {
+  const ready = await evaljs('typeof window.__novaStore !== "undefined" && typeof window.__novaStore.getState === "function"');
+  if (ready === true) break;
+  await sleep(150);
+}
+
 // 2. Store presence and default agent settings
-const rawSettings = await evaljs('window.__novaStore.getState().agentSettings');
+const rawSettings = await evaljs('JSON.stringify(window.__novaStore.getState().agentSettings)');
 const agentSettings = typeof rawSettings === 'string' ? JSON.parse(rawSettings) : (rawSettings || {});
-checks.store_exists = !!agentSettings;
+checks.store_exists = !!agentSettings && typeof agentSettings === 'object';
 checks.agent_autocomplete_enabled = agentSettings.agentAutocomplete === true;
 checks.auto_approve_edit_default = agentSettings.autoApproveEdit === true;
 checks.web_tools_enabled = agentSettings.webSearch === true && agentSettings.webFetch === true;

@@ -59,42 +59,53 @@ if (!buildRes.pass) {
   process.exit(1);
 }
 
-// 3. Launch Electron with CDP
-console.log(`\nLaunching Nova IDE Electron instance with CDP on port ${CDP_PORT}...`);
-const electronBin = path.join(APP, 'node_modules', '.bin', 'electron');
-const electronProc = spawn(electronBin, ['.', '--no-sandbox', `--remote-debugging-port=${CDP_PORT}`], {
-  cwd: APP,
-  env: { ...process.env, CDP_PORT },
-  stdio: 'ignore',
-});
+// 3. GUI vs Headless branch
+const hasDisplay = Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
 
-const cdpReady = await waitForCdp(CDP_PORT, 20000);
-if (!cdpReady) {
-  console.error('Failed to connect to Electron CDP port 9222 within 20s');
-  electronProc.kill('SIGKILL');
-  process.exit(1);
-}
-console.log('✓ Nova IDE Electron CDP instance ready.');
+if (!hasDisplay) {
+  console.log('\n[Notice] No graphical display detected (headless environment).');
+  console.log('Skipping Electron GUI launch and running Headless Agent Test Suite instead...\n');
 
-try {
-  // 4. Sanity Tests
-  const sanityRes = await runStep('Sanity Test Suite', process.execPath, ['scripts/test-sanity.mjs', CDP_PORT]);
-  summary.push(sanityRes);
+  const headlessRes = await runStep('Headless Agent End-to-End Suite', process.execPath, ['scripts/test-headless.mjs']);
+  summary.push(headlessRes);
+} else {
+  // Launch Electron with CDP
+  console.log(`\nLaunching Nova IDE Electron instance with CDP on port ${CDP_PORT}...`);
+  const electronBin = path.join(APP, 'node_modules', '.bin', 'electron');
+  const electronProc = spawn(electronBin, ['.', '--no-sandbox', `--remote-debugging-port=${CDP_PORT}`], {
+    cwd: APP,
+    env: { ...process.env, CDP_PORT },
+    stdio: 'ignore',
+  });
 
-  // 5. Smoke Tests
-  const smokeRes = await runStep('Smoke Test Suite (Flow & Navigation)', process.execPath, ['scripts/test-flow.mjs', CDP_PORT]);
-  summary.push(smokeRes);
-
-  // 6. Agent E2E Tests
-  const agentRes = await runStep('Agent End-to-End Suite (Tool loop & Approvals)', process.execPath, ['scripts/test-agent.mjs', CDP_PORT]);
-  summary.push(agentRes);
-} finally {
-  console.log('\nShutting down Electron test instance...');
-  electronProc.kill('SIGTERM');
-  await new Promise((r) => setTimeout(r, 1000));
-  try {
+  const cdpReady = await waitForCdp(CDP_PORT, 20000);
+  if (!cdpReady) {
+    console.error('Failed to connect to Electron CDP port 9222 within 20s');
     electronProc.kill('SIGKILL');
-  } catch {}
+    process.exit(1);
+  }
+  console.log('✓ Nova IDE Electron CDP instance ready.');
+
+  try {
+    // 4. Sanity Tests
+    const sanityRes = await runStep('Sanity Test Suite', process.execPath, ['scripts/test-sanity.mjs', CDP_PORT]);
+    summary.push(sanityRes);
+
+    // 5. Smoke Tests
+    const smokeRes = await runStep('Smoke Test Suite (Flow & Navigation)', process.execPath, ['scripts/test-flow.mjs', CDP_PORT]);
+    summary.push(smokeRes);
+
+    // 6. Agent E2E Tests
+    const agentRes = await runStep('Agent End-to-End Suite (Tool loop & Approvals)', process.execPath, ['scripts/test-agent.mjs', CDP_PORT]);
+    summary.push(agentRes);
+  } finally {
+    console.log('\nShutting down Electron test instance...');
+    electronProc.kill('SIGTERM');
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      electronProc.kill('SIGKILL');
+    } catch {}
+  }
 }
 
 // Final Report Matrix
