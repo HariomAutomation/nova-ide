@@ -56,6 +56,7 @@ const SPECIAL_MENTIONS = [
   { name: '@docs', label: '@docs', desc: 'Reference official documentation & library APIs', icon: '\u{1F4D6}' },
   { name: '@web', label: '@web', desc: 'Search the web for live resources', icon: '\u{1F310}' },
   { name: '@folder', label: '@folder', desc: 'Include directory structure and files', icon: '\u{1F4C1}' },
+  { name: '@ubuntu', label: '@ubuntu', desc: 'Include Ubuntu OS, services, ports & desktop context', icon: '\u{1F427}' },
 ];
 
 const COMMANDS = [
@@ -83,6 +84,11 @@ const COMMANDS = [
     cmd: 'plan',
     desc: 'Make a step-by-step implementation plan',
     text: 'Make a step-by-step implementation plan for: ',
+  },
+  {
+    cmd: 'ubuntu',
+    desc: 'Inspect Ubuntu system health, ports, services, and packages',
+    text: 'Inspect my Ubuntu system using ubuntu_system (overview, ports, top processes) and summarize its status: ',
   },
 ];
 
@@ -852,7 +858,7 @@ export default function AgentMain() {
     let m;
     while ((m = re.exec(text))) {
       const raw = m[1].toLowerCase();
-      if (['git', 'terminal', 'web', 'codebase', 'docs', 'folder'].includes(raw)) {
+      if (['git', 'terminal', 'web', 'codebase', 'docs', 'folder', 'ubuntu'].includes(raw)) {
         if (!specialTags.includes(raw)) specialTags.push(raw);
       } else {
         const abs = m[1].startsWith('/') ? m[1] : rootFolder ? `${rootFolder.replace(/\/$/, '')}/${m[1]}` : m[1];
@@ -914,6 +920,9 @@ export default function AgentMain() {
     }
     if (specialTags.includes('web')) {
       contextParts.push('User tagged @web: search the web or fetch online documentation to answer accurately.');
+    }
+    if (specialTags.includes('ubuntu')) {
+      contextParts.push('User tagged @ubuntu: use the ubuntu_system tool (overview, ports, processes, service_status, package_status) to inspect the Ubuntu machine.');
     }
     if (specialTags.includes('folder') && rootFolder) {
       const topFiles = (workspaceFiles || []).slice(0, 40).map((p) => rootFolder && p.startsWith(rootFolder) ? p.slice(rootFolder.length + 1) : p);

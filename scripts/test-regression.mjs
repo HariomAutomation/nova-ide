@@ -8,12 +8,29 @@ import assert from 'node:assert/strict';
 
 import fsTools from '../electron/tools/fsTools.js';
 import checkpoints from '../electron/tools/checkpoints.js';
-import { runCommand } from '../electron/tools/terminal.js';
+import { runCommand, buildUbuntuEnv, diagnoseUbuntuCommand } from '../electron/tools/terminal.js';
 import { webFetch, webSearch } from '../electron/tools/web.js';
 import { parseWebToolCalls, protocolBlock, setEngineMode, getEngineMode } from '../electron/gemini-web.js';
 import { describeHttpError } from '../electron/tools/errors.js';
 import { gpuPlan } from '../electron/tools/gpu-flags.js';
-import { loadRules, toolSchemas, compactMessages, normalizeTodos, codeLineage, estimateChars, fitFromSizeError, detectMode, buildFallbackChain, callModel, runAgent, isQuotaOrModelError } from '../electron/agent.js';
+import {
+  loadRules,
+  toolSchemas,
+  compactMessages,
+  normalizeTodos,
+  codeLineage,
+  estimateChars,
+  fitFromSizeError,
+  detectMode,
+  buildFallbackChain,
+  callModel,
+  runAgent,
+  isQuotaOrModelError,
+  prepareMessagesForProvider,
+  flattenMessagesForPromptProtocol,
+  THOUGHT_SIGNATURE_BYPASS,
+  ubuntuSystem,
+} from '../electron/agent.js';
 import { isWithin } from '../electron/tools/paths.js';
 import computer from '../electron/tools/computer.js';
 import git from '../electron/tools/git.js';
@@ -1637,6 +1654,235 @@ suite.push(
       preferredChatModel(['gemini-4-argon', 'gemini-2.5-flash', 'gemini-flash-latest'], 'gemini-4-argon'),
       'gemini-2.5-flash'
     );
+  })
+);
+
+suite.push(
+  test('ubuntu terminal: buildUbuntuEnv sets non-interactive vars and diagnoseUbuntuCommand gives recovery hints', () => {
+    const env = buildUbuntuEnv({ PATH: '/usr/bin', HOME: '/home/hariom' });
+    assert.equal(env.DEBIAN_FRONTEND, 'noninteractive');
+    assert.equal(env.NEEDRESTART_MODE, 'a');
+    assert.equal(env.GIT_TERMINAL_PROMPT, '0');
+    assert.equal(env.SYSTEMD_PAGER, 'cat');
+    assert.ok(env.PATH.includes('/home/hariom/.local/bin'), 'adds ~/.local/bin to PATH');
+    assert.ok(env.PATH.includes('/snap/bin'), 'adds /snap/bin to PATH');
+
+    const sudoHint = diagnoseUbuntuCommand({
+      code: 1,
+      stderr: 'sudo: a terminal is required to read the password; either use the -S option',
+    });
+    assert.match(sudoHint, /pkexec/);
+
+    const pep668Hint = diagnoseUbuntuCommand({
+      code: 1,
+      stderr: 'error: externally-managed-environment',
+    });
+    assert.match(pep668Hint, /venv/);
+
+    const lockHint = diagnoseUbuntuCommand({
+      code: 100,
+      stderr: 'E: Could not get lock /var/lib/dpkg/lock-frontend',
+    });
+    assert.match(lockHint, /unattended-upgrades/);
+
+    const portHint = diagnoseUbuntuCommand({
+      code: 1,
+      stderr: 'Error: listen EADDRINUSE: address already in use :::3000',
+    });
+    assert.match(portHint, /ss -tulpn/);
+  })
+);
+
+suite.push(
+  test('ubuntu desktop: detectUbuntu, ydotool key combos, and ubuntu_system diagnostics', async () => {
+    const u = computer.detectUbuntu();
+    assert.equal(typeof u.distro, 'string');
+    assert.ok(u.distro.length > 0);
+    assert.ok(Array.isArray(u.systemTools));
+
+    // ydotool multi-key combo support on Ubuntu Wayland
+    const cap = { inputMethod: 'ydotool' };
+    assert.deepEqual(computer.buildInputCommands('key', { key: 'ctrl+c' }, cap), [
+      { bin: 'ydotool', args: ['key', '29:1', '46:1', '46:0', '29:0'] },
+    ]);
+    assert.deepEqual(computer.buildInputCommands('key', { key: 'ctrl+shift+t' }, cap), [
+      { bin: 'ydotool', args: ['key', '29:1', '42:1', '20:1', '20:0', '42:0', '29:0'] },
+    ]);
+
+    // ubuntu_system tool actions
+    const ov = await ubuntuSystem({ action: 'overview' });
+    assert.equal(ov.ok, true);
+    assert.match(ov.text, /Distro:/);
+    assert.match(ov.text, /Kernel & Uptime/);
+
+    const procs = await ubuntuSystem({ action: 'processes', lines: 5 });
+    assert.equal(procs.ok, true);
+    assert.match(procs.text, /Ubuntu processes/);
+
+    const net = await ubuntuSystem({ action: 'network' });
+    assert.equal(net.ok, true);
+    assert.match(net.text, /Interfaces/);
+
+    // Ubuntu-aware detectMode routing
+    assert.equal(detectMode('port 3000 pe kya chal raha hai'), 'agent');
+    assert.equal(detectMode('what is running on port 8080'), 'agent');
+    assert.equal(detectMode('nginx service status dekho'), 'agent');
+    assert.equal(detectMode('batao mere ubuntu me kitni ram free hai'), 'agent');
+    assert.equal(detectMode('systemctl restart nginx'), 'agent');
+    assert.equal(detectMode('sudo apt install htop'), 'agent');
+  })
+);
+
+suite.push(
+  test('thought_signature: multi-step Gemini 3.8 Flash tool loop preserves extra_content.google.thought_signature on Step 2+', async () => {
+    const http = await import('node:http');
+    let stepCount = 0;
+    const srv = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        stepCount += 1;
+        const payload = JSON.parse(body || '{}');
+        const msgs = payload.messages || [];
+
+        if (stepCount === 1) {
+          // Step 1: return a tool_call (list_dir) with extra_content.google.thought_signature
+          res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+          const chunk = {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'call_list_1',
+                      type: 'function',
+                      function: {
+                        name: 'list_dir',
+                        arguments: JSON.stringify({ path: TEST_DIR }),
+                      },
+                      extra_content: {
+                        google: {
+                          thought_signature: 'Cp0B_real_gemini_3_8_sig',
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          };
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+
+        // Step 2: strictly validate thought_signature on the replayed assistant tool_calls
+        const asstMsg = msgs.find((m) => m.role === 'assistant' && Array.isArray(m.tool_calls));
+        const sig =
+          asstMsg &&
+          asstMsg.tool_calls[0] &&
+          asstMsg.tool_calls[0].extra_content &&
+          asstMsg.tool_calls[0].extra_content.google &&
+          asstMsg.tool_calls[0].extra_content.google.thought_signature;
+        const toolMsg = msgs.find((m) => m.role === 'tool');
+
+        if (!sig || !toolMsg || toolMsg.name !== 'list_dir') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: {
+                code: 400,
+                message:
+                  'Function call is missing a thought_signature in functionCall parts. Additional data, function call `default_api:list_dir` , position 2.',
+              },
+            })
+          );
+          return;
+        }
+
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write(
+          `data: ${JSON.stringify({
+            choices: [{ delta: { content: `Project analysis complete (verified sig: ${sig})` } }],
+          })}\n\n`
+        );
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+    });
+
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const port = srv.address().port;
+
+    try {
+      const events = [];
+      await runAgent({
+        agentId: 'test-thought-sig-loop',
+        config: {
+          baseUrl: `http://127.0.0.1:${port}/v1beta/openai`,
+          apiKey: 'test-key',
+          model: 'gemini-3.8-flash',
+        },
+        workspaceRoot: TEST_DIR,
+        userText: 'analysis my project',
+        settings: { composerMode: 'agent', maxSteps: 5 },
+        send: (e) => events.push(e),
+      });
+
+      assert.equal(stepCount, 2, 'completed 2-step tool loop');
+      const errEvt = events.find((e) => e.type === 'error');
+      assert.equal(errEvt, undefined, `must not error, got: ${errEvt && errEvt.message}`);
+      const finalMsg = events.filter((e) => e.type === 'assistant_message').pop();
+      assert.ok(finalMsg, 'emitted final assistant_message after tool call');
+      assert.match(finalMsg.text, /Cp0B_real_gemini_3_8_sig/);
+    } finally {
+      srv.close();
+    }
+  })
+);
+
+suite.push(
+  test('thought_signature: prepareMessagesForProvider injects bypass for Gemini and strips extra_content for non-Gemini', () => {
+    const rawMsgs = [
+      { role: 'user', content: 'analyze repo' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'c1', type: 'function', function: { name: 'list_dir', arguments: '{"path":"."}' } },
+          { id: 'c2', type: 'function', function: { name: 'read_file', arguments: '{"path":"README.md"}' } },
+        ],
+      },
+      { role: 'tool', name: 'list_dir', tool_call_id: 'c1', content: 'README.md' },
+    ];
+
+    // 1. Gemini model: first tool_call gets THOUGHT_SIGNATURE_BYPASS when missing, second parallel call stays clean
+    const gemPrepared = prepareMessagesForProvider(rawMsgs, {
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      model: 'gemini-3.8-flash',
+    });
+    assert.equal(
+      gemPrepared[1].tool_calls[0].extra_content.google.thought_signature,
+      THOUGHT_SIGNATURE_BYPASS
+    );
+    assert.equal(gemPrepared[1].tool_calls[1].extra_content, undefined);
+
+    // 2. Non-Gemini provider (Groq/OpenAI): extra_content is stripped completely
+    const groqPrepared = prepareMessagesForProvider(gemPrepared, {
+      baseUrl: 'https://api.groq.com/openai/v1',
+      model: 'llama-3.3-70b-versatile',
+    });
+    assert.equal(groqPrepared[1].tool_calls[0].extra_content, undefined);
+
+    // 3. flattenMessagesForPromptProtocol converts tool_calls + tool results to plain text
+    const flat = flattenMessagesForPromptProtocol(gemPrepared);
+    assert.equal(flat[1].role, 'assistant');
+    assert.equal(flat[1].tool_calls, undefined);
+    assert.match(flat[1].content, /"tool_calls"/);
+    assert.equal(flat[2].role, 'user');
+    assert.match(flat[2].content, /Tool result \(list_dir\)/);
   })
 );
 

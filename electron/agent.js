@@ -172,25 +172,48 @@ const TOOL_DEFS = [
     name: 'computer_use',
     category: 'computer',
     description:
-      'Control the user desktop. Actions: screenshot, move, click, double_click, right_click, drag, scroll, type, key, wait. After an input action a fresh screenshot is returned automatically so you can see the result and decide the next step. Requires a system input tool; returns an error with setup hints when unavailable.',
+      'Control the Ubuntu/Linux desktop. Actions: screenshot, move, click, double_click, right_click, drag, scroll, type, key, wait, active_window, list_windows, focus_window, launch_app, open_url, notify, clipboard_get, clipboard_set. After an input action a fresh screenshot is returned automatically.',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['screenshot', 'move', 'click', 'double_click', 'right_click', 'drag', 'scroll', 'type', 'key', 'wait'],
+          enum: [
+            'screenshot', 'move', 'click', 'double_click', 'right_click', 'drag', 'scroll', 'type', 'key', 'wait',
+            'active_window', 'list_windows', 'focus_window', 'launch_app', 'open_url', 'notify', 'clipboard_get', 'clipboard_set',
+          ],
         },
         x: { type: 'integer', description: 'Screen x in pixels.' },
         y: { type: 'integer', description: 'Screen y in pixels.' },
         to_x: { type: 'integer', description: 'Drag end x.' },
         to_y: { type: 'integer', description: 'Drag end y.' },
-        text: { type: 'string' },
-        key: { type: 'string', description: 'e.g. Return, Tab, ctrl+a' },
+        text: { type: 'string', description: 'Text to type, window title, app name, notification body, or clipboard text.' },
+        url: { type: 'string', description: 'URL or file path for open_url.' },
+        key: { type: 'string', description: 'e.g. Return, Tab, ctrl+a, ctrl+c, alt+F4, super' },
         button: { type: 'integer', description: '1 left (default), 2 middle, 3 right.' },
         direction: { type: 'string', enum: ['up', 'down', 'left', 'right'], description: 'Scroll direction (default down).' },
         amount: { type: 'integer', description: 'Scroll wheel clicks (default 3).' },
         ms: { type: 'integer', description: 'Wait duration in milliseconds (for action "wait").' },
         return_screenshot: { type: 'boolean', description: 'Capture a fresh screenshot after the action (default true).' },
+      },
+      required: ['action'],
+    },
+  },
+  {
+    name: 'ubuntu_system',
+    category: 'read',
+    description:
+      'Fast, native Ubuntu/Linux system assistant tool. Actions: overview (distro, kernel, CPU, RAM, disk, GPU, Wayland/X11 desktop), processes (top CPU/RAM or search by target), ports (listening TCP/UDP ports & PIDs), service_status (systemd service state), service_logs (journalctl logs for target service), package_status (apt/snap package version & install check), network (IPs, interfaces, routes, DNS), notify (send Ubuntu desktop notification), open (open URL/file/app via xdg-open/gtk-launch).',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['overview', 'processes', 'ports', 'service_status', 'service_logs', 'package_status', 'network', 'notify', 'open'],
+        },
+        target: { type: 'string', description: 'Service name, package name, process filter, port number, URL/app, or notification text.' },
+        user_scope: { type: 'boolean', description: 'Use --user for systemd service queries.' },
+        lines: { type: 'integer', description: 'Max lines to return (default 25).' },
       },
       required: ['action'],
     },
@@ -311,6 +334,9 @@ const CURSOR_TOOL_ALIASES = {
   CodebaseSearch: 'codebase_search',
   edit_notebook: 'edit_notebook',
   EditNotebook: 'edit_notebook',
+  ubuntu: 'ubuntu_system',
+  UbuntuSystem: 'ubuntu_system',
+  ubuntu_system: 'ubuntu_system',
 };
 
 const mcpToolMap = new Map();
@@ -428,6 +454,112 @@ const GEMINI_FREE_FALLBACKS = [
   'gemini-2.5-flash-lite',
   'gemini-2.0-flash',
 ];
+
+// Official Google Gemini API bypass signature for functionCall parts when a prior
+// step's thought_signature was not emitted by a streaming proxy or came from
+// another model (see https://ai.google.dev/gemini-api/docs/thought-signatures).
+const THOUGHT_SIGNATURE_BYPASS = 'skip_thought_signature_validator';
+
+function isGeminiEndpointOrModel(baseUrl, model) {
+  const b = String(baseUrl || '').toLowerCase();
+  const m = String(model || '').toLowerCase();
+  return (
+    b.includes('generativelanguage.googleapis.com') ||
+    b.includes('aiplatform.googleapis.com') ||
+    m.includes('gemini')
+  );
+}
+
+/**
+ * Prepare messages for the target provider:
+ * - For Gemini models/endpoints: ensure the first tool_call in every assistant
+ *   turn carries `extra_content.google.thought_signature` (preserving the model's
+ *   real signature or falling back to Google's official bypass token so multi-step
+ *   tool loops never fail with HTTP 400 "missing a thought_signature").
+ * - For non-Gemini providers: strip `extra_content` / `thoughtSignature` from
+ *   tool_calls so strict OpenAI schemas never reject unknown properties.
+ */
+function prepareMessagesForProvider(messages, cfg = {}) {
+  if (!Array.isArray(messages)) return [];
+  const isGemini = isGeminiEndpointOrModel(cfg.baseUrl, cfg.model);
+
+  return messages.map((m) => {
+    if (!m || m.role !== 'assistant' || !Array.isArray(m.tool_calls) || !m.tool_calls.length) {
+      return m;
+    }
+    const mappedCalls = m.tool_calls.map((tc, idx) => {
+      if (!tc) return tc;
+      const existingSig =
+        (tc.extra_content &&
+          tc.extra_content.google &&
+          (tc.extra_content.google.thought_signature || tc.extra_content.google.thoughtSignature)) ||
+        tc.thoughtSignature ||
+        tc.thought_signature ||
+        null;
+
+      const cleanTc = {
+        id: tc.id,
+        type: tc.type || 'function',
+        function: tc.function,
+      };
+
+      if (isGemini) {
+        if (idx === 0) {
+          const sig = existingSig || THOUGHT_SIGNATURE_BYPASS;
+          cleanTc.extra_content = {
+            ...(tc.extra_content || {}),
+            google: {
+              ...((tc.extra_content && tc.extra_content.google) || {}),
+              thought_signature: sig,
+            },
+          };
+        } else if (existingSig && existingSig !== THOUGHT_SIGNATURE_BYPASS) {
+          cleanTc.extra_content = {
+            ...(tc.extra_content || {}),
+            google: {
+              ...((tc.extra_content && tc.extra_content.google) || {}),
+              thought_signature: existingSig,
+            },
+          };
+        }
+      }
+      return cleanTc;
+    });
+
+    return { ...m, tool_calls: mappedCalls };
+  });
+}
+
+/**
+ * Convert OpenAI-style assistant `tool_calls` and `role: 'tool'` messages into
+ * plain text messages when falling back to the prompt-based tool protocol
+ * (`sendTools = false`), so Step 2+ retries never send orphan tool_calls without
+ * a tools declaration or thought_signature.
+ */
+function flattenMessagesForPromptProtocol(messages) {
+  if (!Array.isArray(messages)) return [];
+  return messages.map((m) => {
+    if (!m) return m;
+    if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length) {
+      const calls = m.tool_calls.map((tc) => {
+        const fn = (tc && tc.function) || {};
+        let args = {};
+        try {
+          args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments || '{}') : fn.arguments || {};
+        } catch {}
+        return { name: fn.name || 'tool', arguments: args };
+      });
+      const jsonBlock = JSON.stringify({ tool_calls: calls });
+      const text = m.content ? `${m.content}\n${jsonBlock}` : jsonBlock;
+      return { role: 'assistant', content: text };
+    }
+    if (m.role === 'tool') {
+      const label = m.name || m.tool_call_id || 'tool';
+      return { role: 'user', content: `Tool result (${label}):\n${m.content || ''}` };
+    }
+    return m;
+  });
+}
 
 function isQuotaOrModelError(err) {
   if (!err) return false;
@@ -591,9 +723,10 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
     }
 
     async function streamOnce(msgs, sendTools) {
+      const preparedMsgs = sendTools ? prepareMessagesForProvider(msgs, cfg) : flattenMessagesForPromptProtocol(msgs);
       const body = {
         model: cfg.model,
-        messages: msgs,
+        messages: preparedMsgs,
         stream: true,
         temperature: cfg.temperature ?? 0.2,
       };
@@ -638,6 +771,7 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
       const decoder = new TextDecoder();
       let buf = '';
       let content = '';
+      let streamThoughtSig = null;
       const toolAcc = new Map();
 
       let done = false;
@@ -665,8 +799,22 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
             streamErr.body = JSON.stringify(j.error);
             throw streamErr;
           }
-          const delta = j.choices && j.choices[0] && j.choices[0].delta;
+          const choiceObj = j.choices && j.choices[0];
+          const delta = choiceObj && choiceObj.delta;
           if (!delta) continue;
+
+          const chunkSig =
+            (delta.extra_content &&
+              delta.extra_content.google &&
+              (delta.extra_content.google.thought_signature || delta.extra_content.google.thoughtSignature)) ||
+            (choiceObj.extra_content &&
+              choiceObj.extra_content.google &&
+              (choiceObj.extra_content.google.thought_signature || choiceObj.extra_content.google.thoughtSignature)) ||
+            delta.thought_signature ||
+            delta.thoughtSignature ||
+            null;
+          if (chunkSig) streamThoughtSig = chunkSig;
+
           if (delta.content) {
             content += delta.content;
             if (onDelta) onDelta(delta.content);
@@ -674,10 +822,29 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               const i = tc.index ?? 0;
-              const cur = toolAcc.get(i) || { id: '', name: '', args: '' };
+              const cur = toolAcc.get(i) || { id: '', name: '', args: '', extra_content: null, thoughtSignature: null };
               if (tc.id) cur.id = tc.id;
               if (tc.function && tc.function.name) cur.name += tc.function.name;
               if (tc.function && tc.function.arguments) cur.args += tc.function.arguments;
+              if (tc.extra_content && typeof tc.extra_content === 'object') {
+                cur.extra_content = {
+                  ...(cur.extra_content || {}),
+                  ...tc.extra_content,
+                  ...(tc.extra_content.google
+                    ? { google: { ...((cur.extra_content && cur.extra_content.google) || {}), ...tc.extra_content.google } }
+                    : {}),
+                };
+                const gSig =
+                  tc.extra_content.google &&
+                  (tc.extra_content.google.thought_signature || tc.extra_content.google.thoughtSignature);
+                if (gSig) cur.thoughtSignature = gSig;
+              }
+              const tcSig =
+                tc.thought_signature ||
+                tc.thoughtSignature ||
+                (tc.function && (tc.function.thought_signature || tc.function.thoughtSignature)) ||
+                null;
+              if (tcSig) cur.thoughtSignature = tcSig;
               toolAcc.set(i, cur);
             }
           }
@@ -685,9 +852,20 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
         if (done) break;
       }
 
-      const toolCalls = [...toolAcc.entries()]
-        .sort((a, b) => a[0] - b[0])
-        .map(([i, t]) => ({ id: t.id || `call_${i}_${Date.now()}`, name: t.name, argsRaw: t.args }));
+      const sortedEntries = [...toolAcc.entries()].sort((a, b) => a[0] - b[0]);
+      const toolCalls = sortedEntries.map(([i, t], idx) => {
+        const sig = t.thoughtSignature || (idx === 0 ? streamThoughtSig : null) || null;
+        const extraContent =
+          t.extra_content ||
+          (sig ? { google: { thought_signature: sig } } : null);
+        return {
+          id: t.id || `call_${i}_${Date.now()}`,
+          name: t.name,
+          argsRaw: t.args,
+          ...(extraContent ? { extra_content: extraContent } : {}),
+          ...(sig ? { thoughtSignature: sig } : {}),
+        };
+      });
 
       return { content, toolCalls };
     }
@@ -705,11 +883,11 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
       // calls. Guarded so a working setup never takes this path.
       const status = Number(e && e.status) || 0;
       const bodyText = String((e && e.body) || '');
-      const toolsRejected = haveTools && status >= 400 && status < 500 && status !== 429 && /tool|function/i.test(bodyText);
+      const toolsRejected = haveTools && status >= 400 && status < 500 && status !== 429 && /tool|function|thought_signature/i.test(bodyText);
       if (!toolsRejected) throw e;
 
       const proto = geminiWeb.protocolBlock(tools);
-      const msgs = messages.slice();
+      const msgs = flattenMessagesForPromptProtocol(messages);
       const sysIdx = msgs.findIndex((m) => m && m.role === 'system' && typeof m.content === 'string');
       if (sysIdx >= 0) msgs[sysIdx] = { ...msgs[sysIdx], content: msgs[sysIdx].content + '\n\n' + proto };
       else msgs.unshift({ role: 'system', content: proto });
@@ -750,7 +928,10 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
           });
         }
         return res;
-      } catch {}
+      } catch (fbErr) {
+        if (signal && signal.aborted) throw fbErr;
+        continue;
+      }
     }
     throw err;
   }
@@ -798,6 +979,114 @@ async function codeLineage(args, ctx = {}) {
   }
   const label = hasRange ? ` (lines ${s}-${end})` : '';
   return { text: `Lineage of ${rel}${label}:\n${truncate(out, 6000)}`, ok: true };
+}
+
+/**
+ * `ubuntu_system` — structured Ubuntu diagnostics & desktop helper.
+ * Exported so it can be unit-tested directly.
+ */
+async function ubuntuSystem(args = {}) {
+  const action = String(args.action || 'overview').trim();
+  const target = String(args.target || args.query || args.text || '').trim();
+  const maxLines = Math.max(5, Math.min(Number(args.lines) || 25, 100));
+  const userFlag = args.user_scope ? '--user' : '';
+
+  switch (action) {
+    case 'overview': {
+      const u = computer.detectUbuntu();
+      const cmd = [
+        'echo "=== Kernel & Uptime ===" && uname -srm && uptime -p 2>/dev/null || true',
+        'echo "=== Memory ===" && free -h 2>/dev/null || true',
+        'echo "=== Disk (/) ===" && df -h / 2>/dev/null || true',
+        'echo "=== CPU ===" && (lscpu 2>/dev/null | grep -E "Model name|Socket|Thread|CPU\(s\):" || nproc 2>/dev/null || true)',
+        'echo "=== GPU ===" && (lspci 2>/dev/null | grep -iE "vga|3d|display" || true)',
+      ].join(' ; ');
+      const r = await runCommand({ command: cmd, timeoutMs: 15000 });
+      const header = [
+        `Distro: ${u.distro}${u.codename ? ` (${u.codename})` : ''}`,
+        `Desktop: ${u.desktop} · Session: ${u.session}${u.display ? ` (DISPLAY=${u.display})` : ''}${u.wayland ? ` (WAYLAND=${u.wayland})` : ''}`,
+        `Available Ubuntu Tools: ${u.systemTools.join(', ') || 'basic'}`,
+      ].join('\n');
+      return { text: `${header}\n\n${(r.stdout || '').trim()}`.trim(), ok: true };
+    }
+    case 'processes': {
+      const cmd = target
+        ? `pgrep -af ${shq(target)} | head -n ${maxLines}`
+        : `ps aux --sort=-%cpu,-%mem | head -n ${maxLines + 1}`;
+      const r = await runCommand({ command: cmd, timeoutMs: 15000 });
+      const out = (r.stdout || '').trim();
+      return {
+        text: out
+          ? `Ubuntu processes${target ? ` matching "${target}"` : ' (top CPU/MEM)'}:\n${out}`
+          : `No processes matched${target ? ` "${target}"` : ''}.`,
+        ok: true,
+      };
+    }
+    case 'ports': {
+      const filter = target ? ` | grep -iE ${shq(target)}` : '';
+      const cmd = `(ss -tulpn 2>/dev/null || netstat -tulpn 2>/dev/null)${filter} | head -n ${maxLines + 2}`;
+      const r = await runCommand({ command: cmd, timeoutMs: 15000 });
+      const out = (r.stdout || '').trim();
+      return {
+        text: out ? `Listening ports${target ? ` (filter: ${target})` : ''}:\n${out}` : `No listening ports matched${target ? ` "${target}"` : ''}.`,
+        ok: true,
+      };
+    }
+    case 'service_status': {
+      if (!target) {
+        const r = await runCommand({
+          command: `systemctl ${userFlag} list-units --type=service --state=running --no-pager | head -n ${maxLines + 5}`,
+          timeoutMs: 15000,
+        });
+        return { text: `Running systemd services:\n${(r.stdout || r.stderr || '').trim()}`, ok: true };
+      }
+      const r = await runCommand({
+        command: `systemctl ${userFlag} status ${shq(target)} --no-pager -n ${maxLines}`,
+        timeoutMs: 15000,
+      });
+      return {
+        text: `Service status (${target}):\n${(r.stdout || r.stderr || '').trim()}`,
+        ok: r.code === 0 || Boolean((r.stdout || '').trim()),
+      };
+    }
+    case 'service_logs': {
+      if (!target) return { text: 'Error: provide service unit name in `target` for service_logs.', ok: false };
+      const r = await runCommand({
+        command: `journalctl ${userFlag} -u ${shq(target)} -n ${maxLines} --no-pager`,
+        timeoutMs: 15000,
+      });
+      return {
+        text: `Logs for ${target} (last ${maxLines} lines):\n${(r.stdout || r.stderr || '').trim() || '(no logs)'}`,
+        ok: r.code === 0,
+      };
+    }
+    case 'package_status': {
+      if (!target) return { text: 'Error: provide package name or keyword in `target` for package_status.', ok: false };
+      const cmd = [
+        `echo "=== dpkg / apt ===" && (apt-cache policy ${shq(target)} 2>/dev/null || dpkg -l ${shq(target)} 2>/dev/null || true)`,
+        `echo "=== snap ===" && (snap list ${shq(target)} 2>/dev/null || true)`,
+        `echo "=== binary ===" && (which ${shq(target)} 2>/dev/null || true)`,
+      ].join(' ; ');
+      const r = await runCommand({ command: cmd, timeoutMs: 15000 });
+      return { text: `Package check for "${target}":\n${(r.stdout || '').trim()}`, ok: true };
+    }
+    case 'network': {
+      const cmd = [
+        'echo "=== Interfaces ===" && (ip -br addr 2>/dev/null || ifconfig 2>/dev/null || true)',
+        'echo "=== Default Route ===" && (ip route show default 2>/dev/null || true)',
+        'echo "=== DNS ===" && (resolvectl status 2>/dev/null | head -n 20 || cat /etc/resolv.conf 2>/dev/null || true)',
+      ].join(' ; ');
+      const r = await runCommand({ command: cmd, timeoutMs: 15000 });
+      return { text: (r.stdout || '').trim() || 'Network info unavailable.', ok: true };
+    }
+    case 'notify':
+      return await computer.desktopAction('notify', { text: target });
+    case 'open':
+      if (/^https?:\/\/|\//.test(target)) return await computer.desktopAction('open_url', { url: target });
+      return await computer.desktopAction('launch_app', { text: target });
+    default:
+      return { text: `Unknown ubuntu_system action: ${action}`, ok: false };
+  }
 }
 
 async function executeTool(name, args = {}, ctx = {}) {
@@ -886,6 +1175,7 @@ async function executeTool(name, args = {}, ctx = {}) {
       if (r.stdout) parts.push(r.stdout);
       if (r.stderr) parts.push('[stderr]\n' + r.stderr);
       parts.push(`(exit code ${r.code}${r.timedOut ? ', TIMED OUT' : ''})`);
+      if (r.hint) parts.push(r.hint);
       return { text: parts.join('\n') };
     }
     case 'browser': {
@@ -899,7 +1189,13 @@ async function executeTool(name, args = {}, ctx = {}) {
       }
       return { text: JSON.stringify(r).slice(0, 4000) };
     }
+    case 'ubuntu_system': {
+      return await ubuntuSystem(args);
+    }
     case 'computer_use': {
+      if (computer.DESKTOP_ACTIONS && computer.DESKTOP_ACTIONS.has(args.action)) {
+        return await computer.desktopAction(args.action, args);
+      }
       if (args.action === 'screenshot') {
         const r = await computer.screenshotToFile(artifactsDir);
         const dataUrl = await fileToDataUrl(r.file);
@@ -1096,10 +1392,13 @@ async function loadSkills() {
 }
 
 async function buildSystemPrompt({ workspaceRoot, settings }) {
+  const u = computer.detectUbuntu ? computer.detectUbuntu() : { distro: os.type(), session: 'x11', desktop: 'GNOME', systemTools: [] };
   const lines = [
-    'You are Nova Agent, an autonomous coding assistant inside the Nova IDE.',
+    'You are Nova Agent, an autonomous coding and Ubuntu system assistant inside the Nova IDE.',
     `Workspace root: ${workspaceRoot || '(no folder opened — ask the user to open one)'}`,
-    `OS: ${os.type()} ${os.release()} (${os.arch()}), user: ${os.userInfo().username}`,
+    `OS: ${u.distro} — Kernel ${os.type()} ${os.release()} (${os.arch()}), user: ${os.userInfo().username}`,
+    `Desktop Environment: ${u.desktop} (${u.session}${u.display ? `, DISPLAY=${u.display}` : ''}${u.wayland ? `, WAYLAND=${u.wayland}` : ''})`,
+    `Available Ubuntu Tools: ${(u.systemTools || []).join(', ') || 'standard POSIX'}`,
     '',
     'Rules:',
     '- Use tools to inspect reality. Never claim you did something without tool output.',
@@ -1108,9 +1407,11 @@ async function buildSystemPrompt({ workspaceRoot, settings }) {
     '- For a task with several steps, call todo_write to keep a visible task list, updating it as you go.',
     '- Use code_lineage to see who last changed a file or a line range (git history).',
     '- Use remember to save durable context (user preferences, project facts, decisions) — it is read at the start of every future turn.',
-    '- For commands, use run_terminal_cmd. Prefer non-interactive commands (-y flags, no pagers).',
+    '- Use ubuntu_system for fast, zero-friction inspection of Ubuntu health (overview), top processes (processes), listening ports (ports), systemd services (service_status, service_logs), apt/snap packages (package_status), network interfaces (network), desktop notifications (notify), or opening apps/URLs (open).',
+    '- For shell commands, use run_terminal_cmd (DEBIAN_FRONTEND=noninteractive, PAGER=cat, ~/.local/bin, and /snap/bin are already set). Always pass non-interactive flags (-y for apt-get, --no-pager for systemctl/journalctl).',
+    '- Ubuntu privilege & Python tips: If sudo fails because there is no TTY password prompt, use `pkexec <cmd>` to open the native Ubuntu GUI authentication dialog, or prefer rootless flags (`systemctl --user`, `pip install --user`, `~/.local/bin`). On Ubuntu 23.04/24.04+ (PEP 668), use `python3 -m venv .venv` for Python packages.',
     '- The browser tool drives a real Chromium page. Use open before click/fill/text/screenshot.',
-    '- computer_use drives the real desktop (screenshot, move, click, double_click, right_click, drag, scroll, type, key, wait); a fresh screenshot comes back after each action, so screenshot → act → look at the result.',
+    '- computer_use drives the Ubuntu desktop: both pixel/keyboard actions (screenshot, move, click, double_click, right_click, drag, scroll, type, key, wait) and high-level desktop actions (active_window, list_windows, focus_window, launch_app, open_url, notify, clipboard_get, clipboard_set).',
     '- web_search and web_fetch are available for looking things up on the internet.',
     '- After finishing the task, reply with a short summary of what changed and any caveats.',
     '- If the task needs more information, ask a concise question instead of guessing.',
@@ -1287,8 +1588,8 @@ function detectMode(userText, settings = {}, contextNote = '', sessionOrHistory 
   }
 
   const explanationPattern = /^(what is|what are|explain|difference between|how does|why does|tell me about|summarize|give me ideas|suggest|batao|samjhao)\b/i;
-  const actionPattern = /\b(create|make|edit|update|change|replace|delete|remove|fix|debug|refactor|install|run|execute|build|compile|test|git|commit|push|pull|clone|search|find|grep|list|scan|open|inspect|benchmark|audit|write|read|add|rename|move|copy|show|generate|implement|setup|configure|format|lint|banao|likho|padho|chalao|chalhao|badlo|hatao|dhundo|jodo|daalo|dikhao)\b/i;
-  const toolPattern = /(\.[a-zA-Z0-9_-]+\b|npm\s|git\s|pip\s|cargo\s|yarn\s|pnpm\s|\bcd\b|\bls\b|\bcat\b|\bmkdir\b|\btouch\b|\brm\b)/i;
+  const actionPattern = /\b(create|make|edit|update|change|replace|delete|remove|fix|debug|refactor|install|uninstall|run|execute|build|compile|test|git|commit|push|pull|clone|search|find|grep|list|scan|open|launch|focus|notify|inspect|check|verify|status|monitor|diagnose|troubleshoot|kill|stop|start|restart|reload|enable|disable|upgrade|benchmark|audit|write|read|add|rename|move|copy|show|generate|implement|setup|configure|format|lint|banao|likho|padho|chalao|chalhao|badlo|hatao|dhundo|jodo|daalo|dikhao|dekho|band\s+karo|chalu\s+karo)\b/i;
+  const toolPattern = /(\.[a-zA-Z0-9_-]+\b|npm\s|git\s|pip\s|cargo\s|yarn\s|pnpm\s|\bcd\b|\bls\b|\bcat\b|\bmkdir\b|\btouch\b|\brm\b|\bapt(-get|-cache)?\b|\bdpkg\b|\bsnap\b|\bflatpak\b|\bsystemctl\b|\bjournalctl\b|\bservice\b|\bufw\b|\bdocker\b|\bpodman\b|\bpkexec\b|\bsudo\b|\bchmod\b|\bchown\b|\bps\b|\bhtop\b|\bkill\b|\bpkill\b|\blsof\b|\bss\b|\bnetstat\b|\bnmcli\b|\bxdotool\b|\bydotool\b|\bwmctrl\b|\bnotify-send\b|\bxdg-open\b|\bport\s+\d+\b|\b(ram|memory|disk|cpu|gpu)\s+(usage|space|free|status|check)\b|\bkitni\s+(ram|memory|disk|space)\b|\bkya\s+chal\s+raha\b)/i;
 
   const strippedGreeting = text.replace(/^(?:(?:hi|hello|hey|hiya|howdy|yo|namaste|sup|greetings|suno)(?:\s+(?:there|friend|nova|agent|bot|ji|bro|mate|everyone|all))?[,\s!.]+)+\s*/i, '');
 
@@ -1414,6 +1715,14 @@ function sanitizeAssistantReply(text) {
         ...session.messages.filter((m) => m && (m.role === 'user' || m.role === 'assistant')).slice(-12),
       ];
 
+      const onModelSwitch = (info) => {
+        emit({ type: 'model_switched', ...info });
+        emit({
+          type: 'status',
+          text: `⚡ ${info.from} ka quota khatam tha — ${info.model} pe auto-switch ho gaya.`,
+        });
+      };
+
       modelRequests += 1;
       const res = await callModel({
         config,
@@ -1422,7 +1731,7 @@ function sanitizeAssistantReply(text) {
         signal,
         threadKey: agentId,
         onDelta: (text) => emit({ type: 'assistant_delta', text }),
-        onModelSwitch: (sw) => emit({ type: 'model_switched', ...sw }),
+        onModelSwitch,
       });
 
       if (res.content) {
@@ -1451,7 +1760,13 @@ function sanitizeAssistantReply(text) {
           signal,
           threadKey: agentId,
           onDelta: (text) => emit({ type: 'assistant_delta', text }),
-          onModelSwitch: (sw) => emit({ type: 'model_switched', ...sw }),
+          onModelSwitch: (info) => {
+            emit({ type: 'model_switched', ...info });
+            emit({
+              type: 'status',
+              text: `⚡ ${info.from} ka quota khatam tha — ${info.model} pe auto-switch ho gaya.`,
+            });
+          },
         });
       };
 
@@ -1479,11 +1794,24 @@ function sanitizeAssistantReply(text) {
       session.messages.push({
         role: 'assistant',
         content: cleanContent || '',
-        tool_calls: toolCalls.map((c) => ({
-          id: c.id,
-          type: 'function',
-          function: { name: c.name, arguments: c.argsRaw || '{}' },
-        })),
+        tool_calls: toolCalls.map((c, idx) => {
+          const sig =
+            (c.extra_content &&
+              c.extra_content.google &&
+              (c.extra_content.google.thought_signature || c.extra_content.google.thoughtSignature)) ||
+            c.thoughtSignature ||
+            (idx === 0 ? THOUGHT_SIGNATURE_BYPASS : null);
+          return {
+            id: c.id,
+            type: 'function',
+            function: { name: c.name, arguments: c.argsRaw || '{}' },
+            ...(c.extra_content
+              ? { extra_content: c.extra_content }
+              : sig
+                ? { extra_content: { google: { thought_signature: sig } } }
+                : {}),
+          };
+        }),
       });
 
       for (const call of toolCalls) {
@@ -1495,7 +1823,7 @@ function sanitizeAssistantReply(text) {
         } catch {
           const result = `Error: could not parse tool arguments: ${String(call.argsRaw).slice(0, 300)}`;
           emit({ type: 'tool_end', callId: call.id, name: call.name, ok: false, output: result });
-          session.messages.push({ role: 'tool', tool_call_id: call.id, content: result });
+          session.messages.push({ role: 'tool', name: call.name, tool_call_id: call.id, content: result });
           continue;
         }
 
@@ -1553,7 +1881,7 @@ function sanitizeAssistantReply(text) {
         if (!allowed || signal.aborted) {
           const result = 'User denied this tool call. Do not retry it; ask how to proceed or continue differently.';
           emit({ type: 'tool_end', callId: call.id, name: call.name, ok: false, denied: true, output: result });
-          session.messages.push({ role: 'tool', tool_call_id: call.id, content: result });
+          session.messages.push({ role: 'tool', name: call.name, tool_call_id: call.id, content: result });
           continue;
         }
 
@@ -1575,11 +1903,11 @@ function sanitizeAssistantReply(text) {
             image: r.image || null,
           });
           if (r.todos) emit({ type: 'todos', todos: r.todos });
-          session.messages.push({ role: 'tool', tool_call_id: call.id, content: truncate(r.text) });
+          session.messages.push({ role: 'tool', name: call.name, tool_call_id: call.id, content: truncate(r.text) });
         } catch (e) {
           const result = `Error: ${e.message}`;
           emit({ type: 'tool_end', callId: call.id, name: call.name, ok: false, output: result });
-          session.messages.push({ role: 'tool', tool_call_id: call.id, content: result });
+          session.messages.push({ role: 'tool', name: call.name, tool_call_id: call.id, content: result });
         }
       }
     }
@@ -1615,7 +1943,12 @@ module.exports = {
   normalizeTodos,
   codeLineage,
   detectMode,
-  buildFallbackChain,
   callModel,
+  buildFallbackChain,
   isQuotaOrModelError,
+  GEMINI_FREE_FALLBACKS,
+  THOUGHT_SIGNATURE_BYPASS,
+  prepareMessagesForProvider,
+  flattenMessagesForPromptProtocol,
+  ubuntuSystem,
 };

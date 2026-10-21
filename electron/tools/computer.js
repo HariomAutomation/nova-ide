@@ -1,14 +1,16 @@
 const { execFile, spawn } = require('node:child_process');
+const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
 function which(bin) {
-  const parts = (process.env.PATH || '').split(':');
+  const extra = [path.join(os.homedir(), '.local', 'bin'), '/snap/bin', '/usr/local/bin', '/usr/bin', '/bin'];
+  const parts = [...(process.env.PATH || '').split(':'), ...extra].filter(Boolean);
   for (const p of parts) {
     try {
       const full = path.join(p, bin);
-      require('node:fs').accessSync(full, require('node:fs').constants.X_OK);
+      fs.accessSync(full, fs.constants.X_OK);
       return full;
     } catch {}
   }
@@ -18,8 +20,10 @@ function which(bin) {
 // Allow user-space installs (e.g. xdotool extracted into ~/.local without sudo)
 function toolEnv() {
   const localLib = path.join(os.homedir(), '.local', 'lib');
+  const localBin = path.join(os.homedir(), '.local', 'bin');
   return {
     ...process.env,
+    PATH: [localBin, '/snap/bin', process.env.PATH].filter(Boolean).join(':'),
     LD_LIBRARY_PATH: [localLib, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':'),
   };
 }
@@ -32,6 +36,60 @@ function run(bin, args, timeoutMs = 30000) {
   });
 }
 
+function readOsRelease() {
+  const info = { distro: 'Linux', version: '', codename: '', isUbuntu: false };
+  try {
+    const raw = fs.readFileSync('/etc/os-release', 'utf8');
+    const get = (k) => {
+      const m = new RegExp(`^${k}=["']?([^"'\\n]+)["']?`, 'm').exec(raw);
+      return m ? m[1].trim() : '';
+    };
+    const pretty = get('PRETTY_NAME') || get('NAME') || 'Linux';
+    const id = (get('ID') + ' ' + get('ID_LIKE')).toLowerCase();
+    info.distro = pretty;
+    info.version = get('VERSION_ID');
+    info.codename = get('VERSION_CODENAME') || get('UBUNTU_CODENAME');
+    info.isUbuntu = id.includes('ubuntu') || /ubuntu/i.test(pretty);
+  } catch {}
+  return info;
+}
+
+function detectUbuntu() {
+  const osInfo = readOsRelease();
+  const session = process.env.XDG_SESSION_TYPE || (process.env.WAYLAND_DISPLAY ? 'wayland' : 'x11');
+  const desktop = process.env.XDG_CURRENT_DESKTOP || process.env.DESKTOP_SESSION || '';
+  const windowTools = ['wmctrl', 'xdotool', 'gdbus'].filter((b) => which(b));
+  const clipboardTools = ['wl-copy', 'wl-paste', 'xclip', 'xsel'].filter((b) => which(b));
+  const systemTools = [
+    'apt-get',
+    'apt-cache',
+    'dpkg',
+    'snap',
+    'flatpak',
+    'systemctl',
+    'journalctl',
+    'pkexec',
+    'notify-send',
+    'xdg-open',
+    'gtk-launch',
+    'ss',
+    'ip',
+    'ufw',
+    'docker',
+  ].filter((b) => which(b));
+
+  return {
+    ...osInfo,
+    session,
+    desktop: desktop || (osInfo.isUbuntu ? 'GNOME' : 'unknown'),
+    display: process.env.DISPLAY || null,
+    wayland: process.env.WAYLAND_DISPLAY || null,
+    windowTools,
+    clipboardTools,
+    systemTools,
+  };
+}
+
 function detect() {
   const session = process.env.XDG_SESSION_TYPE || (process.env.WAYLAND_DISPLAY ? 'wayland' : 'x11');
   const screenshotters = [];
@@ -41,6 +99,7 @@ function detect() {
   const input = [];
   if (which('ydotool')) input.push('ydotool');
   if (which('xdotool')) input.push('xdotool');
+  const ubuntu = detectUbuntu();
   return {
     session,
     display: process.env.DISPLAY || null,
@@ -49,6 +108,7 @@ function detect() {
     screenshotCandidates: screenshotters,
     inputMethod: input[0] || null,
     inputCandidates: input,
+    ubuntu,
   };
 }
 
@@ -90,6 +150,50 @@ function clampPoint(x, y, size) {
 
 const SCROLL_BUTTON = { up: '4', down: '5', left: '6', right: '7' };
 const YDOTOOL_BUTTON = { 1: '0xC0', 2: '0xC1', 3: '0xC2' };
+
+/* ------------------------------ input ------------------------------ */
+
+const YDOTOOL_KEYS = {
+  Escape: '1', Esc: '1',
+  '1': '2', '2': '3', '3': '4', '4': '5', '5': '6', '6': '7', '7': '8', '8': '9', '9': '10', '0': '11',
+  minus: '12', equal: '13', Backspace: '14', Tab: '15',
+  q: '16', w: '17', e: '18', r: '19', t: '20', y: '21', u: '22', i: '23', o: '24', p: '25',
+  Return: '28', Enter: '28',
+  ctrl: '29', Control_L: '29', Control: '29',
+  a: '30', s: '31', d: '32', f: '33', g: '34', h: '35', j: '36', k: '37', l: '38',
+  shift: '42', Shift_L: '42', Shift: '42',
+  z: '44', x: '45', c: '46', v: '47', b: '48', n: '49', m: '50',
+  alt: '56', Alt_L: '56', Alt: '56',
+  Space: '57', space: '57',
+  F1: '59', F2: '60', F3: '61', F4: '62', F5: '63', F6: '64',
+  F7: '65', F8: '66', F9: '67', F10: '68', F11: '87', F12: '88',
+  Home: '102', Up: '103', Page_Up: '104', PageUp: '104',
+  Left: '105', Right: '106', End: '107', Down: '108',
+  Page_Down: '109', PageDown: '109', Insert: '110', Delete: '111',
+  super: '125', Super_L: '125', Meta_L: '125', win: '125',
+};
+
+function resolveYdotoolKeyArgs(keySpec) {
+  const raw = String(keySpec || '').trim();
+  if (!raw) return null;
+  if (YDOTOOL_KEYS[raw]) {
+    const code = YDOTOOL_KEYS[raw];
+    return [`${code}:1`, `${code}:0`];
+  }
+  const parts = raw.split('+').map((s) => s.trim()).filter(Boolean);
+  if (parts.length >= 1) {
+    const codes = [];
+    for (const part of parts) {
+      const code = YDOTOOL_KEYS[part] || YDOTOOL_KEYS[part.toLowerCase()] || YDOTOOL_KEYS[part.toUpperCase()];
+      if (!code) return null;
+      codes.push(code);
+    }
+    const down = codes.map((c) => `${c}:1`);
+    const up = [...codes].reverse().map((c) => `${c}:0`);
+    return [...down, ...up];
+  }
+  return null;
+}
 
 /**
  * Build the concrete shell commands for one desktop-input action.
@@ -171,9 +275,9 @@ function buildInputCommands(action, params = {}, cap = {}) {
       case 'type':
         return [{ bin: Y, args: ['type', '--key-delay', String(num(p.delay) ?? 12), String(p.text ?? '')], timeoutMs: 60000 }];
       case 'key': {
-        const code = YDOTOOL_KEYS[p.key];
-        if (!code) throw new Error(`Key not mapped for ydotool: ${p.key}. Use xdotool for full key support.`);
-        return [{ bin: Y, args: ['key', `${code}:1`, `${code}:0`] }];
+        const keyArgs = resolveYdotoolKeyArgs(p.key);
+        if (!keyArgs) throw new Error(`Key not mapped for ydotool: ${p.key}. Use xdotool for full key support.`);
+        return [{ bin: Y, args: ['key', ...keyArgs] }];
       }
       case 'drag':
       case 'scroll':
@@ -315,12 +419,147 @@ function portalScreenshot(dir, targetFile) {
   });
 }
 
-/* ------------------------------ input ------------------------------ */
+/* ------------------------------ Ubuntu desktop actions ------------------------------ */
 
-const YDOTOOL_KEYS = {
-  Return: '28', Enter: '28', Escape: '1', Tab: '15', Space: '57', Backspace: '14',
-  Up: '103', Down: '108', Left: '105', Right: '106',
-};
+const DESKTOP_ACTIONS = new Set([
+  'active_window',
+  'list_windows',
+  'focus_window',
+  'launch_app',
+  'open_url',
+  'notify',
+  'clipboard_get',
+  'clipboard_set',
+]);
+
+async function desktopAction(action, params = {}) {
+  const p = params || {};
+  switch (action) {
+    case 'active_window': {
+      const x = which('xdotool');
+      if (x) {
+        const w = await run(x, ['getactivewindow', 'getwindowname']);
+        if (!w.err && w.stdout.trim()) return { text: `Active window: ${w.stdout.trim()}`, ok: true };
+      }
+      const wm = which('wmctrl');
+      if (wm) {
+        const w = await run(wm, ['-lp']);
+        if (!w.err && w.stdout.trim()) return { text: `Windows:\n${w.stdout.trim()}`, ok: true };
+      }
+      return { text: 'Could not read active window (install xdotool or wmctrl on Ubuntu).', ok: false };
+    }
+    case 'list_windows': {
+      const wm = which('wmctrl');
+      if (wm) {
+        const r = await run(wm, ['-l']);
+        if (!r.err) return { text: `Open Ubuntu desktop windows:\n${r.stdout.trim() || '(none)'}`, ok: true };
+      }
+      const x = which('xdotool');
+      if (x) {
+        const r = await run(x, ['search', '--onlyvisible', '--name', '.']);
+        const ids = (r.stdout || '').trim().split(/\s+/).filter(Boolean).slice(0, 25);
+        const names = [];
+        for (const id of ids) {
+          const n = await run(x, ['getwindowname', id]);
+          if (n.stdout.trim()) names.push(`${id}: ${n.stdout.trim()}`);
+        }
+        return { text: `Visible windows (${names.length}):\n${names.join('\n') || '(none)'}`, ok: true };
+      }
+      return { text: 'No window listing tool found (install wmctrl or xdotool: `sudo apt install wmctrl xdotool`).', ok: false };
+    }
+    case 'focus_window': {
+      const target = String(p.text || p.title || p.window || '').trim();
+      if (!target) return { text: 'Error: provide window title/name in `text`.', ok: false };
+      const wm = which('wmctrl');
+      if (wm) {
+        const r = await run(wm, ['-a', target]);
+        if (!r.err) return { text: `Focused window matching "${target}" via wmctrl.`, ok: true };
+      }
+      const x = which('xdotool');
+      if (x) {
+        const r = await run(x, ['search', '--name', target, 'windowactivate']);
+        if (!r.err) return { text: `Focused window matching "${target}" via xdotool.`, ok: true };
+      }
+      return { text: `Could not focus window "${target}".`, ok: false };
+    }
+    case 'launch_app': {
+      const appName = String(p.text || p.app || '').trim();
+      if (!appName) return { text: 'Error: provide application name or binary in `text`.', ok: false };
+      const gtk = which('gtk-launch');
+      if (gtk && !appName.includes(' ') && !appName.startsWith('/')) {
+        const r = await run(gtk, [appName], 8000);
+        if (!r.err) return { text: `Launched desktop application "${appName}" via gtk-launch.`, ok: true };
+      }
+      const bin = which(appName.split(/\s+/)[0]);
+      if (bin) {
+        const args = appName.split(/\s+/).slice(1);
+        const child = spawn(bin, args, { detached: true, stdio: 'ignore', env: toolEnv() });
+        child.unref();
+        return { text: `Launched "${appName}" in background (PID ${child.pid}).`, ok: true };
+      }
+      return { text: `Application "${appName}" not found on PATH or desktop entries.`, ok: false };
+    }
+    case 'open_url': {
+      const target = String(p.url || p.text || '').trim();
+      if (!target) return { text: 'Error: provide URL or file path in `url` or `text`.', ok: false };
+      const xdg = which('xdg-open');
+      if (!xdg) return { text: 'xdg-open not available.', ok: false };
+      const child = spawn(xdg, [target], { detached: true, stdio: 'ignore', env: toolEnv() });
+      child.unref();
+      return { text: `Opened "${target}" with xdg-open.`, ok: true };
+    }
+    case 'notify': {
+      const body = String(p.text || '').trim();
+      if (!body) return { text: 'Error: provide notification message in `text`.', ok: false };
+      const ns = which('notify-send');
+      if (!ns) return { text: 'notify-send not installed (`sudo apt install libnotify-bin`).', ok: false };
+      const r = await run(ns, ['Nova IDE Agent', body], 8000);
+      return { text: r.err ? `Notification failed: ${r.err.message}` : `Sent Ubuntu desktop notification: "${body}"`, ok: !r.err };
+    }
+    case 'clipboard_get': {
+      if (which('wl-paste') && process.env.WAYLAND_DISPLAY) {
+        const r = await run(which('wl-paste'), ['--no-newline'], 5000);
+        if (!r.err) return { text: `Clipboard content:\n${r.stdout}`, ok: true };
+      }
+      if (which('xclip')) {
+        const r = await run(which('xclip'), ['-selection', 'clipboard', '-o'], 5000);
+        if (!r.err) return { text: `Clipboard content:\n${r.stdout}`, ok: true };
+      }
+      if (which('xsel')) {
+        const r = await run(which('xsel'), ['--clipboard', '--output'], 5000);
+        if (!r.err) return { text: `Clipboard content:\n${r.stdout}`, ok: true };
+      }
+      return { text: 'Clipboard read unavailable (install wl-clipboard or xclip).', ok: false };
+    }
+    case 'clipboard_set': {
+      const val = String(p.text ?? '');
+      const setWith = (bin, args) =>
+        new Promise((resolve) => {
+          try {
+            const c = spawn(bin, args, { env: toolEnv(), stdio: ['pipe', 'ignore', 'pipe'] });
+            c.stdin.write(val);
+            c.stdin.end();
+            c.on('close', (code) => resolve(code === 0));
+            c.on('error', () => resolve(false));
+          } catch {
+            resolve(false);
+          }
+        });
+      if (which('wl-copy') && process.env.WAYLAND_DISPLAY && (await setWith(which('wl-copy'), []))) {
+        return { text: `Copied ${val.length} chars to Wayland clipboard.`, ok: true };
+      }
+      if (which('xclip') && (await setWith(which('xclip'), ['-selection', 'clipboard']))) {
+        return { text: `Copied ${val.length} chars to X11 clipboard via xclip.`, ok: true };
+      }
+      if (which('xsel') && (await setWith(which('xsel'), ['--clipboard', '--input']))) {
+        return { text: `Copied ${val.length} chars to X11 clipboard via xsel.`, ok: true };
+      }
+      return { text: 'Clipboard write unavailable (install wl-clipboard or xclip).', ok: false };
+    }
+    default:
+      return { text: `Unknown desktop action: ${action}`, ok: false };
+  }
+}
 
 /**
  * Execute one desktop-input action. Coordinates are clamped to the detected
@@ -361,11 +600,15 @@ async function inputAction(action, params = {}) {
 
 module.exports = {
   detect,
+  detectUbuntu,
   screenshotToFile,
   inputAction,
+  desktopAction,
+  DESKTOP_ACTIONS,
   which,
   screenSize,
   buildInputCommands,
+  resolveYdotoolKeyArgs,
   clampPoint,
   parsePoints,
 };

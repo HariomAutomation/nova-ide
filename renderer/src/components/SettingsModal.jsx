@@ -307,7 +307,7 @@ function ModelsTab() {
         if (r && r.chatOk) {
           setTests((st) => ({ ...st, [id]: { state: 'ok', msg: `works \u00B7 ${r.chatModel || entry.model}` } }));
         } else {
-          setTests((st) => ({ ...st, [id]: { state: 'fail', msg: (r && r.error) || 'connection failed' } }));
+          setTests((st) => ({ ...st, [id]: { state: 'fail', msg: (r && (r.error || r.chatError)) || 'connection failed' } }));
         }
       } catch (e) {
         setTests((st) => ({ ...st, [id]: { state: 'fail', msg: String(e.message || e) } }));
@@ -436,18 +436,6 @@ function ModelsTab() {
         </datalist>
       </div>
     );
-  }
-
-  function cleanModel(m) {
-    return {
-      id: m.id,
-      label: m.label || m.model || 'Model',
-      baseUrl: String(m.baseUrl || '').trim().replace(/\/+$/, ''),
-      model: String(m.model || '').trim(),
-      apiKey: m.apiKey || '',
-      ...(m.auth ? { auth: m.auth } : {}),
-      ...(Array.isArray(m.modelIds) && m.modelIds.length ? { modelIds: m.modelIds.slice(0, 500) } : {}),
-    };
   }
 
   async function save() {
