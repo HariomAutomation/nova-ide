@@ -155,7 +155,7 @@ async function apiCall(method, body) {
   } catch {}
   if (!res.ok) {
     const msg = (json && (json.error?.message || json.error)) || text.slice(0, 300) || `HTTP ${res.status}`;
-    const err = new Error(`Cloud Code ${method} failed: ${msg}`);
+    const err: any = new Error(`Cloud Code ${method} failed: ${msg}`);
     err.status = res.status;
     throw err;
   }
@@ -185,7 +185,7 @@ async function ensureProject() {
       (load.currentTier && load.currentTier.id) ||
       (tiers.find((t) => t && t.isDefault) || tiers[0] || {}).id ||
       'free-tier';
-    const op = await apiCall('onboardUser', { tierId: tier, metadata: META }).catch(async (e) => {
+    let op = await apiCall('onboardUser', { tierId: tier, metadata: META }).catch(async (e) => {
       if (/Unknown name "metadata"|Cannot find field/i.test(String(e.message || ''))) {
         return apiCall('onboardUser', { tierId: tier });
       }
@@ -320,14 +320,14 @@ async function generate({ model, system, messages, tools, onDelta, signal }) {
   const project = await ensureProject();
   const useModel = String(model || (await readCfg()).model || DEFAULT_MODEL).trim();
 
-  const request = {
+  const request: any = {
     contents: toGeminiContents(messages),
     ...(system ? { systemInstruction: { parts: [{ text: String(system).slice(0, 200000) }] } } : {}),
   };
   const fns = toFunctionDeclarations(tools);
   if (fns) request.tools = fns;
 
-  const body = { model: useModel, request };
+  const body: any = { model: useModel, request };
   if (project) body.project = project;
 
   const j = await apiCall('generateContent', body);
@@ -415,11 +415,11 @@ async function login() {
           throw new Error(tokens.error_description || tokens.error || `token exchange failed (HTTP ${tr.status})`);
         }
 
-        let profile = {};
+        let profile: Record<string, any> = {};
         try {
           const ui = await fetch(USERINFO_URL, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
           if (ui.ok) {
-            const p = await ui.json();
+            const p: any = await ui.json();
             profile = { email: p.email || null, name: p.name || null, picture: p.picture || null };
           }
         } catch {}

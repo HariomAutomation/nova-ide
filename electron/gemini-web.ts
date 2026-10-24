@@ -702,7 +702,7 @@ async function newChat() {
 }
 
 async function status() {
-  const out = { webContentsId: wcId, ok: false, url: null, hasEditor: false, busy: false, threads: threads.size };
+  const out: Record<string, any> = { webContentsId: wcId, ok: false, url: null, hasEditor: false, busy: false, threads: threads.size };
   try {
     const wc = wcOrThrow();
     out.url = wc.getURL();

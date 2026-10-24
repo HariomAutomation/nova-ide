@@ -34,7 +34,7 @@ async function transcribeOpenAI({ baseUrl, apiKey, model, buffer, mimeType }) {
   );
   const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
   const body = Buffer.concat([head, buffer, tail]);
-  const headers = { 'Content-Type': `multipart/form-data; boundary=${boundary}` };
+  const headers: Record<string, string> = { 'Content-Type': `multipart/form-data; boundary=${boundary}` };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   let res;
   try {

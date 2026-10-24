@@ -10,7 +10,7 @@
 
 const { execFile } = require('node:child_process');
 
-function git(cwd, args, timeoutMs = 60000) {
+function git(cwd: string, args: string[], timeoutMs = 60000): Promise<any> {
   return new Promise((resolve) => {
     if (!cwd) return resolve({ code: -1, stdout: '', stderr: 'No workspace folder is open.' });
     execFile(
@@ -51,7 +51,7 @@ function labelFor(x, y) {
  * Parse `git status --porcelain=v1 -b` output. Pure — exported for tests.
  */
 function parseStatusPorcelain(text) {
-  const out = { branch: null, upstream: null, ahead: 0, behind: 0, files: [] };
+  const out: Record<string, any> = { branch: null, upstream: null, ahead: 0, behind: 0, files: [] };
   const lines = String(text || '').split('\n');
   for (const raw of lines) {
     if (!raw) continue;
@@ -193,7 +193,7 @@ async function worktreeList(cwd) {
   const r = await git(cwd, ['worktree', 'list', '--porcelain']);
   if (r.code !== 0) return { worktrees: [] };
   const trees = [];
-  let cur = {};
+  let cur: any = {};
   for (const line of r.stdout.split('\n')) {
     if (line.startsWith('worktree ')) {
       if (cur.path) trees.push(cur);

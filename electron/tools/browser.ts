@@ -103,7 +103,7 @@ async function screenshotToFile(dir) {
   return file;
 }
 
-async function act(action, params = {}, { headless = true, artifactsDir } = {}) {
+async function act(action: string, params: any = {}, { headless = true, artifactsDir }: { headless?: boolean; artifactsDir?: string } = {}) {
   const page = await getPage({ headless });
 
   switch (action) {

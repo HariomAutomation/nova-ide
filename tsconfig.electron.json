@@ -8,7 +8,7 @@
     "types": ["node"],
     "lib": ["ES2022", "DOM"],
     "strict": false,
-    "noCheck": true,
+    "noCheck": false,
     "noImplicitAny": false,
     "useUnknownInCatchVariables": false,
     "skipLibCheck": true,

@@ -23,6 +23,14 @@ const os = require('node:os');
 const fsp = require('node:fs/promises');
 const { configRoot } = require('./tools/paths');
 
+declare global {
+  interface Window {
+    __novaPw?: any;
+    __novaPwTimer?: any;
+    __novaPwDelta?: any;
+  }
+}
+
 let chromium = null;
 let pwVersion = null;
 try {
@@ -147,7 +155,7 @@ function sendButtonOf(page) {
 }
 
 async function status() {
-  const out = { ok: false, engine: 'playwright', version: pwVersion, running: !!ctx, signedIn: false };
+  const out: Record<string, any> = { ok: false, engine: 'playwright', version: pwVersion, running: !!ctx, signedIn: false };
   if (!available()) {
     out.error = 'Playwright available nahi hai.';
     return out;
@@ -184,7 +192,7 @@ async function newChat() {
  * Send one prompt and stream the answer back.
  * Completion is decided by the page itself: the answer text stops growing.
  */
-async function ask({ prompt, onDelta, signal } = {}) {
+async function ask({ prompt, onDelta, signal }: { prompt?: string; onDelta?: (t: string) => void; signal?: any } = {}) {
   if (!available()) throw new Error('Playwright available nahi hai (npm install chalao).');
   const page = await geminiPage();
   const composer = composerOf(page);

@@ -18,7 +18,7 @@
  *   anything else  -> 'auto': pick the right ozone platform, and drop Vulkan and
  *                     VA-API on Wayland only.
  */
-function gpuPlan({ platform, env = {} } = {}) {
+function gpuPlan({ platform, env = {} }: { platform?: string; env?: Record<string, string | undefined> } = {}) {
   if (platform !== 'linux') return { mode: 'default', switches: [] };
 
   const forced = env.NOVA_GPU;

@@ -186,7 +186,7 @@ function startWebhookServer() {
             if (b.length > 200000) req.destroy();
           });
           req.on('end', async () => {
-            let payload = {};
+            let payload: any = {};
             try {
               payload = JSON.parse(b || '{}');
             } catch {}
@@ -375,7 +375,7 @@ ipcMain.handle('models:list', async (_e, payload) => {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 20000);
-    const headers = {};
+    const headers: Record<string, string> = {};
     if (apiKey && !isGemini) headers.Authorization = `Bearer ${apiKey}`;
     const res = await fetch(url, { headers, signal: ctrl.signal });
     clearTimeout(timer);
@@ -888,8 +888,8 @@ async function addonsStatus() {
         toolCount: enabled && lv && lv.tools ? lv.tools.length : 0,
         bridge: enabled && lv ? !!lv.bridge : false,
         error: enabled && lv ? lv.error : null,
-        needsUrl: !!a.needsUrl,
-        defaultUrl: a.defaultUrl || null,
+        needsUrl: !!(a as any).needsUrl,
+        defaultUrl: (a as any).defaultUrl || null,
         url: (servers[id] && (servers[id].mcpUrl || servers[id].penpotUrl)) || null,
       };
     }),
@@ -1223,7 +1223,7 @@ ipcMain.handle('ai:chat', async (_e, payload) => {
       if (!base) throw new Error('No base URL configured for this model.');
       const url = base + '/chat/completions';
 
-      const headers = { 'Content-Type': 'application/json' };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
       if (/openrouter\.ai/.test(base)) {
         headers['HTTP-Referer'] = 'https://nova-ide.local';
@@ -1244,7 +1244,7 @@ ipcMain.handle('ai:chat', async (_e, payload) => {
 
       if (!r.ok || !r.body) {
         const text = await r.text().catch(() => '');
-        const err = new Error(describeHttpError(url, r.status, r.statusText, text));
+        const err: any = new Error(describeHttpError(url, r.status, r.statusText, text));
         err.status = r.status;
         err.body = text;
         throw err;

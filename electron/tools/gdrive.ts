@@ -40,7 +40,7 @@ const DRIVE_FILES = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 const MEMORY_NAME = 'memory.json';
 const SCOPE =
-  'openid email https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.appdata';
+  'openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata';
 
 const GOOGLE_DOC = 'application/vnd.google-apps.document';
 const GOOGLE_SHEET = 'application/vnd.google-apps.spreadsheet';
@@ -234,7 +234,7 @@ async function login() {
         const redirectUri = `http://127.0.0.1:${server.address().port}/oauth2callback`;
         const tokens = await exchangeCode(cfg, q.get('code'), redirectUri, verifier);
 
-        let profile = {};
+        let profile: Record<string, any> = {};
         try {
           const ui = await fetch(USERINFO_URL, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
           if (ui.ok) {

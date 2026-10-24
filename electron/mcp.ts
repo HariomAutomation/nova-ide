@@ -63,7 +63,7 @@ function startServer(name, cfg) {
     env: { ...process.env, ...(cfg.env || {}) },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
-  const session = {
+  const session: any = {
     name,
     proc,
     nextId: 1,
@@ -76,6 +76,7 @@ function startServer(name, cfg) {
     serverInfo: null,
     cfg: cfg || {},
     lastAttempt: Date.now(),
+    ready: null,
   };
   sessions.set(name, session);
 
@@ -125,7 +126,7 @@ function startServer(name, cfg) {
 
   session.ready = (async () => {
     try {
-      const res = await request(
+      const res: any = await request(
         session,
         'initialize',
         { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'nova-ide', version: '0.2.0' } },
@@ -133,7 +134,7 @@ function startServer(name, cfg) {
       );
       session.serverInfo = (res && res.serverInfo) || null;
       write(proc, { jsonrpc: '2.0', method: 'notifications/initialized' });
-      const toolsRes = await request(session, 'tools/list', {}, 20000);
+      const toolsRes: any = await request(session, 'tools/list', {}, 20000);
       session.tools = Array.isArray(toolsRes && toolsRes.tools) ? toolsRes.tools : [];
       session.state = 'running';
       session.error = null;
@@ -159,7 +160,7 @@ async function ensureServers() {
   }
 
   const now = Date.now();
-  for (const [name, c] of Object.entries(cfg)) {
+  for (const [name, c] of Object.entries((cfg as Record<string, any>) || {})) {
     if (!c || !c.command || c.enabled === false) continue;
     const existing = sessions.get(name);
     if (existing) {
@@ -221,11 +222,11 @@ async function call(server, tool, args) {
     return { ok: false, text: `MCP server "${server}" is not running${s && s.error ? `: ${s.error}` : '.'}` };
   }
   try {
-    const res = await request(s, 'tools/call', { name: tool, arguments: args || {} }, 35000);
+    const res: any = await request(s, 'tools/call', { name: tool, arguments: args || {} }, 35000);
     const content = Array.isArray(res && res.content) ? res.content : [];
-    const text = content.map((c) => (c && c.type === 'text' ? c.text : `[${(c && c.type) || 'unknown'}]`)).join('\n');
+    const text = content.map((c: any) => (c && c.type === 'text' ? c.text : `[${(c && c.type) || 'unknown'}]`)).join('\n');
     return { ok: !(res && res.isError), text: text || JSON.stringify(res || {}).slice(0, 4000) };
-  } catch (e) {
+  } catch (e: any) {
     return { ok: false, text: `MCP call failed (${server}/${tool}): ${e.message}` };
   }
 }
@@ -234,7 +235,7 @@ async function status() {
   await ensureServers();
   let hasConfig = false;
   try {
-    await fsp.access(CONFIG_PATH);
+    await fsp.access(getConfigPath());
     hasConfig = true;
   } catch {}
   const servers = [...sessions.values()].map((s) => ({

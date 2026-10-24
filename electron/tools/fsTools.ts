@@ -272,7 +272,7 @@ async function editNotebook({ path: filePath, action = 'replace', cellIndex, cel
   }
 
   // Detect original indentation to prevent noisy git diffs
-  let indent = 1;
+  let indent: number | string = 1;
   const indentMatch = content.match(/\n([ \t]+)"/);
   if (indentMatch) {
     indent = indentMatch[1].includes('\t') ? '\t' : Math.min(indentMatch[1].length, 8);

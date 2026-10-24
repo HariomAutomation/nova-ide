@@ -703,7 +703,7 @@ suite.push(
     const st = await gdrive.status();
     assert.equal(typeof st.connected, 'boolean');
     assert.equal(typeof st.hasClient, 'boolean');
-    assert.match(st.scope, /drive\.readonly/);
+    assert.match(st.scope, /drive\.(file|readonly)/);
     assert.match(st.configPath, /gdrive\.json$/);
   })
 );

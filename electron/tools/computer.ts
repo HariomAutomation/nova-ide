@@ -28,7 +28,7 @@ function toolEnv() {
   };
 }
 
-function run(bin, args, timeoutMs = 30000) {
+function run(bin: string, args: string[], timeoutMs = 30000): Promise<{ err: any; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     execFile(bin, args, { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env: toolEnv() }, (err, stdout, stderr) => {
       resolve({ err, stdout: String(stdout || ''), stderr: String(stderr || '') });
@@ -130,7 +130,7 @@ function num(v) {
 }
 
 /** Parse {x,y} / {to_x,to_y} from tool params, rounding and rejecting NaN. */
-function parsePoints(params = {}) {
+function parsePoints(params: any = {}) {
   return {
     x: num(params.x),
     y: num(params.y),
@@ -203,9 +203,9 @@ function resolveYdotoolKeyArgs(keySpec) {
  * array means "nothing to do"); throws a descriptive error for an unsupported
  * action/backend combination.
  */
-function buildInputCommands(action, params = {}, cap = {}) {
+function buildInputCommands(action: string, params: any = {}, cap: any = {}) {
   const method = cap.inputMethod;
-  const p = params || {};
+  const p: any = params || {};
   const { x, y, toX, toY } = parsePoints(p);
   const scrollDir = SCROLL_BUTTON[p.direction] ? p.direction : 'down';
   const scrollAmount = Math.max(1, Math.min(num(p.amount) || 3, 50));
@@ -388,7 +388,7 @@ function portalScreenshot(dir, targetFile) {
 
       const mon = spawn(gdbus, ['monitor', '--session', '--dest', 'org.freedesktop.portal.Desktop', '--object-path', reqPath]);
       let out = '';
-      const done = async (err, result) => {
+      const done = async (err: any, result?: any) => {
         clearTimeout(timer);
         try { mon.kill(); } catch {}
         if (err) reject(err);
@@ -432,8 +432,8 @@ const DESKTOP_ACTIONS = new Set([
   'clipboard_set',
 ]);
 
-async function desktopAction(action, params = {}) {
-  const p = params || {};
+async function desktopAction(action: string, params: any = {}) {
+  const p: any = params || {};
   switch (action) {
     case 'active_window': {
       const x = which('xdotool');
@@ -566,9 +566,9 @@ async function desktopAction(action, params = {}) {
  * screen when known. Returns { method, commands } — the caller decides whether
  * to capture a fresh screenshot afterwards.
  */
-async function inputAction(action, params = {}) {
+async function inputAction(action: string, params: any = {}) {
   const cap = detect();
-  const p = { ...(params || {}) };
+  const p: any = { ...(params || {}) };
 
   // Clamp click/drag coordinates into the screen box (best-effort).
   if (cap.inputMethod === 'xdotool' && (p.x != null || p.y != null)) {

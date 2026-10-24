@@ -43,7 +43,7 @@ function sanitizeAccount(key) {
   return k.replace(/[^a-z0-9._@+-]/g, '_').slice(0, 120);
 }
 
-function accountPath(account) {
+function accountPath(account?: string) {
   return path.join(memoryDir(), `${sanitizeAccount(account || currentAccount)}.json`);
 }
 
