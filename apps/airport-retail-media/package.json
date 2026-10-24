@@ -10,6 +10,8 @@
   ],
   "scripts": {
     "build:backend": "tsc -p backend/tsconfig.json",
+    "build:frontend": "vite build --config frontend/vite.config.ts",
+    "build": "npm run build:backend && npm run build:frontend",
     "test:backend": "node backend/test/worked-example.mjs && node backend/test/aodb-adapter.mjs && node backend/test/presence.mjs && node backend/test/aidx-adapter.mjs && node backend/test/acris-adapter.mjs",
     "up": "docker compose up --build"
   },
