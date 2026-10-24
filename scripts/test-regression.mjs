@@ -2569,6 +2569,51 @@ suite.push(
 );
 
 suite.push(
+  test('challenge: finding work returns only what Nova can actually deliver', async () => {
+    const fake = async () => ({
+      ok: true,
+      json: async () => [
+        { id: 'd1', name: 'Fashion Storefront Design', status: 'ACTIVE', track: { track: 'DESIGN' }, numOfRegistrants: 39, numOfSubmissions: 11, submissionEndDate: '2026-10-25T15:45:00.000Z' },
+        { id: 'd1b', name: 'Fashion Storefront Design', status: 'NEW', track: { track: 'DESIGN' }, numOfRegistrants: 0, submissionEndDate: '2026-10-29T15:36:34.150Z' },
+        { id: 'dev1', name: 'Build a Payments API', status: 'ACTIVE', track: { track: 'DEVELOP' }, numOfRegistrants: 12, numOfSubmissions: 3, submissionEndDate: '2026-11-02T12:00:00.000Z' },
+        { id: 'qa1', name: 'Find bugs in the portal', status: 'ACTIVE', track: { track: 'QA' }, numOfRegistrants: 5, numOfSubmissions: 1, submissionEndDate: '2026-10-30T09:00:00.000Z' },
+        { id: 'dead', name: 'Old finished thing', status: 'COMPLETED', track: { track: 'DEVELOP' } },
+      ],
+    });
+
+    // default: only deliverable tracks, soonest deadline first
+    const r = await challenge.listChallenges({ fetchImpl: fake });
+    assert.equal(r.ok, true);
+    const names = r.challenges.map((c) => c.name);
+    assert.ok(!names.includes('Fashion Storefront Design'), 'a design contest must be filtered out');
+    assert.ok(!names.includes('Old finished thing'), 'a completed challenge must be dropped');
+    assert.deepEqual(names, ['Find bugs in the portal', 'Build a Payments API'], 'soonest deadline first');
+    assert.ok(r.challenges.every((c) => c.deliverable === true));
+
+    // the duplicate row (same name, different id) collapses to one
+    const all = await challenge.listChallenges({ fetchImpl: fake, deliverableOnly: false });
+    assert.equal(all.challenges.filter((c) => /Fashion/.test(c.name)).length, 1, 'duplicate rows collapse by name');
+    // and the kept row is the one with real activity
+    const fashion = all.challenges.find((c) => /Fashion/.test(c.name));
+    assert.equal(fashion.status, 'ACTIVE');
+    assert.equal(fashion.registrants, 39);
+
+    // explicit track filter
+    const qa = await challenge.listChallenges({ fetchImpl: fake, tracks: ['qa'] });
+    assert.deepEqual(qa.challenges.map((c) => c.track), ['QA']);
+
+    // limit
+    assert.equal((await challenge.listChallenges({ fetchImpl: fake, limit: 1 })).challenges.length, 1);
+
+    // a failing API is reported, not thrown
+    const bad = await challenge.listChallenges({ fetchImpl: async () => ({ ok: false, status: 503 }) });
+    assert.equal(bad.ok, false);
+    assert.match(bad.error, /HTTP 503/);
+    assert.deepEqual(bad.challenges, []);
+  })
+);
+
+suite.push(
   test('challenge: the checklist stores progress and re-ingesting a spec keeps the work', async () => {
     const ws = path.join(TEST_DIR, 'chal-1');
     await fsp.mkdir(ws, { recursive: true });

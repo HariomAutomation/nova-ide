@@ -252,6 +252,83 @@ export function submissionRequirements(track: string | null | undefined): { text
   return [];
 }
 
+/** Statuses that mean the challenge is not worth looking at yet. */
+const DEAD_STATUSES = ['new', 'pending_approval', 'cancelled', 'draft', 'completed', 'deleted'];
+
+/**
+ * List the challenges that are actually worth taking on.
+ *
+ * Defaults to the tracks Nova can deliver end to end — the whole point is to
+ * point the work at challenges that can be finished, not to hand back a list
+ * that includes a Figma contest.
+ *
+ * `fetchImpl` is injectable so this is testable without the network.
+ */
+export async function listChallenges(
+  opts: { fetchImpl?: any; tracks?: string[]; deliverableOnly?: boolean; limit?: number; timeoutMs?: number } = {}
+): Promise<{ ok: boolean; error?: string; challenges: any[] }> {
+  const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  if (typeof fetchImpl !== 'function') return { ok: false, error: 'no fetch available', challenges: [] };
+  const timeoutMs = opts.timeoutMs || 20000;
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+  try {
+    const res = await fetchImpl(`${TOPCODER_API}?perPage=100&page=1`, {
+      signal: ctrl ? ctrl.signal : undefined,
+      headers: { accept: 'application/json' },
+    });
+    if (!res || !res.ok) return { ok: false, error: `TopCoder API returned HTTP ${res && res.status}`, challenges: [] };
+    const raw = await res.json();
+    const arr = Array.isArray(raw) ? raw : Array.isArray(raw && raw.data) ? raw.data : [];
+    if (!arr.length) return { ok: true, challenges: [] };
+
+    const wanted = Array.isArray(opts.tracks) && opts.tracks.length
+      ? opts.tracks.map((t) => String(t).toLowerCase())
+      : null;
+
+    // The API can return the same challenge twice (e.g. an ACTIVE row and a NEW
+    // duplicate). Keep one per name, preferring the row that has real activity.
+    const byName = new Map<string, any>();
+    for (const c of arr) {
+      if (!c || !c.name) continue;
+      const status = String(c.status || '').toLowerCase();
+      if (DEAD_STATUSES.includes(status)) continue;
+      const track = (c.track && (c.track.track || c.track.name)) || null;
+      const item = {
+        id: String(c.id || ''),
+        name: String(c.name),
+        track,
+        status: c.status || null,
+        url: `https://www.topcoder.com/challenges/${c.id}`,
+        endsAt: c.submissionEndDate ? String(c.submissionEndDate) : null,
+        registrants: Number(c.numOfRegistrants || 0),
+        submissions: Number(c.numOfSubmissions || 0),
+        deliverable: deliverability(track).ok,
+      };
+      const prev = byName.get(item.name);
+      const better = !prev || (item.status === 'ACTIVE' && prev.status !== 'ACTIVE') || item.registrants > prev.registrants;
+      if (better) byName.set(item.name, item);
+    }
+
+    let out = [...byName.values()];
+    if (opts.deliverableOnly !== false) out = out.filter((c) => c.deliverable);
+    if (wanted) out = out.filter((c) => wanted.some((w) => String(c.track || '').toLowerCase().includes(w)));
+    // soonest deadline first, undated last
+    out.sort((a, b) => {
+      if (!a.endsAt && !b.endsAt) return a.name.localeCompare(b.name);
+      if (!a.endsAt) return 1;
+      if (!b.endsAt) return -1;
+      return String(a.endsAt).localeCompare(String(b.endsAt));
+    });
+    if (opts.limit && opts.limit > 0) out = out.slice(0, opts.limit);
+    return { ok: true, challenges: out };
+  } catch (e: any) {
+    return { ok: false, error: `fetch failed: ${(e && e.message) || e}`, challenges: [] };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /* ============================ checklist store ============================ */
 
 function specPath(workspace: string): string {
@@ -484,6 +561,7 @@ export async function pack(
 
 module.exports = {
   parseChallengeId,
+  listChallenges,
   deliverability,
   submissionRequirements,
   extractRequirements,

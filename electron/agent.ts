@@ -338,16 +338,30 @@ const TOOL_DEFS = [
     },
   },
   {
+    name: 'challenge_find',
+    category: 'read',
+    description:
+      'List TopCoder challenges worth taking on, soonest first. Defaults to tracks Nova can deliver (not Design). `tracks` narrows, `all` includes undeliverable. Feed the id to challenge_spec.',
+    parameters: {
+      type: 'object',
+      properties: {
+        tracks: { type: 'array', items: { type: 'string' }, description: 'Narrow to these tracks.' },
+        all: { type: 'boolean', description: 'Include undeliverable tracks.' },
+        limit: { type: 'integer', description: 'Max results (default 10).' },
+      },
+    },
+  },
+  {
     name: 'challenge_spec',
     category: 'read',
     description:
-      'Challenge workflow 1/3. Ingest a contest brief into a tracked requirement checklist for this workspace. Pass `url` (TopCoder URL or id) or `text`. Deliverables become items grouped by section; boilerplate is dropped. Re-ingesting KEEPS the status of items already done. Work against this checklist — a missing deliverable is the most common way to lose.',
+      'Challenge workflow 1/3. Ingest a contest brief into a tracked checklist for this workspace. Pass `url` (TopCoder URL or id) or `text`. Items are grouped by section; boilerplate dropped; the track adds its submission requirements. Re-ingesting KEEPS the status of items already done.',
     parameters: {
       type: 'object',
       properties: {
         url: { type: 'string', description: 'TopCoder challenge URL or id.' },
-        text: { type: 'string', description: 'A pasted challenge brief, if there is no URL.' },
-        name: { type: 'string', description: 'Challenge name (used when there is no URL to fetch).' },
+        text: { type: 'string', description: 'Pasted brief, if there is no URL.' },
+        name: { type: 'string', description: 'Name, when there is no URL to fetch.' },
       },
     },
   },
@@ -370,13 +384,13 @@ const TOOL_DEFS = [
     name: 'challenge_pack',
     category: 'read',
     description:
-      'Challenge workflow 3/3. Bundle deliverables into a submission zip. REFUSES while items are still open unless `force`, listing what is missing. Returns the zip path and file list.',
+      'Challenge workflow 3/3. Bundle deliverables into a submission zip. REFUSES while items are open unless `force`, listing what is missing.',
     parameters: {
       type: 'object',
       properties: {
         files: { type: 'array', items: { type: 'string' }, description: 'Files to include, relative to the workspace.' },
-        out_path: { type: 'string', description: 'Where to write the zip (default: <workspace>/submission.zip).' },
-        force: { type: 'boolean', description: 'Pack even if checklist items are still open.' },
+        out_path: { type: 'string', description: 'Zip path (default <workspace>/submission.zip).' },
+        force: { type: 'boolean', description: 'Pack even if items are open.' },
       },
       required: ['files'],
     },
@@ -1481,6 +1495,30 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
     case 'security_report': {
       const body = await findingsStore.report(args.path || workspaceRoot, { format: args.format || 'markdown' });
       return { text: body };
+    }
+    case 'challenge_find': {
+      const r = await challenge.listChallenges({
+        tracks: args.tracks,
+        deliverableOnly: args.all !== true,
+        limit: Math.min(args.limit || 10, 50),
+      });
+      if (!r.ok) return { text: `Could not list challenges: ${r.error}` };
+      if (!r.challenges.length) {
+        return {
+          text:
+            'No open challenges right now for the tracks Nova can deliver.' +
+            (args.all ? '' : ' (Design-only contests are filtered out — they need a Figma deliverable.)'),
+        };
+      }
+      const body = r.challenges
+        .map((c: any) => {
+          const ends = c.endsAt ? new Date(c.endsAt).toISOString().slice(0, 16).replace('T', ' ') + 'Z' : 'no deadline';
+          return `${c.id}  [${c.track || '?'}] ${c.name}\n    ends ${ends} · ${c.registrants} registered · ${c.submissions} submitted · ${c.url}`;
+        })
+        .join('\n');
+      return {
+        text: `${r.challenges.length} challenge(s), soonest first:\n\n${body}\n\nPick one and run challenge_spec with its id.`,
+      };
     }
     case 'challenge_spec': {
       const target = workspaceRoot;
