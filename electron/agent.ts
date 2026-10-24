@@ -422,7 +422,7 @@ function normalizeTodos(list) {
  * - Web tools can be switched off in Settings → Agents.
  * - MCP tools from ~/.nova-ide/mcp.json are appended as mcp__server__tool.
  */
-async function toolSchemas(settings = {}) {
+async function toolSchemas(settings: any = {}) {
   const defs = TOOL_DEFS.filter((t) => {
     if (t.name === 'web_search') return settings.webSearch !== false;
     if (t.name === 'web_fetch') return settings.webFetch !== false;
@@ -529,7 +529,7 @@ function isGeminiEndpointOrModel(baseUrl, model) {
  * - For non-Gemini providers: strip `extra_content` / `thoughtSignature` from
  *   tool_calls so strict OpenAI schemas never reject unknown properties.
  */
-function prepareMessagesForProvider(messages, cfg = {}) {
+function prepareMessagesForProvider(messages: any, cfg: any = {}) {
   if (!Array.isArray(messages)) return [];
   const isGemini = isGeminiEndpointOrModel(cfg.baseUrl, cfg.model);
 
@@ -547,7 +547,7 @@ function prepareMessagesForProvider(messages, cfg = {}) {
         tc.thought_signature ||
         null;
 
-      const cleanTc = {
+      const cleanTc: any = {
         id: tc.id,
         type: tc.type || 'function',
         function: tc.function,
@@ -593,7 +593,7 @@ function flattenMessagesForPromptProtocol(messages) {
     if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length) {
       const calls = m.tool_calls.map((tc) => {
         const fn = (tc && tc.function) || {};
-        let args = {};
+        let args: any = {};
         try {
           args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments || '{}') : fn.arguments || {};
         } catch {}
@@ -765,7 +765,7 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
     if (!base) throw new Error('No base URL configured for this model.');
     const url = base + '/chat/completions';
 
-    const headers = { 'Content-Type': 'application/json' };
+    const headers: any = { 'Content-Type': 'application/json' };
     if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
     if (/openrouter\.ai/.test(base)) {
       headers['HTTP-Referer'] = 'https://nova-ide.local';
@@ -774,7 +774,7 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
 
     async function streamOnce(msgs, sendTools) {
       const preparedMsgs = sendTools ? prepareMessagesForProvider(msgs, cfg) : flattenMessagesForPromptProtocol(msgs);
-      const body = {
+      const body: any = {
         model: cfg.model,
         messages: preparedMsgs,
         stream: true,
@@ -810,7 +810,7 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
             await new Promise((r) => setTimeout(r, 1500 * attempt));
             continue;
           }
-          const err = new Error(describeHttpError(url, res.status, res.statusText, text));
+          const err: any = new Error(describeHttpError(url, res.status, res.statusText, text));
           err.status = res.status;
           err.body = text;
           throw err;
@@ -844,7 +844,7 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
             continue;
           }
           if (j.error) {
-            const streamErr = new Error(j.error.message || JSON.stringify(j.error));
+            const streamErr: any = new Error(j.error.message || JSON.stringify(j.error));
             streamErr.status = j.error.code || j.error.status || 0;
             streamErr.body = JSON.stringify(j.error);
             throw streamErr;
@@ -1002,7 +1002,7 @@ async function snapshotFor(ctx, p) {
  * `code_lineage` — git history for a file or a line range (Cursor parity).
  * Exported so it can be unit-tested without spinning up the whole agent loop.
  */
-async function codeLineage(args, ctx = {}) {
+async function codeLineage(args: any, ctx: any = {}) {
   const p = args && args.path;
   if (!p) return { text: 'Error: path is required.', ok: false };
   const cwd = ctx.workspaceRoot || process.cwd();
@@ -1035,7 +1035,7 @@ async function codeLineage(args, ctx = {}) {
  * `ubuntu_system` — structured Ubuntu diagnostics & desktop helper.
  * Exported so it can be unit-tested directly.
  */
-async function ubuntuSystem(args = {}) {
+async function ubuntuSystem(args: any = {}) {
   const action = String(args.action || 'overview').trim();
   const target = String(args.target || args.query || args.text || '').trim();
   const maxLines = Math.max(5, Math.min(Number(args.lines) || 25, 100));
@@ -1139,7 +1139,7 @@ async function ubuntuSystem(args = {}) {
   }
 }
 
-async function executeTool(name, args = {}, ctx = {}) {
+async function executeTool(name: any, args: any = {}, ctx: any = {}) {
   const { workspaceRoot, artifactsDir } = ctx;
   const canonical = CURSOR_TOOL_ALIASES[name] || name;
 
@@ -1634,7 +1634,7 @@ function compactMessages(
   return out;
 }
 
-function detectMode(userText, settings = {}, contextNote = '', sessionOrHistory = null) {
+function detectMode(userText: any, settings: any = {}, contextNote: any = '', sessionOrHistory: any = null) {
   const mode = settings.composerMode || 'auto';
   if (mode === 'chat') return 'chat';
   if (mode === 'agent') return 'agent';
