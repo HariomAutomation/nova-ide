@@ -16,6 +16,7 @@ import { gpuPlan } from '../dist-electron/tools/gpu-flags.js';
 import { scan as secScan } from '../dist-electron/tools/security.js';
 import * as findingsStore from '../dist-electron/tools/findings.js';
 import * as challenge from '../dist-electron/tools/challenge.js';
+import * as kaggle from '../dist-electron/tools/kaggle.js';
 import * as verifyEngine from '../dist-electron/tools/verify.js';
 import {
   loadRules,
@@ -2128,14 +2129,31 @@ suite.push(
 );
 
 suite.push(
-  test('security: the agent exposes the three-step audit workflow', async () => {
-    const schemas = await toolSchemas({});
-    const names = schemas.map((s) => (s.function ? s.function.name : s.name));
+  test('security: the audit entry point is always offered, the follow-ups arrive with findings', async () => {
+    // The entry tool must always be there, or the agent can never start.
+    const base = await toolSchemas({});
+    const baseNames = base.map((s) => (s.function ? s.function.name : s.name));
+    assert.ok(baseNames.includes('security_scan'), 'security_scan must always be offered');
+
+    // The follow-ups are lazy: the tool schemas are ~83% of every request, so they
+    // only appear once there is something to triage. This keeps the base list small.
+    assert.ok(!baseNames.includes('security_triage'), 'not offered before there is anything to triage');
+    assert.ok(!baseNames.includes('security_report'), 'not offered before there is anything to report');
+
+    // With findings in the workspace, they appear.
+    const ws = path.join(TEST_DIR, 'sec-lazy');
+    await fsp.mkdir(ws, { recursive: true });
+    await findingsStore.save(ws, [
+      { rule: 'code.eval', title: 'eval', severity: 'high', cwe: 'CWE-95', file: path.join(ws, 'a.js'), line: 1, snippet: 'eval(x)', message: 'fix it', confidence: 'high' },
+    ]);
+    const withFindings = await toolSchemas({}, { workspaceRoot: ws });
+    const names = withFindings.map((s) => (s.function ? s.function.name : s.name));
     for (const t of ['security_scan', 'security_triage', 'security_report']) {
-      assert.ok(names.includes(t), `${t} must be offered to the agent`);
+      assert.ok(names.includes(t), `${t} must be offered once findings exist`);
     }
-    // the tool schema budget guard elsewhere is 15000 chars
-    assert.ok(JSON.stringify(schemas).length < 15000, `tool schemas grew to ${JSON.stringify(schemas).length} chars`);
+
+    // and the base list stays under the schema budget
+    assert.ok(JSON.stringify(base).length < 15000, `base tool schemas grew to ${JSON.stringify(base).length} chars`);
   })
 );
 
@@ -2793,6 +2811,76 @@ suite.push(
       if (prev === null) await fsp.rm(cfgPath, { force: true }).catch(() => {});
       else await fsp.writeFile(cfgPath, prev, 'utf8').catch(() => {});
     }
+  })
+);
+
+/* --------------------------------- kaggle --------------------------------- */
+
+suite.push(
+  test('kaggle: credentials resolve, and a 401 asks for them instead of crashing', async () => {
+    // either auth shape is accepted
+    assert.equal(kaggle.kaggleAuth({ KAGGLE_API_TOKEN: 'KGAT_abc' }).header, 'Bearer KGAT_abc');
+    const basic = kaggle.kaggleAuth({ KAGGLE_USERNAME: 'me', KAGGLE_KEY: 'secret' });
+    assert.equal(basic.scheme, 'basic');
+    assert.equal(basic.header, 'Basic ' + Buffer.from('me:secret').toString('base64'));
+    assert.equal(kaggle.kaggleAuth({}), null, 'no creds -> no header');
+    assert.equal(kaggle.kaggleAuth({ KAGGLE_USERNAME: 'me' }), null, 'a username alone is not enough');
+
+    // 401 is reported as "you need credentials", with the steps
+    const unauth = await kaggle.listCompetitions({ fetchImpl: async () => ({ ok: false, status: 401 }), env: {} });
+    assert.equal(unauth.ok, false);
+    assert.equal(unauth.authRequired, true);
+    assert.ok(unauth.steps.length >= 3, 'it must tell the user how to get a token');
+    assert.deepEqual(unauth.competitions, []);
+
+    // and other failures are just errors
+    const boom = await kaggle.listCompetitions({ fetchImpl: async () => ({ ok: false, status: 503 }), env: {} });
+    assert.equal(boom.ok, false);
+    assert.equal(boom.authRequired, undefined);
+    assert.match(boom.error, /HTTP 503/);
+  })
+);
+
+suite.push(
+  test('kaggle: competitions are shaped into the same fields the UI reads', async () => {
+    let seenUrl = '';
+    let seenHeaders = null;
+    const fake = async (url, init) => {
+      seenUrl = String(url);
+      seenHeaders = init && init.headers;
+      return {
+        ok: true,
+        json: async () => [
+          { ref: 'titanic', title: 'Titanic - Machine Learning from Disaster', category: 'Getting Started', deadline: '2030-01-01T00:00:00Z', reward: 'Knowledge', teamCount: 15000, userHasEntered: true, userRank: 4021 },
+          { ref: 'playground-s4e1', title: 'Playground S4E1', category: 'Playground', deadline: '2026-12-01T00:00:00Z', teamCount: 900, userHasEntered: false },
+          { title: 'no ref here' },
+        ],
+      };
+    };
+    const r = await kaggle.listCompetitions({ fetchImpl: fake, env: { KAGGLE_API_TOKEN: 'KGAT_x' }, search: 'titanic' });
+    assert.equal(r.ok, true);
+    assert.equal(r.competitions.length, 2, 'a row with no ref is dropped');
+
+    const t = r.competitions[0];
+    assert.equal(t.ref, 'titanic');
+    assert.equal(t.category, 'Getting Started');
+    assert.equal(t.teamCount, 15000);
+    assert.equal(t.userHasEntered, true);
+    assert.equal(t.userRank, 4021);
+    assert.match(t.url, /kaggle\.com\/competitions\/titanic$/);
+
+    // the row with no userRank must not invent one
+    assert.equal(r.competitions[1].userRank, null);
+    assert.equal(r.competitions[1].reward, null);
+
+    // search + auth actually reached the request
+    assert.match(seenUrl, /search=titanic/);
+    assert.match(seenUrl, /competitions\/list/);
+    assert.equal(seenHeaders.authorization, 'Bearer KGAT_x');
+
+    // limit is honoured
+    const one = await kaggle.listCompetitions({ fetchImpl: fake, env: {}, limit: 1 });
+    assert.equal(one.competitions.length, 1);
   })
 );
 

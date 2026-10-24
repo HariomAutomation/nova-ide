@@ -14,6 +14,7 @@ const memory = require('./tools/memory');
 const security = require('./tools/security');
 const findingsStore = require('./tools/findings');
 const challenge = require('./tools/challenge');
+const kaggle = require('./tools/kaggle');
 const mcp = require('./mcp');
 const geminiWeb = require('./gemini-web');
 const cloudcode = require('./tools/cloudcode');
@@ -341,12 +342,14 @@ const TOOL_DEFS = [
     name: 'challenge_find',
     category: 'read',
     description:
-      'List TopCoder challenges worth taking on, soonest first. Defaults to tracks Nova can deliver (not Design). `tracks` narrows, `all` includes undeliverable. Feed the id to challenge_spec.',
+      'List contests worth taking on, soonest first. `source` picks the platform: topcoder (default; deliverable tracks only, not Design) or kaggle (ML competitions — a code+score deliverable, a much better fit). `search` filters Kaggle by text. Feed the id/ref to challenge_spec.',
     parameters: {
       type: 'object',
       properties: {
-        tracks: { type: 'array', items: { type: 'string' }, description: 'Narrow to these tracks.' },
-        all: { type: 'boolean', description: 'Include undeliverable tracks.' },
+        source: { type: 'string', enum: ['topcoder', 'kaggle'], description: 'Which platform (default topcoder).' },
+        search: { type: 'string', description: 'Kaggle only: filter by search text.' },
+        tracks: { type: 'array', items: { type: 'string' }, description: 'TopCoder only: narrow to these tracks.' },
+        all: { type: 'boolean', description: 'TopCoder only: include undeliverable tracks.' },
         limit: { type: 'integer', description: 'Max results (default 10).' },
       },
     },
@@ -481,10 +484,27 @@ function normalizeTodos(list) {
  * - Web tools can be switched off in Settings → Agents.
  * - MCP tools from ~/.nova-ide/mcp.json are appended as mcp__server__tool.
  */
-async function toolSchemas(settings: any = {}) {
+async function toolSchemas(settings: any = {}, ctx: any = {}) {
+  // Lazy-load the follow-up tools. They are only useful once the state that needs
+  // them exists, and the tool schemas are ~83% of every request — so the base list
+  // stays small and the extra tools appear exactly when they can be used.
+  //   challenge_check / challenge_pack  -> once a challenge spec is saved
+  //   security_triage / security_report -> once a scan has produced findings
+  let hasChallenge = false;
+  let hasFindings = false;
+  if (ctx && ctx.workspaceRoot) {
+    try {
+      hasChallenge = Boolean(await challenge.listSpec(ctx.workspaceRoot));
+    } catch {}
+    try {
+      hasFindings = (await findingsStore.list(ctx.workspaceRoot)).length > 0;
+    } catch {}
+  }
   const defs = TOOL_DEFS.filter((t) => {
     if (t.name === 'web_search') return settings.webSearch !== false;
     if (t.name === 'web_fetch') return settings.webFetch !== false;
+    if (t.name === 'challenge_check' || t.name === 'challenge_pack') return hasChallenge;
+    if (t.name === 'security_triage' || t.name === 'security_report') return hasFindings;
     return true;
   });
   const schemas = defs.map((t) => ({
@@ -1497,6 +1517,28 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
       return { text: body };
     }
     case 'challenge_find': {
+      if (args.source === 'kaggle') {
+        const k = await kaggle.listCompetitions({
+          search: args.search,
+          limit: Math.min(args.limit || 10, 50),
+        });
+        if (k.authRequired) {
+          return { text: `Kaggle needs credentials.\n\n${(k.steps || []).map((s: string) => `- ${s}`).join('\n')}` };
+        }
+        if (!k.ok) return { text: `Could not list Kaggle competitions: ${k.error}` };
+        if (!k.competitions.length) return { text: 'No Kaggle competitions matched.' };
+        const body = k.competitions
+          .map((c: any) => {
+            const ends = c.deadline ? String(c.deadline).slice(0, 10) : 'no deadline';
+            const reward = c.reward ? ` · ${c.reward}` : '';
+            const mine = c.userHasEntered ? ` · entered${c.userRank ? ` (rank ${c.userRank})` : ''}` : '';
+            return `${c.ref}  [${c.category || '?'}] ${c.title}\n    ends ${ends} · ${c.teamCount} teams${reward}${mine} · ${c.url}`;
+          })
+          .join('\n');
+        return {
+          text: `${k.competitions.length} Kaggle competition(s):\n\n${body}\n\nKaggle's deliverable is a submission file scored by a metric — run challenge_spec with the ref to turn one into a checklist.`,
+        };
+      }
       const r = await challenge.listChallenges({
         tracks: args.tracks,
         deliverableOnly: args.all !== true,
@@ -2041,7 +2083,7 @@ function sanitizeAssistantReply(text) {
 
     emit({ type: 'turn_start' });
 
-    const schemas = await toolSchemas(settings);
+    const schemas = await toolSchemas(settings, { workspaceRoot });
 
     for (let step = 0; step < maxSteps; step++) {
       if (signal.aborted) break;
