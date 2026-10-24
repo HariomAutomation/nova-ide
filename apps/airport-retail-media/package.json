@@ -2,7 +2,7 @@
   "name": "airport-retail-media",
   "private": true,
   "version": "0.1.0",
-  "description": "Airport retail media platform — TopCoder Development challenge deliverable. Self-contained: nothing here imports from the host repository.",
+  "description": "Airport retail media platform \u2014 TopCoder Development challenge deliverable. Self-contained: nothing here imports from the host repository.",
   "type": "module",
   "workspaces": [
     "backend",
@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build:backend": "tsc -p backend/tsconfig.json",
-    "test:backend": "node backend/test/worked-example.mjs && node backend/test/aodb-adapter.mjs && node backend/test/presence.mjs && node backend/test/aidx-adapter.mjs",
+    "test:backend": "node backend/test/worked-example.mjs && node backend/test/aodb-adapter.mjs && node backend/test/presence.mjs && node backend/test/aidx-adapter.mjs && node backend/test/acris-adapter.mjs",
     "up": "docker compose up --build"
   },
   "engines": {
