@@ -2969,6 +2969,63 @@ suite.push(
   })
 );
 
+/* ------------------------------ kaggle submit ------------------------------ */
+
+suite.push(
+  test('kaggle: submit runs the three verified steps in order and carries the token', async () => {
+    const ws = path.join(TEST_DIR, 'kaggle-submit');
+    await fsp.mkdir(ws, { recursive: true });
+    const csv = path.join(ws, 'submission.csv');
+    await fsp.writeFile(csv, 'id,target\n1,0.5\n');
+
+    const calls = [];
+    let urlStep = '';
+    const fake = async (url, init) => {
+      const u = String(url);
+      calls.push({ url: u, method: (init && init.method) || 'GET' });
+      if (u.includes('/submissions/url/')) {
+        urlStep = u;
+        return { ok: true, status: 200, json: async () => ({ createUrl: 'https://upload.example/x', token: 'tok-123' }) };
+      }
+      if (u === 'https://upload.example/x') return { ok: true, status: 200 };
+      if (u.includes('/submissions/submit/')) return { ok: true, status: 200, json: async () => ({ status: 'pending', description: 'baseline' }) };
+      return { ok: false, status: 404 };
+    };
+
+    const r = await kaggle.submitPrediction('titanic', csv, 'baseline', { fetchImpl: fake, env: { KAGGLE_API_TOKEN: 'KGAT_x' } });
+    assert.equal(r.ok, true);
+    assert.equal(r.via, 'put');
+    assert.equal(r.token, 'tok-123', 'the token from step 1 must reach step 3');
+    assert.deepEqual(calls.map((c) => c.method), ['POST', 'PUT', 'POST'], 'the three steps, in order');
+
+    // The path carries the byte length and the mtime in SECONDS — the shape the
+    // naive guess got wrong (it put the file name in the path instead).
+    const stat = await fsp.stat(csv);
+    assert.match(urlStep, new RegExp(`/submissions/url/${stat.size}/\\d+$`), 'length and mtime go in the path');
+    assert.ok(!urlStep.includes('submission.csv'), 'the file name must NOT be in the path');
+
+    // a file that is not there is reported, not thrown
+    const missing = await kaggle.submitPrediction('t', path.join(ws, 'nope.csv'), 'x', { fetchImpl: fake, env: {} });
+    assert.equal(missing.ok, false);
+    assert.match(missing.error, /cannot read submission file/);
+
+    // an empty file is refused before any network call
+    const emptyPath = path.join(ws, 'empty.csv');
+    await fsp.writeFile(emptyPath, '');
+    let called = 0;
+    const counting = async () => { called++; return { ok: true, status: 200, json: async () => ({}) }; };
+    const empty = await kaggle.submitPrediction('t', emptyPath, 'x', { fetchImpl: counting, env: {} });
+    assert.equal(empty.ok, false);
+    assert.match(empty.error, /empty/);
+    assert.equal(called, 0, 'an empty file must not reach the network');
+
+    // 401 anywhere in the flow asks for credentials
+    const unauth = await kaggle.submitPrediction('t', csv, 'x', { fetchImpl: async () => ({ ok: false, status: 401 }), env: {} });
+    assert.equal(unauth.authRequired, true);
+    assert.ok(unauth.steps.length >= 3);
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

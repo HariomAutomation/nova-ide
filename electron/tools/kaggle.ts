@@ -233,4 +233,118 @@ async function kaggleJson(
   }
 }
 
-module.exports = { listCompetitions, kaggleAuth, KAGGLE_SETUP_STEPS, listDataFiles, downloadDataFile, listSubmissions };
+/**
+ * Submit a prediction file to a competition.
+ *
+ * The flow is three calls, not one — verified against the Kaggle client source,
+ * because the obvious guess (`/submissions/url/{ref}/{fileName}`) is wrong and
+ * fails at runtime:
+ *
+ *   1. POST competitions/{ref}/submissions/url/{contentLength}/{lastModifiedDateUtc}
+ *      multipart fileName        -> { createUrl, token }
+ *   2. PUT <createUrl> with the raw file body
+ *      (legacy: when the response carries `isComplete`, the createUrl instead
+ *       encodes guid/length/timestamp and the file goes to
+ *       POST competitions/submissions/upload/{guid}/{len}/{ts})
+ *   3. POST competitions/submissions/submit/{ref}
+ *      multipart blobFileTokens=<token>, submissionDescription=<msg>
+ *
+ * Note where the file NAME goes: in the body, not the path. The path carries the
+ * byte length and the last-modified time in seconds.
+ *
+ * This writes to a competition, so it is the caller's job to have confirmed it.
+ */
+export async function submitPrediction(
+  ref: string,
+  filePath: string,
+  description: string,
+  opts: { fetchImpl?: any; env?: any; timeoutMs?: number; fileName?: string } = {}
+): Promise<{ ok: boolean; error?: string; authRequired?: boolean; steps?: string[]; submission?: any; token?: string; via?: string }> {
+  const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  if (typeof fetchImpl !== 'function') return { ok: false, error: 'no fetch available' };
+
+  let buf: Buffer;
+  let stat: any;
+  try {
+    buf = await fs.readFile(filePath);
+    stat = await fs.stat(filePath);
+  } catch (e: any) {
+    return { ok: false, error: `cannot read submission file: ${(e && e.message) || e}` };
+  }
+  if (!buf.length) return { ok: false, error: 'submission file is empty' };
+
+  const contentLength = buf.length;
+  const lastModifiedSec = Math.floor(stat.mtimeMs / 1000);
+  const fileName = opts.fileName || path.basename(filePath);
+
+  const auth = kaggleAuth(opts.env || process.env);
+  const authHeader: any = auth ? { authorization: auth.header } : {};
+  const timeoutMs = opts.timeoutMs || 180000;
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+
+  const fail = (r: any) => {
+    if (r && r.status === 401) return { ok: false as const, authRequired: true, error: 'Kaggle rejected the request (401).', steps: KAGGLE_SETUP_STEPS };
+    return { ok: false as const, error: `Kaggle API returned HTTP ${r && r.status}` };
+  };
+
+  try {
+    // ---- step 1: ask for an upload location -------------------------------
+    const fd1 = new FormData();
+    fd1.append('fileName', fileName);
+    const r1 = await fetchImpl(
+      `${KAGGLE_API}/competitions/${encodeURIComponent(ref)}/submissions/url/${contentLength}/${lastModifiedSec}`,
+      { method: 'POST', headers: authHeader, body: fd1, signal: ctrl ? ctrl.signal : undefined }
+    );
+    if (!r1 || !r1.ok) return fail(r1);
+    const info = await r1.json();
+    const createUrl = info && info.createUrl;
+    if (!createUrl) return { ok: false, error: 'Kaggle did not return an upload url' };
+
+    // ---- step 2: upload the bytes ----------------------------------------
+    let token = info.token;
+    let via = 'put';
+    if (info.isComplete !== undefined) {
+      // legacy shape: createUrl carries /<guid>/<length>/<timestamp>
+      const parts = String(createUrl).split('/').reverse();
+      if (parts.length >= 3) {
+        via = 'legacy';
+        const fd2 = new FormData();
+        // TS's DOM lib types BlobPart narrower than reality: a Buffer is a valid
+        // BlobPart at runtime, so the cast is a lib-typing artifact, not a fix-up.
+        fd2.append('file', new Blob([buf as any]), fileName);
+        const r2 = await fetchImpl(
+          `${KAGGLE_API}/competitions/submissions/upload/${parts[0]}/${parts[1]}/${parts[2]}`,
+          { method: 'POST', headers: authHeader, body: fd2, signal: ctrl ? ctrl.signal : undefined }
+        );
+        if (!r2 || !r2.ok) return fail(r2);
+        const up = await r2.json();
+        token = (up && up.token) || token;
+      }
+    } else {
+      const r2 = await fetchImpl(createUrl, { method: 'PUT', body: buf, signal: ctrl ? ctrl.signal : undefined });
+      if (!r2 || !r2.ok) return fail(r2);
+    }
+    if (!token) return { ok: false, error: 'Kaggle did not return an upload token' };
+
+    // ---- step 3: submit --------------------------------------------------
+    const fd3 = new FormData();
+    fd3.append('blobFileTokens', String(token));
+    fd3.append('submissionDescription', String(description || ''));
+    const r3 = await fetchImpl(`${KAGGLE_API}/competitions/submissions/submit/${encodeURIComponent(ref)}`, {
+      method: 'POST',
+      headers: authHeader,
+      body: fd3,
+      signal: ctrl ? ctrl.signal : undefined,
+    });
+    if (!r3 || !r3.ok) return fail(r3);
+    const out = await r3.json().catch(() => ({}));
+    return { ok: true, submission: out, token: String(token), via };
+  } catch (e: any) {
+    return { ok: false, error: `submit failed: ${(e && e.message) || e}` };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+module.exports = { listCompetitions, kaggleAuth, KAGGLE_SETUP_STEPS, listDataFiles, downloadDataFile, listSubmissions, submitPrediction };

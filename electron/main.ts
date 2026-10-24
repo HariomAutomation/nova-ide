@@ -1068,6 +1068,43 @@ ipcMain.handle('checkpoint:restore', async (_e, { agentId }) => {
 
 /* ------------------------------ security ------------------------------ */
 
+ipcMain.handle('kaggle:files', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    return await kaggle.listDataFiles(payload.ref, {});
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e), files: [] };
+  }
+});
+
+ipcMain.handle('kaggle:download', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    const dest = payload.destPath || path.join(ws, 'data', path.basename(String(payload.fileName || 'file')));
+    return await kaggle.downloadDataFile(payload.ref, payload.fileName, dest, {});
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+ipcMain.handle('kaggle:submissions', async (_e, payload: any = {}) => {
+  try {
+    return await kaggle.listSubmissions(payload.ref, {});
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e), submissions: [] };
+  }
+});
+
+ipcMain.handle('kaggle:submit', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    const file = payload.filePath || path.join(ws, 'submission.csv');
+    return await kaggle.submitPrediction(payload.ref, file, payload.description || '', {});
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
 ipcMain.handle('challenge:find', async (_e, payload: any = {}) => {
   try {
     const limit = Math.min((payload && payload.limit) || 20, 50);
