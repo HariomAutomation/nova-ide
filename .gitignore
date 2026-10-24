@@ -48,3 +48,9 @@ nova-ide-fixed*
 
 # Challenge & Competition data files
 data/
+
+# Python environments created by the ML workflow (pandas/sklearn/lightgbm are large)
+.venv/
+venv/
+__pycache__/
+*.pyc
