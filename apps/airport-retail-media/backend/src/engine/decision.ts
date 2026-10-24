@@ -58,6 +58,16 @@ export interface CampaignCandidate {
   spentThisHourMinorUnits: number;
   /** True when the advertiser is the airline whose flight is boarding here. */
   isHomeAirline: boolean;
+  /**
+   * Trigger boosts THIS campaign gets, keyed by trigger.
+   *
+   * Per-campaign, not global — and the brief's own worked example is the proof: the
+   * perfume gets 1.5 from the delay rule while the toy store and the lounge get 1.0.
+   * A single boost applied to every candidate would multiply them all and leave the
+   * ORDER unchanged, so an injected delay could never change which ad plays and the
+   * headline "delay triggers the retailer's delay discount" demo would do nothing.
+   */
+  triggers?: { delay?: number; boarding?: number };
 }
 
 /** Everything a decision needs that is not the campaign list. */
@@ -123,18 +133,35 @@ export function audienceMatch(profile: CrowdProfile, target: SegmentWeights): nu
   return Math.min(1, sum);
 }
 
-/** The trigger boost for a decision. Delay beats boarding; otherwise no boost. */
-export function triggerBoost(input: Pick<DecisionInput, 'minutesToBoarding' | 'medianDelayMinutes'>): {
-  boost: number;
-  reason: string | null;
-} {
-  if (typeof input.medianDelayMinutes === 'number' && input.medianDelayMinutes >= 30) {
-    return { boost: DELAY_TRIGGER_BOOST, reason: `delay of ${input.medianDelayMinutes} min in this zone` };
-  }
-  if (typeof input.minutesToBoarding === 'number' && input.minutesToBoarding <= 30) {
-    return { boost: BOARDING_TRIGGER_BOOST, reason: `boarding in ${input.minutesToBoarding} min` };
-  }
-  return { boost: 1, reason: null };
+/**
+ * Which triggers are firing for this decision.
+ *
+ * A trigger is a fact about the zone, not about a campaign. Whether a given campaign
+ * benefits from it is that campaign's own business — see `boostFor`.
+ */
+export function activeTriggers(
+  input: Pick<DecisionInput, 'minutesToBoarding' | 'medianDelayMinutes'>
+): { delay: boolean; boarding: boolean; reason: string | null } {
+  const delay = typeof input.medianDelayMinutes === 'number' && input.medianDelayMinutes >= 30;
+  const boarding = typeof input.minutesToBoarding === 'number' && input.minutesToBoarding <= 30;
+  const reason = delay
+    ? `delay of ${input.medianDelayMinutes} min in this zone`
+    : boarding
+      ? `boarding in ${input.minutesToBoarding} min`
+      : null;
+  return { delay, boarding, reason };
+}
+
+/**
+ * The boost a specific campaign gets from the active triggers.
+ *
+ * A campaign that does not opt into a trigger gets 1 — it is not swept up in someone
+ * else's moment. That is what lets an injected delay actually change the winner.
+ */
+export function boostFor(c: CampaignCandidate, active: { delay: boolean; boarding: boolean }): number {
+  if (active.delay && typeof c.triggers?.delay === 'number') return c.triggers.delay;
+  if (active.boarding && typeof c.triggers?.boarding === 'number') return c.triggers.boarding;
+  return 1;
 }
 
 /** Hard rules, in the brief's order. Returns the rule name, or null to pass. */
@@ -193,7 +220,7 @@ export function hardRuleFailure(
  * one the brief requires to be answerable.
  */
 export function decide(input: DecisionInput): DecisionRecord {
-  const { boost, reason: boostReason } = triggerBoost(input);
+  const active = activeTriggers(input);
   const candidates: DecisionCandidate[] = [];
 
   // ---- Filter + Score ----------------------------------------------------
@@ -212,6 +239,7 @@ export function decide(input: DecisionInput): DecisionRecord {
       continue;
     }
     const match = audienceMatch(input.profile, c.target);
+    const boost = boostFor(c, active);
     // Clamp the final score too. A boost can push Match x Boost above 1, and a score
     // that outruns its own range is not comparable across screens. Clamping is
     // monotonic, so it cannot change the ordering — only the numbers shown.
@@ -223,7 +251,7 @@ export function decide(input: DecisionInput): DecisionRecord {
       audienceMatch: match,
       triggerBoost: boost,
       filteredBy: null,
-      reason: `audience match ${(match * 100).toFixed(0)}%${boost !== 1 ? ` x ${boost} (${boostReason})` : ''}`,
+      reason: `audience match ${(match * 100).toFixed(0)}%${boost !== 1 ? ` x ${boost} (${active.reason})` : ''}`,
     });
   }
 
