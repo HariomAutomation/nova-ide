@@ -1,0 +1,151 @@
+openapi: 3.1.0
+info:
+  title: AeroMedia — Airport Retail Media Platform API
+  description: >-
+    Real-time flight-triggered retail media platform API. Delivers dynamic advertising
+    decisions on airport screens driven by AODB flight schedules, AIDX flight-leg updates,
+    and ACRIS passenger queue sensors.
+  version: 0.1.0
+servers:
+  - url: http://localhost:4000
+    description: Local Docker / Node server
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      description: Returns service status, current simulation clock, and active SSE subscriber count.
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  time:
+                    type: string
+                    format: date-time
+                  subscribers:
+                    type: integer
+
+  /api/events:
+    get:
+      summary: Real-time telemetry SSE stream
+      description: Server-Sent Events stream delivering flight events, zone presence updates, screen ad decisions, and redemptions.
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/inject:
+    post:
+      summary: Inject live flight telemetry event
+      description: Injects AIDX flight delays, gate changes, ACRIS queue surges, or screen hardware status changes. Re-computes affected zone presence and updates screen decisions in < 2ms.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - kind
+              properties:
+                kind:
+                  type: string
+                  enum: [delay, gate-change, queue-surge, screen-offline]
+                flightId:
+                  type: string
+                  example: FL-SL882
+                minutes:
+                  type: integer
+                  example: 45
+                gate:
+                  type: string
+                  example: Gate 44
+                checkpointId:
+                  type: string
+                people:
+                  type: integer
+                  example: 80
+                screenId:
+                  type: string
+                  example: SCR-T1-G42
+      responses:
+        '200':
+          description: Event injected and processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  broadcast:
+                    type: integer
+                  elapsedMs:
+                    type: number
+
+  /api/decision/{screenId}:
+    get:
+      summary: Get latest ad decision audit trail
+      description: Returns the full evidence-first decision record for a screen, including crowd profile, candidate rankings, winner, and evidence.
+      parameters:
+        - name: screenId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Decision audit record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  screenId:
+                    type: string
+                  timestamp:
+                    type: string
+                  winnerId:
+                    type: string
+                  winningReason:
+                    type: string
+                  evidence:
+                    type: array
+                    items:
+                      type: string
+
+  /api/redeem:
+    post:
+      summary: Redeem passenger promotional voucher
+      description: Records an instant in-store redemption for an advertised campaign promo code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - promoCode
+              properties:
+                promoCode:
+                  type: string
+                  example: AURA-DXB-20
+                screenId:
+                  type: string
+      responses:
+        '200':
+          description: Redemption logged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean

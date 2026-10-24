@@ -82,7 +82,7 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
  * The check is on the RESOLVED path, not the raw url: `..%2f` and a symlink both
  * look innocent as strings and are not after resolution.
  */
-function serveStatic(staticDir: string, urlPath: string, res: http.ServerResponse): boolean {
+function serveStatic(staticDir: string, urlPath: string, res: http.ServerResponse, isHead = false): boolean {
   const root = path.resolve(staticDir);
   const rel = decodeURIComponent(urlPath).replace(/^\/+/, '');
   let target = path.resolve(root, rel);
@@ -95,7 +95,11 @@ function serveStatic(staticDir: string, urlPath: string, res: http.ServerRespons
   }
   const ext = path.extname(target).toLowerCase();
   res.writeHead(200, { 'content-type': MIME[ext] ?? 'application/octet-stream' });
-  fs.createReadStream(target).pipe(res);
+  if (isHead) {
+    res.end();
+  } else {
+    fs.createReadStream(target).pipe(res);
+  }
   return true;
 }
 
@@ -199,7 +203,7 @@ export function createApp(state: SimulationState, opts: AppOptions = {}): App {
 
     // ---- static ----------------------------------------------------------
     if (opts.staticDir && fs.existsSync(opts.staticDir)) {
-      if (req.method === 'GET' && serveStatic(opts.staticDir, p, res)) return;
+      if ((req.method === 'GET' || req.method === 'HEAD') && serveStatic(opts.staticDir, p, res, req.method === 'HEAD')) return;
     }
 
     sendJson(res, 404, { ok: false, error: `no route for ${req.method} ${p}` });
