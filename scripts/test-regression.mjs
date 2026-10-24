@@ -2267,7 +2267,50 @@ suite.push(
       }
     }
 
-    // --- 2. reasoning then content -> only the content is the answer
+    // --- 2. reasoning + tool_calls -> content stays empty; the reasoning is the
+    // model's scratchpad, not an answer. Promoting it would show the user the
+    // chain-of-thought as if it were a reply.
+    {
+      const { srv, port } = await serve([
+        { reasoning: 'THINKING-SCRATCHPAD' },
+        { tool_calls: [{ index: 0, id: 'c1', function: { name: 'read_file', arguments: '{"path":"a.txt"}' } }] },
+      ]);
+      try {
+        const r = await callModel({
+          config: { baseUrl: `http://127.0.0.1:${port}`, apiKey: 'k', model: 'm', temperature: 0 },
+          messages: [{ role: 'user', content: 'read a.txt' }],
+          tools: [{ type: 'function', function: { name: 'read_file', parameters: { type: 'object' } } }],
+        });
+        assert.equal(r.content, '', 'a tool-call turn must not turn its reasoning into the reply');
+        assert.ok(!String(r.content).includes('THINKING-SCRATCHPAD'), 'scratchpad must never be the answer');
+        assert.equal(r.toolCalls.length, 1, 'the tool call must survive');
+        assert.equal(r.toolCalls[0].name, 'read_file');
+        assert.match(r.toolCalls[0].argsRaw, /a\.txt/);
+      } finally {
+        srv.close();
+      }
+    }
+
+    // --- 3. legacy `function_call` -> still parsed as a tool call
+    {
+      const { srv, port } = await serve([
+        { function_call: { name: 'read_file', arguments: '{"path":"legacy.txt"}' } },
+      ]);
+      try {
+        const r = await callModel({
+          config: { baseUrl: `http://127.0.0.1:${port}`, apiKey: 'k', model: 'm', temperature: 0 },
+          messages: [{ role: 'user', content: 'read legacy.txt' }],
+          tools: [{ type: 'function', function: { name: 'read_file', parameters: { type: 'object' } } }],
+        });
+        assert.equal(r.toolCalls.length, 1, 'a legacy function_call must not be dropped');
+        assert.equal(r.toolCalls[0].name, 'read_file');
+        assert.match(r.toolCalls[0].argsRaw, /legacy\.txt/);
+      } finally {
+        srv.close();
+      }
+    }
+
+    // --- 4. reasoning then content -> only the content is the answer
     {
       const { srv, port } = await serve([
         { reasoning: 'THINKING-ONLY' },

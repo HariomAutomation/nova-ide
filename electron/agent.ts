@@ -827,6 +827,9 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
       // chain-of-thought must never appear as the answer. If `content` ends up
       // empty we fall back to it below, so the reply is never silently lost.
       let reasoning = '';
+      // Legacy OpenAI `function_call` (a single call, no id/index). Some
+      // providers still emit it; without this the tool call is dropped.
+      let legacyFn = null;
       let streamThoughtSig = null;
       const toolAcc = new Map();
 
@@ -882,6 +885,12 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
                 ? delta.reasoning
                 : '';
           if (rChunk) reasoning += rChunk;
+          if (delta.function_call && typeof delta.function_call === 'object') {
+            const lf = delta.function_call;
+            legacyFn = legacyFn || { name: '', args: '' };
+            if (lf.name) legacyFn.name += lf.name;
+            if (lf.arguments) legacyFn.args += lf.arguments;
+          }
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               const i = tc.index ?? 0;
@@ -930,10 +939,24 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
         };
       });
 
+      // A legacy `function_call` stream is a single call with no index/id.
+      if (!toolCalls.length && legacyFn && legacyFn.name) {
+        toolCalls.push({
+          id: `call_legacy_${Date.now()}`,
+          name: legacyFn.name,
+          argsRaw: legacyFn.args,
+        });
+      }
+
       // The model put its answer in `reasoning` and left `content` empty. Without
       // this the user watches the reply arrive in the network log and sees
       // nothing in the chat.
-      if (!content && reasoning) {
+      //
+      // Guarded on there being NO tool call: when the model's output for this turn
+      // is a tool call, an empty `content` is correct and its `reasoning` is its
+      // private scratchpad — promoting that to the reply would show the user the
+      // model's chain-of-thought as if it were an answer.
+      if (!content && reasoning && !toolCalls.length) {
         content = reasoning;
         if (onDelta) onDelta(reasoning);
       }
