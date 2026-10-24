@@ -7,7 +7,7 @@ import { execSync } from 'node:child_process';
  * as the codebase is progressively annotated with full types.
  */
 
-const MAX_ALLOWED_ERRORS = 137;
+const MAX_ALLOWED_ERRORS = 134;
 
 console.log('[typecheck:electron] Running TypeScript check (--noCheck false --noEmit)...');
 

@@ -1697,7 +1697,7 @@ function detectMode(userText, settings = {}, contextNote = '', sessionOrHistory 
  * Run the agent loop for one user turn.
  * send(event) pushes {type, ...} events to the renderer.
  */
-async function runAgent({ agentId, config, workspaceRoot, userText, settings = {}, contextNote, history, send, notifyFsChanged }) {
+async function runAgent({ agentId, config, workspaceRoot, userText, settings = {}, contextNote, history, send, notifyFsChanged }: any) {
   const session = getSession(agentId);
   stopAgent(agentId);
   session.abort = new AbortController();
@@ -1903,7 +1903,7 @@ function sanitizeAssistantReply(text) {
       for (const call of toolCalls) {
         if (signal.aborted) break;
 
-        let args = {};
+        let args: any = {};
         try {
           args = JSON.parse(call.argsRaw || '{}');
         } catch {
