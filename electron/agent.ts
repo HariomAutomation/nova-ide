@@ -13,6 +13,7 @@ const { isWithin, configRoot } = require('./tools/paths');
 const memory = require('./tools/memory');
 const security = require('./tools/security');
 const findingsStore = require('./tools/findings');
+const challenge = require('./tools/challenge');
 const mcp = require('./mcp');
 const geminiWeb = require('./gemini-web');
 const cloudcode = require('./tools/cloudcode');
@@ -334,6 +335,50 @@ const TOOL_DEFS = [
         path: { type: 'string', description: 'Workspace the audit ran against (defaults to the workspace root).' },
         format: { type: 'string', enum: ['markdown', 'sarif', 'json'], description: 'Output format (default markdown).' },
       },
+    },
+  },
+  {
+    name: 'challenge_spec',
+    category: 'read',
+    description:
+      'Challenge workflow 1/3. Ingest a contest brief into a tracked requirement checklist for this workspace. Pass `url` (TopCoder URL or id) or `text`. Deliverables become items grouped by section; boilerplate is dropped. Re-ingesting KEEPS the status of items already done. Work against this checklist — a missing deliverable is the most common way to lose.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'TopCoder challenge URL or id.' },
+        text: { type: 'string', description: 'A pasted challenge brief, if there is no URL.' },
+        name: { type: 'string', description: 'Challenge name (used when there is no URL to fetch).' },
+      },
+    },
+  },
+  {
+    name: 'challenge_check',
+    category: 'read',
+    description:
+      'Challenge workflow 2/3. Set one checklist item status (pending|generating|done|verified|skipped) and/or a note, as each deliverable is finished.',
+    parameters: {
+      type: 'object',
+      properties: {
+        item_id: { type: 'string', description: 'The checklist item id from challenge_spec.' },
+        status: { type: 'string', enum: ['pending', 'generating', 'done', 'verified', 'skipped'], description: 'New status.' },
+        note: { type: 'string', description: 'Short note: what was produced, where it lives.' },
+      },
+      required: ['item_id'],
+    },
+  },
+  {
+    name: 'challenge_pack',
+    category: 'read',
+    description:
+      'Challenge workflow 3/3. Bundle deliverables into a submission zip. REFUSES while items are still open unless `force`, listing what is missing. Returns the zip path and file list.',
+    parameters: {
+      type: 'object',
+      properties: {
+        files: { type: 'array', items: { type: 'string' }, description: 'Files to include, relative to the workspace.' },
+        out_path: { type: 'string', description: 'Where to write the zip (default: <workspace>/submission.zip).' },
+        force: { type: 'boolean', description: 'Pack even if checklist items are still open.' },
+      },
+      required: ['files'],
     },
   },
   {
@@ -1436,6 +1481,60 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
     case 'security_report': {
       const body = await findingsStore.report(args.path || workspaceRoot, { format: args.format || 'markdown' });
       return { text: body };
+    }
+    case 'challenge_spec': {
+      const target = workspaceRoot;
+      let payload = null;
+      let note = '';
+      if (args.url) {
+        const id = challenge.parseChallengeId(args.url);
+        if (!id) return { text: `Could not read a challenge id out of "${args.url}". Pass a TopCoder challenge URL or id.` };
+        const f = await challenge.fetchChallenge(id);
+        if (!f.ok) return { text: `Could not fetch that challenge: ${f.error}` };
+        payload = {
+          source: 'topcoder', id: f.challenge.id, name: f.challenge.name, url: f.challenge.url,
+          tags: f.challenge.tags, deadlines: f.challenge.deadlines, description: f.challenge.description,
+        };
+        note = `Fetched from TopCoder. Format: ${f.challenge.fileTypes || 'unspecified'} · closes ${f.challenge.submissionEndDate || '?'} · ${f.challenge.registrants} registered, ${f.challenge.submissions} submitted.`;
+      } else if (args.text) {
+        payload = { source: 'pasted', name: args.name || 'Pasted challenge', description: args.text };
+      } else {
+        return { text: 'Pass either `url` (a TopCoder challenge) or `text` (a pasted brief).' };
+      }
+      const spec = await challenge.saveSpec(target, payload);
+      const p = challenge.progress(spec);
+      const grouped: any = {};
+      for (const it of spec.items) (grouped[it.group] = grouped[it.group] || []).push(it);
+      const body = Object.entries(grouped)
+        .map(([g, items]: any) => `${g}:\n` + items.map((i: any) => `  ${i.id}  [${i.status}] ${i.text}`).join('\n'))
+        .join('\n');
+      return {
+        text:
+          `Challenge: ${spec.name}\n${note ? note + '\n' : ''}` +
+          `Checklist: ${p.total} items (${p.done} done).\n\n${body}\n\n` +
+          `Work through these and mark each with challenge_check as you finish it, then call challenge_pack.`,
+      };
+    }
+    case 'challenge_check': {
+      const r = await challenge.setItem(workspaceRoot, args.item_id, { status: args.status, note: args.note });
+      if (r.error) return { text: `Error: ${r.error}` };
+      const p = challenge.progress(await challenge.listSpec(workspaceRoot));
+      return { text: `Marked ${r.item.id} as ${r.item.status} (${p.done}/${p.total} done).` };
+    }
+    case 'challenge_pack': {
+      const r = await challenge.pack(workspaceRoot, {
+        files: args.files,
+        outPath: args.out_path,
+        force: args.force === true,
+      });
+      if (!r.ok) {
+        return {
+          text:
+            `Could not pack: ${r.error}` +
+            (r.blocked && r.blocked.length ? `\nStill open:\n` + r.blocked.map((b) => `  ${b}`).join('\n') : ''),
+        };
+      }
+      return { text: `Packed ${r.files.length} file(s) into ${r.path} (${r.bytes} bytes).\n${r.files.join('\n')}` };
     }
     case 'codebase_search': {
       const r = await fsTools.codebaseSearch({

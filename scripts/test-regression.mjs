@@ -15,6 +15,7 @@ import { describeHttpError } from '../dist-electron/tools/errors.js';
 import { gpuPlan } from '../dist-electron/tools/gpu-flags.js';
 import { scan as secScan } from '../dist-electron/tools/security.js';
 import * as findingsStore from '../dist-electron/tools/findings.js';
+import * as challenge from '../dist-electron/tools/challenge.js';
 import {
   loadRules,
   toolSchemas,
@@ -2400,6 +2401,163 @@ suite.push(
         srv.close();
       }
     }
+  })
+);
+
+/* ------------------------------ challenge workflow ------------------------------ */
+
+const SAMPLE_SPEC = [
+  '**CHALLENGE OBJECTIVES:**',
+  '* Design a new online store, from the home page to the order confirmation.',
+  '* Improve the customer experience of browsing, choosing and buying products.',
+  '',
+  '**ROLLING CHECKPOINT REQUIREMENTS**',
+  'Submit the following screens for checkpoint feedback:',
+  '01) Home',
+  '03) Product Page',
+  '',
+  '**FINAL SUBMISSION REQUIREMENTS**',
+  'Submit all screens with the checkpoint feedback applied:',
+  '01) Home',
+  '02) Product Listing',
+  '04) Cart',
+  '',
+  '- If your submission wins, your source files must be correct and final fixes must be completed.',
+  '- You may submit as many times as you\'d like during the submission phase.',
+].join('\n');
+
+suite.push(
+  test('challenge: parses a challenge reference and extracts a grouped checklist', async () => {
+    // a TopCoder URL, a bare uuid, and a legacy numeric id all resolve
+    assert.equal(
+      challenge.parseChallengeId('https://www.topcoder.com/challenges/e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83'),
+      'e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83'
+    );
+    assert.equal(challenge.parseChallengeId('e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83'), 'e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83');
+    assert.equal(challenge.parseChallengeId('30129302'), '30129302');
+    assert.equal(challenge.parseChallengeId('hello world'), null);
+    assert.equal(challenge.parseChallengeId(''), null);
+
+    const reqs = challenge.extractRequirements(SAMPLE_SPEC);
+    const texts = reqs.map((r) => r.text);
+    // the real deliverables must all be there
+    for (const want of ['Home', 'Product Page', 'Product Listing', 'Cart']) {
+      assert.ok(texts.includes(want), `checklist must contain "${want}"`);
+    }
+    // grouped under the heading they appeared beneath
+    assert.ok(reqs.find((r) => r.text === 'Cart').group.includes('FINAL SUBMISSION'), 'items keep their section');
+    // boilerplate must NOT become a requirement
+    assert.ok(!texts.some((t) => /may submit as many times/i.test(t)), 'submission boilerplate is not a requirement');
+    assert.ok(!texts.some((t) => /if your submission wins/i.test(t)), 'payment boilerplate is not a requirement');
+    // duplicates across sections collapse to one entry per section, not per line
+    assert.equal(texts.filter((t) => t === 'Home').length, 2, 'Home appears in both checkpoint and final sections');
+  })
+);
+
+suite.push(
+  test('challenge: fetchChallenge reads the TopCoder shape without hitting the network', async () => {
+    const fake = async () => ({
+      ok: true,
+      json: async () => ({
+        id: 'e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83',
+        name: 'FAST - Premium Fashion Storefront Design Challenge (48 hrs)',
+        description: SAMPLE_SPEC,
+        tags: ['Web Design'],
+        numOfRegistrants: 37,
+        numOfSubmissions: 10,
+        submissionEndDate: '2026-10-25T15:45:00.000Z',
+        metadata: [{ name: 'fileTypes', value: '["fig"]' }],
+        phases: [
+          { name: 'Submission', scheduledEndDate: '2026-10-25T15:45:00.000Z' },
+          { name: 'Review', scheduledEndDate: '2026-10-30T19:45:00.000Z' },
+        ],
+      }),
+    });
+    const r = await challenge.fetchChallenge('e68b8eaf', { fetchImpl: fake });
+    assert.equal(r.ok, true);
+    assert.match(r.challenge.name, /Premium Fashion Storefront/);
+    assert.equal(r.challenge.fileTypes, '["fig"]');
+    assert.equal(r.challenge.deadlines.length, 2);
+    assert.match(r.challenge.url, /topcoder\.com\/challenges\//);
+
+    // a bad response is reported, not thrown
+    const bad = await challenge.fetchChallenge('x', { fetchImpl: async () => ({ ok: false, status: 500 }) });
+    assert.equal(bad.ok, false);
+    assert.match(bad.error, /HTTP 500/);
+    const junk = await challenge.fetchChallenge('x', { fetchImpl: async () => ({ ok: true, json: async () => ({}) }) });
+    assert.equal(junk.ok, false);
+  })
+);
+
+suite.push(
+  test('challenge: the checklist stores progress and re-ingesting a spec keeps the work', async () => {
+    const ws = path.join(TEST_DIR, 'chal-1');
+    await fsp.mkdir(ws, { recursive: true });
+
+    const spec = await challenge.saveSpec(ws, { source: 'topcoder', name: 'Test', description: SAMPLE_SPEC });
+    assert.ok(spec.items.length >= 5, 'the spec produced checklist items');
+    assert.equal(challenge.progress(spec).done, 0);
+    assert.equal(challenge.progress(spec).complete, false);
+
+    const home = spec.items.find((i) => i.text === 'Home');
+    await challenge.setItem(ws, home.id, { status: 'done', note: 'hero + grid' });
+    assert.equal(challenge.progress(await challenge.listSpec(ws)).done, 1);
+
+    // re-ingesting must not wipe progress — that is the whole point of the store
+    await challenge.saveSpec(ws, { source: 'topcoder', name: 'Test', description: SAMPLE_SPEC });
+    const again = await challenge.listSpec(ws);
+    const kept = again.items.find((i) => i.id === home.id);
+    assert.equal(kept.status, 'done', 'a re-ingest must preserve status');
+    assert.equal(kept.note, 'hero + grid', 'and the note');
+
+    // bad input is reported, not thrown
+    assert.match((await challenge.setItem(ws, home.id, { status: 'nope' })).error, /status must be/);
+    assert.match((await challenge.setItem(ws, 'zzzzzzzz', { status: 'done' })).error, /no checklist item/);
+    assert.match((await challenge.setItem(path.join(TEST_DIR, 'nowhere'), 'x')).error, /no challenge spec/);
+  })
+);
+
+suite.push(
+  test('challenge: the zip it writes is a real zip, and packing is blocked while items are open', async () => {
+    const ws = path.join(TEST_DIR, 'chal-2');
+    await fsp.mkdir(path.join(ws, 'out'), { recursive: true });
+    await fsp.writeFile(path.join(ws, 'out', 'Home.png'), Buffer.from('PNG-BYTES'));
+    await fsp.writeFile(path.join(ws, 'README.md'), '# Submission\n');
+
+    await challenge.saveSpec(ws, { name: 'T', description: '01) Home\n02) Cart\n' });
+
+    // refuses while the checklist is open — a missing deliverable is how you lose
+    const blocked = await challenge.pack(ws, { files: ['README.md'] });
+    assert.equal(blocked.ok, false);
+    assert.match(blocked.error, /not complete/);
+    assert.ok(blocked.blocked.length >= 1, 'it must say which items are still open');
+
+    for (const it of (await challenge.listSpec(ws)).items) await challenge.setItem(ws, it.id, { status: 'done' });
+    const outPath = path.join(ws, 'submission.zip');
+    const r = await challenge.pack(ws, { files: ['README.md', 'out/Home.png'], outPath });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.files, ['README.md', 'out/Home.png']);
+
+    // and the bytes really are a zip: local header, entry names, and a working CRC
+    const buf = await fsp.readFile(outPath);
+    assert.equal(buf.readUInt32LE(0), 0x04034b50, 'must start with the local file header signature');
+    assert.ok(buf.includes(Buffer.from('out/Home.png')), 'entry names are stored');
+    assert.ok(buf.includes(Buffer.from('README.md')));
+    assert.equal(buf.readUInt32LE(buf.length - 22), 0x06054b50, 'must end with the end-of-central-directory record');
+
+    // The stored CRC must match the entry's payload — recompute it the way a
+    // reader does. The FIRST entry is README.md (the order the files were passed),
+    // and its local header sits at offset 0.
+    const zlib = await import('node:zlib');
+    const firstPayload = Buffer.from('# Submission\n');
+    const crc = zlib.crc32(firstPayload) >>> 0;
+    assert.equal(buf.readUInt32LE(14), crc, 'the first entry\'s CRC must match its data');
+    // and the header must declare the right length
+    assert.equal(buf.readUInt32LE(18), firstPayload.length, 'uncompressed size in the header');
+
+    const missing = await challenge.pack(ws, { files: ['nope.txt'], outPath, force: true });
+    assert.equal(missing.ok, false);
+    assert.match(missing.error, /cannot read/);
   })
 );
 
