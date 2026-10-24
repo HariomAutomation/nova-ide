@@ -1575,18 +1575,35 @@ function CloudTab() {
 
             <Row
               label="Privacy & Isolation"
-              desc='Nova Drive access is read-only and strictly isolated to the "Nova IDE" folder. Personal files and documents are never touched.'
+              desc={
+                drive.needsReconsent
+                  ? 'Access level updated: Token has legacy broad drive.readonly access. Re-consent with drive.file is recommended to enforce strict folder isolation.'
+                  : 'Nova Drive access uses drive.file and is strictly isolated to the "Nova IDE" folder. Personal files and documents are never touched.'
+              }
               control={
-                <button
-                  className="btn small"
-                  onClick={() =>
-                    window.nova?.openExternal
-                      ? window.nova.openExternal('https://drive.google.com/drive/my-drive')
-                      : window.open('https://drive.google.com/drive/my-drive', '_blank')
-                  }
-                >
-                  Open Drive ↗
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {drive.needsReconsent && (
+                    <button
+                      className="btn small primary"
+                      onClick={async () => {
+                        await useStore.getState().driveSignOut();
+                        await useStore.getState().driveSignIn();
+                      }}
+                    >
+                      Re-connect
+                    </button>
+                  )}
+                  <button
+                    className="btn small"
+                    onClick={() =>
+                      window.nova?.openExternal
+                        ? window.nova.openExternal('https://drive.google.com/drive/my-drive')
+                        : window.open('https://drive.google.com/drive/my-drive', '_blank')
+                    }
+                  >
+                    Open Drive ↗
+                  </button>
+                </div>
               }
             />
             <Row

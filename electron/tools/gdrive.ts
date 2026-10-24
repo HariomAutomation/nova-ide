@@ -98,16 +98,29 @@ async function effectiveConfig() {
 async function status() {
   const cfg = await readConfig();
   const eff = await effectiveConfig();
+  const connected = !!cfg.refreshToken;
+
+  const grantedScope = cfg.grantedScope || null;
+  const hasDriveFile = Boolean(grantedScope && grantedScope.includes('drive.file'));
+  const hasDriveReadOnly = Boolean(grantedScope && grantedScope.includes('drive.readonly'));
+
+  // If connected, flag needsReconsent if token is legacy (no grantedScope or has drive.readonly instead of drive.file)
+  const needsReconsent = connected && (!grantedScope || !hasDriveFile || hasDriveReadOnly);
+  const isolated = connected && !needsReconsent && hasDriveFile;
+
   return {
     configPath: getConfigPath(),
     hasClient: !!eff.clientId,
     builtin: !cfg.clientId && !!DEFAULT_CLIENT_ID,
     clientId: cfg.clientId || null,
-    connected: !!cfg.refreshToken,
+    connected,
     email: cfg.email || null,
     name: cfg.name || null,
     picture: cfg.picture || null,
     scope: SCOPE,
+    grantedScope: grantedScope || (connected ? 'https://www.googleapis.com/auth/drive.readonly (legacy)' : null),
+    needsReconsent,
+    isolated,
   };
 }
 
@@ -127,6 +140,7 @@ async function save(patch) {
 async function logout() {
   const cfg = await readConfig();
   delete cfg.refreshToken;
+  delete cfg.grantedScope;
   delete cfg.email;
   delete cfg.name;
   delete cfg.picture;
@@ -179,6 +193,23 @@ async function getAccessToken() {
     throw new Error(j.error_description || j.error || `token refresh failed (HTTP ${res.status})`);
   }
   accessCache = { token: j.access_token, exp: Date.now() + (j.expires_in || 3600) * 1000 - 60000 };
+  if (!cfg.grantedScope) {
+    if (j.scope) {
+      cfg.grantedScope = j.scope;
+      await writeConfig(cfg);
+    } else {
+      // Query tokeninfo once to backfill grantedScope for existing users
+      fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${j.access_token}`)
+        .then((r) => r.ok && r.json())
+        .then(async (info: any) => {
+          if (info?.scope) {
+            cfg.grantedScope = info.scope;
+            await writeConfig(cfg);
+          }
+        })
+        .catch(() => {});
+    }
+  }
   return accessCache.token;
 }
 
@@ -238,7 +269,7 @@ async function login() {
         try {
           const ui = await fetch(USERINFO_URL, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
           if (ui.ok) {
-            const j = await ui.json();
+            const j: any = await ui.json();
             profile = { email: j.email || null, name: j.name || null, picture: j.picture || null };
           }
         } catch {}
@@ -246,6 +277,7 @@ async function login() {
         const next = {
           ...cfg,
           refreshToken: tokens.refresh_token || cfg.refreshToken,
+          grantedScope: tokens.scope || SCOPE,
           email: profile.email || cfg.email || null,
           name: profile.name || cfg.name || null,
           picture: profile.picture || cfg.picture || null,

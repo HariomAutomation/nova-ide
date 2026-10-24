@@ -703,6 +703,8 @@ suite.push(
     const st = await gdrive.status();
     assert.equal(typeof st.connected, 'boolean');
     assert.equal(typeof st.hasClient, 'boolean');
+    assert.equal(typeof st.needsReconsent, 'boolean');
+    assert.equal(typeof st.isolated, 'boolean');
     assert.match(st.scope, /drive\.(file|readonly)/);
     assert.match(st.configPath, /gdrive\.json$/);
   })

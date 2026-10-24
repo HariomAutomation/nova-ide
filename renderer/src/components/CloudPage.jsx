@@ -77,8 +77,56 @@ export default function CloudPage() {
     <div className="page-main">
       {header(
         <span>
-          Connected{drive.email ? ` as ${drive.email}` : ''} &middot; <span style={{ color: 'var(--accent)', fontWeight: 500 }}>🔒 Isolated to "Nova IDE" folder</span>
+          Connected{drive.email ? ` as ${drive.email}` : ''} &middot;{' '}
+          {drive.needsReconsent ? (
+            <span style={{ color: 'var(--warning, #eab308)', fontWeight: 500 }}>
+              ⚠️ Full Drive scope (Re-consent recommended)
+            </span>
+          ) : (
+            <span style={{ color: 'var(--accent)', fontWeight: 500 }}>
+              🔒 Isolated to &quot;Nova IDE&quot; folder
+            </span>
+          )}
         </span>
+      )}
+      {drive.needsReconsent && (
+        <div
+          className="cloud-reconsent-banner"
+          style={{
+            padding: '12px 16px',
+            background: 'rgba(234, 179, 8, 0.12)',
+            border: '1px solid rgba(234, 179, 8, 0.35)',
+            borderRadius: 6,
+            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+          }}
+        >
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: '18px', lineHeight: 1 }}>⚠️</span>
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>
+                Access level badla — Re-consent zaroori hai
+              </div>
+              <p className="muted small" style={{ margin: 0, lineHeight: 1.4 }}>
+                Aapka current token purane broad (<b>drive.readonly</b>) scope se connected hai, jisse poori Google Drive readable hai.
+                Naye privacy-safe isolated (<b>drive.file</b>) mode me aane ke liye sign out karke dobara sign in karein.
+              </p>
+            </div>
+          </div>
+          <button
+            className="btn small primary"
+            style={{ flexShrink: 0 }}
+            onClick={async () => {
+              await useStore.getState().driveSignOut();
+              await useStore.getState().driveSignIn();
+            }}
+          >
+            Re-connect Now
+          </button>
+        </div>
       )}
       {drive.error && (
         <div
