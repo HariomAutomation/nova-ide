@@ -2831,8 +2831,14 @@ suite.push(
     const basic = kaggle.kaggleAuth({ KAGGLE_USERNAME: 'me', KAGGLE_KEY: 'secret' });
     assert.equal(basic.scheme, 'basic');
     assert.equal(basic.header, 'Basic ' + Buffer.from('me:secret').toString('base64'));
-    assert.equal(kaggle.kaggleAuth({}), null, 'no creds -> no header');
-    assert.equal(kaggle.kaggleAuth({ KAGGLE_USERNAME: 'me' }), null, 'a username alone is not enough');
+    // Hermetic: point at a home that cannot exist. Calling kaggleAuth({}) would read
+    // the real ~/.kaggle, so this would pass in CI and fail on a machine that has
+    // credentials set up — exactly the machine we are building for.
+    const NO_HOME = { home: '/definitely/not/a/real/home' };
+    assert.equal(kaggle.kaggleAuth({}, NO_HOME), null, 'no creds -> no header');
+    // It must never hand back the value, only where it came from.
+    assert.equal(kaggle.kaggleAuth({ KAGGLE_API_TOKEN: 'KGAT_abc' }, NO_HOME).source, 'KAGGLE_API_TOKEN');
+    assert.equal(kaggle.kaggleAuth({ KAGGLE_USERNAME: 'me' }, NO_HOME), null, 'a username alone is not enough');
 
     // 401 is reported as "you need credentials", with the steps
     const unauth = await kaggle.listCompetitions({ fetchImpl: async () => ({ ok: false, status: 401 }), env: {} });
@@ -3207,6 +3213,59 @@ suite.push(
 
     assert.equal(penpotFiles.length, 1);
     assert.equal(penpotFiles[0].name, 'mobile-app-wireframe.penpot');
+  })
+);
+
+/* ---------------------------- kaggle credentials ---------------------------- */
+
+suite.push(
+  test('kaggle: finds credentials in all four places the client uses, files included', async () => {
+    const home = path.join(TEST_DIR, 'kaggle-home');
+    const kdir = path.join(home, '.kaggle');
+    await fsp.mkdir(kdir, { recursive: true });
+
+    // 1 and 2: the env vars
+    assert.equal(kaggle.kaggleAuth({ KAGGLE_API_TOKEN: 'KGAT_env' }, { home }).scheme, 'token');
+    assert.equal(kaggle.kaggleAuth({ KAGGLE_API_TOKEN: 'KGAT_env' }, { home }).source, 'KAGGLE_API_TOKEN');
+    const basicEnv = kaggle.kaggleAuth({ KAGGLE_USERNAME: 'u', KAGGLE_KEY: 'k' }, { home });
+    assert.equal(basicEnv.scheme, 'basic');
+    assert.equal(basicEnv.source, 'KAGGLE_USERNAME/KAGGLE_KEY');
+
+    // 3: ~/.kaggle/access_token — the file Kaggle's own token screen tells you to
+    // write. A client that only read env vars would miss it entirely.
+    assert.equal(kaggle.kaggleAuth({}, { home }), null, 'nothing configured yet');
+    await fsp.writeFile(path.join(kdir, 'access_token'), 'KGAT_from_file\n');
+    const fromFile = kaggle.kaggleAuth({}, { home });
+    assert.equal(fromFile.scheme, 'token');
+    assert.equal(fromFile.header, 'Bearer KGAT_from_file', 'trailing whitespace is trimmed');
+    assert.match(fromFile.source, /access_token$/);
+
+    // 4: ~/.kaggle/kaggle.json — the classic username/key pair
+    await fsp.writeFile(path.join(kdir, 'kaggle.json'), JSON.stringify({ username: 'me', key: 'sekret' }));
+    assert.equal(kaggle.kaggleAuth({}, { home }).scheme, 'token', 'access_token wins over kaggle.json');
+
+    await fsp.rm(path.join(kdir, 'access_token'));
+    const fromJson = kaggle.kaggleAuth({}, { home });
+    assert.equal(fromJson.scheme, 'basic');
+    assert.equal(fromJson.header, 'Basic ' + Buffer.from('me:sekret').toString('base64'));
+    assert.match(fromJson.source, /kaggle\.json$/);
+
+    // a corrupt file must not throw — it just means "no credentials here"
+    await fsp.writeFile(path.join(kdir, 'kaggle.json'), 'not json at all');
+    assert.equal(kaggle.kaggleAuth({}, { home }), null);
+    await fsp.writeFile(path.join(kdir, 'kaggle.json'), JSON.stringify({ username: 'me' }));
+    assert.equal(kaggle.kaggleAuth({}, { home }), null, 'a username with no key is not credentials');
+
+    // KAGGLE_CONFIG_DIR moves the directory, as the official client allows
+    const alt = path.join(TEST_DIR, 'kaggle-alt');
+    await fsp.mkdir(alt, { recursive: true });
+    await fsp.writeFile(path.join(alt, 'access_token'), 'KGAT_alt');
+    const viaDir = kaggle.kaggleAuth({ KAGGLE_CONFIG_DIR: alt }, { home: '/definitely/not/here' });
+    assert.equal(viaDir.scheme, 'token');
+    assert.equal(viaDir.header, 'Bearer KGAT_alt');
+
+    // and nothing anywhere still means null, not a throw
+    assert.equal(kaggle.kaggleAuth({}, { home: '/definitely/not/here' }), null);
   })
 );
 

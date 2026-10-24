@@ -20,6 +20,7 @@
  */
 
 const fs = require('node:fs/promises');
+const fss = require('node:fs');
 const path = require('node:path');
 
 const KAGGLE_API = 'https://www.kaggle.com/api/v1';
@@ -43,15 +44,47 @@ export const KAGGLE_SETUP_STEPS = [
   'Competitions also need the rules accepted on the competition page, and a verified account, before the API returns data.',
 ];
 
-/** The Authorization header, if any credentials are configured. */
-export function kaggleAuth(env: any = process.env): { header: string; scheme: string } | null {
+/**
+ * The Authorization header, if any credentials are configured.
+ *
+ * Four places, in the order the official client looks: the env token, then the
+ * env username/key pair, then ~/.kaggle/access_token, then ~/.kaggle/kaggle.json.
+ * The files matter — the token screen Kaggle shows you literally tells you to
+ * write ~/.kaggle/access_token, so a client that only reads env vars would not
+ * find the credentials the user was just instructed to save.
+ *
+ * Never logs or returns the value; only the scheme and where it came from.
+ */
+export function kaggleAuth(
+  env: any = process.env,
+  opts: { home?: string; configDir?: string } = {}
+): { header: string; scheme: string; source: string } | null {
   const token = String((env && env.KAGGLE_API_TOKEN) || '').trim();
-  if (token) return { header: `Bearer ${token}`, scheme: 'token' };
+  if (token) return { header: `Bearer ${token}`, scheme: 'token', source: 'KAGGLE_API_TOKEN' };
+
   const user = String((env && env.KAGGLE_USERNAME) || '').trim();
   const key = String((env && env.KAGGLE_KEY) || '').trim();
   if (user && key) {
-    return { header: `Basic ${Buffer.from(`${user}:${key}`).toString('base64')}`, scheme: 'basic' };
+    return { header: `Basic ${Buffer.from(`${user}:${key}`).toString('base64')}`, scheme: 'basic', source: 'KAGGLE_USERNAME/KAGGLE_KEY' };
   }
+
+  const os = require('node:os');
+  const dir = opts.configDir || String((env && env.KAGGLE_CONFIG_DIR) || '').trim() || path.join(opts.home || os.homedir(), '.kaggle');
+
+  // ~/.kaggle/access_token — a bare token, the file Kaggle's own screen creates
+  try {
+    const raw = fss.readFileSync(path.join(dir, 'access_token'), 'utf8').trim();
+    if (raw) return { header: `Bearer ${raw}`, scheme: 'token', source: `${path.join(dir, 'access_token')}` };
+  } catch {}
+
+  // ~/.kaggle/kaggle.json — the classic { username, key } pair
+  try {
+    const j = JSON.parse(fss.readFileSync(path.join(dir, 'kaggle.json'), 'utf8'));
+    if (j && j.username && j.key) {
+      return { header: `Basic ${Buffer.from(`${j.username}:${j.key}`).toString('base64')}`, scheme: 'basic', source: `${path.join(dir, 'kaggle.json')}` };
+    }
+  } catch {}
+
   return null;
 }
 
