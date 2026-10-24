@@ -159,6 +159,12 @@ contextBridge.exposeInMainWorld('nova', {
   securityReport: (payload) => ipcRenderer.invoke('security:report', payload),
   securityClear: (payload) => ipcRenderer.invoke('security:clear', payload),
 
+  // challenge workflow (spec -> checklist -> package)
+  challengeList: (payload) => ipcRenderer.invoke('challenge:list', payload),
+  challengeIngest: (payload) => ipcRenderer.invoke('challenge:ingest', payload),
+  challengeSetItem: (payload) => ipcRenderer.invoke('challenge:set-item', payload),
+  challengePack: (payload) => ipcRenderer.invoke('challenge:pack', payload),
+
   // misc
   appInfo: () => ipcRenderer.invoke('app:info'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),

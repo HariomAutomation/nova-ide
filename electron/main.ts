@@ -23,6 +23,7 @@ const geminiWeb = require('./gemini-web');
 const agent = require('./agent');
 const security = require('./tools/security');
 const findings = require('./tools/findings');
+const challenge = require('./tools/challenge');
 
 const DIST = path.join(__dirname, '..', 'dist');
 const DEV_SERVER = process.env.NOVA_DEV_SERVER || null;
@@ -1064,6 +1065,60 @@ ipcMain.handle('checkpoint:restore', async (_e, { agentId }) => {
 });
 
 /* ------------------------------ security ------------------------------ */
+
+ipcMain.handle('challenge:list', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    const spec = await challenge.listSpec(ws);
+    return { ok: true, spec, progress: challenge.progress(spec) };
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e), spec: null, progress: challenge.progress(null) };
+  }
+});
+
+ipcMain.handle('challenge:ingest', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    let data: any = null;
+    if (payload.url) {
+      const id = challenge.parseChallengeId(payload.url);
+      if (!id) return { ok: false, error: 'not a TopCoder challenge url or id' };
+      const f = await challenge.fetchChallenge(id);
+      if (!f.ok) return { ok: false, error: f.error };
+      data = { source: 'topcoder', id: f.challenge.id, name: f.challenge.name, url: f.challenge.url, tags: f.challenge.tags, deadlines: f.challenge.deadlines, description: f.challenge.description };
+    } else if (payload.text) {
+      data = { source: 'pasted', name: payload.name || 'Pasted challenge', description: payload.text };
+    } else {
+      return { ok: false, error: 'pass url or text' };
+    }
+    const spec = await challenge.saveSpec(ws, data);
+    return { ok: true, spec, progress: challenge.progress(spec) };
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+ipcMain.handle('challenge:set-item', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    const r = await challenge.setItem(ws, payload.itemId, { status: payload.status, note: payload.note });
+    if (r.error) return { ok: false, error: r.error };
+    const spec = await challenge.listSpec(ws);
+    return { ok: true, item: r.item, progress: challenge.progress(spec) };
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+ipcMain.handle('challenge:pack', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    const r = await challenge.pack(ws, { files: payload.files, outPath: payload.outPath, force: payload.force === true });
+    return r;
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
 
 ipcMain.handle('security:scan', async (_e, payload: any = {}) => {
   try {
