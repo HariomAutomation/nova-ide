@@ -17,6 +17,7 @@ import { scan as secScan } from '../dist-electron/tools/security.js';
 import * as findingsStore from '../dist-electron/tools/findings.js';
 import * as challenge from '../dist-electron/tools/challenge.js';
 import * as kaggle from '../dist-electron/tools/kaggle.js';
+import * as penpot from '../dist-electron/tools/penpot.js';
 import * as verifyEngine from '../dist-electron/tools/verify.js';
 import {
   loadRules,
@@ -2559,8 +2560,15 @@ suite.push(
     assert.ok(challenge.submissionRequirements('QA').some((d) => /reproduce/i.test(d.text)));
     assert.ok(challenge.submissionRequirements('Data Science').length >= 3, 'DS has a playbook');
     assert.ok(challenge.submissionRequirements('Ideation').length >= 3, 'ideation has a playbook');
-    // a track Nova cannot deliver gets no playbook, rather than a misleading one
-    assert.deepEqual(challenge.submissionRequirements('DESIGN'), []);
+    // Design now HAS a playbook, because Penpot made design structure producible.
+    // It is still not a free pass: the TopCoder deliverable is .fig, so the
+    // playbook has to say the format is a hard requirement and that the finish is
+    // by hand. deliverability() stays false for the same reason.
+    const design = challenge.submissionRequirements('DESIGN');
+    assert.ok(design.length >= 5, 'design has a playbook now');
+    assert.ok(design.some((d) => /\.fig/.test(d.text)), 'and it names the .fig requirement');
+    assert.ok(design.some((d) => /hand|Figma/i.test(d.text)), 'and says the finish is by hand');
+    assert.equal(challenge.deliverability('DESIGN').ok, false, 'the .fig requirement still blocks it');
 
     const ws = path.join(TEST_DIR, 'chal-playbook');
     await fsp.mkdir(ws, { recursive: true });
@@ -3112,6 +3120,60 @@ suite.push(
     // an empty or absent list is handled
     assert.equal(challenge.deadlineSummary([], now).next, null);
     assert.equal(challenge.deadlineSummary(null, now).next, null);
+  })
+);
+
+/* --------------------------------- penpot --------------------------------- */
+
+suite.push(
+  test('penpot: builds a real .penpot file, and refuses a design it cannot draw', async () => {
+    // bad designs are rejected with a reason, before anything is written
+    assert.match(penpot.validateDesign({ boards: [] }).error, /non-empty/);
+    assert.match(penpot.validateDesign({ boards: [{ name: 'X' }] }).error, /positive width/);
+    assert.match(penpot.validateDesign({ boards: [{ name: 'X', width: 10, height: 10, elements: [{ kind: 'blob', x: 0, y: 0, width: 1, height: 1 }] }] }).error, /kind must be one of/);
+    assert.match(penpot.validateDesign({ boards: [{ name: 'X', width: 10, height: 10, elements: [{ kind: 'text', x: 0, y: 0, width: 1, height: 1 }] }] }).error, /content/);
+    assert.match(penpot.validateDesign(null).error, /must be an object/);
+    assert.equal(penpot.validateDesign({ boards: [{ name: 'X', width: 10, height: 10 }] }).ok, true, 'a board with no elements is fine');
+
+    // and a good one really produces a file
+    const ws = path.join(TEST_DIR, 'penpot-design');
+    await fsp.mkdir(ws, { recursive: true });
+    const r = await penpot.createDesign(ws, {
+      name: 'Test Storefront',
+      boards: [
+        { name: 'Home', width: 1440, height: 900, elements: [
+          { kind: 'rect', name: 'Navbar', x: 0, y: 0, width: 1440, height: 72, fill: '#0F172A' },
+          { kind: 'text', name: 'Hero', x: 80, y: 180, width: 700, height: 60, content: 'Hello' },
+          { kind: 'circle', name: 'Avatar', x: 1330, y: 16, width: 40, height: 40 },
+        ] },
+        { name: 'Product', width: 1440, height: 900, elements: [] },
+      ],
+    });
+    assert.equal(r.ok, true, r.error || '');
+    assert.equal(r.boards, 2);
+    assert.equal(r.elements, 3);
+    assert.ok(r.bytes > 0);
+
+    // It must be a real zip whose layout matches the documented .penpot spec:
+    // local header, the manifest, and a page directory holding shape JSON.
+    const buf = await fsp.readFile(r.path);
+    assert.equal(buf.readUInt32LE(0), 0x04034b50, 'starts with the zip local header');
+    // The library compresses entries, so the manifest CONTENT is not findable in
+    // the raw bytes — but entry names are stored plain. Assert on those.
+    assert.ok(buf.includes(Buffer.from('manifest.json')), 'has a manifest entry');
+    assert.ok(buf.includes(Buffer.from('/pages/')), 'has the pages layout');
+    assert.ok(buf.includes(Buffer.from('files/')), 'has the files/ tree');
+    // and the manifest really is a manifest: read it back out of the zip
+    const { execFileSync } = await import('node:child_process');
+    const manifest = JSON.parse(execFileSync('unzip', ['-p', r.path, 'manifest.json']).toString());
+    assert.equal(manifest.type, 'penpot/export-files', 'it is a penpot export');
+    assert.ok(Array.isArray(manifest.files) && manifest.files.length === 1, 'one file in the archive');
+    assert.ok(manifest.files[0].features.includes('fdata/shape-data-type'), 'declares the shape feature flag');
+
+    // a broken library or bad path is reported, not thrown
+    const bad = await penpot.createDesign(ws, { boards: [] });
+    assert.equal(bad.ok, false);
+    assert.match(bad.error, /non-empty/);
   })
 );
 

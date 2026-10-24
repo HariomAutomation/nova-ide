@@ -233,6 +233,17 @@ const SUBMISSION_PLAYBOOKS: { match: RegExp; items: string[] }[] = [
     ],
   },
   {
+    match: /design|figma|penpot/i,
+    items: [
+      'Read the brief and list the exact screens/states it names — the count is usually scored',
+      'Lay out one board per screen at the size the brief implies (1440 wide for desktop)',
+      'Set up tokens first: colours, type scale, spacing. One source, reused everywhere',
+      'Build the screens as structure, then the states the brief asks for (empty, error, loading)',
+      'Export the deliverable format the brief demands (.fig, .penpot, PNG) — the format is a hard requirement',
+      'If the format is .fig, the design must be finished in Figma by hand; Nova can only give structure',
+    ],
+  },
+  {
     match: /kaggle/i,
     items: [
       'Read the Evaluation section of the competition page and write down the exact metric (RMSE, LogLoss, AUC, F1...) — the whole job is optimising that one number',

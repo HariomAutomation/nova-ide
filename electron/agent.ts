@@ -16,6 +16,7 @@ const security = require('./tools/security');
 const findingsStore = require('./tools/findings');
 const challenge = require('./tools/challenge');
 const kaggle = require('./tools/kaggle');
+const penpot = require('./tools/penpot');
 const mcp = require('./mcp');
 const geminiWeb = require('./gemini-web');
 const cloudcode = require('./tools/cloudcode');
@@ -401,6 +402,29 @@ const TOOL_DEFS = [
     },
   },
   {
+    name: 'penpot_create',
+    category: 'read',
+    description:
+      'Build a .penpot design file from a plain description and write it to design/<name>.penpot. Pass `design`: { name, boards: [{ name, width, height, elements: [{kind:"rect"|"circle"|"text", x,y,width,height, fill?, radius?, content?}] }] }. One board per screen. This gives real structure and coordinates — the visual craft is still the human\'s. Penpot opens the file; Figma can import an SVG export, not the .penpot itself.',
+    parameters: {
+      type: 'object',
+      properties: {
+        design: {
+          type: 'object',
+          description: 'The design: { name, pageName?, boards: [...] }.',
+          properties: {
+            name: { type: 'string' },
+            pageName: { type: 'string' },
+            boards: { type: 'array', items: { type: 'object' } },
+          },
+          required: ['boards'],
+        },
+        out_path: { type: 'string', description: 'Where to write the .penpot (default design/<name>.penpot).' },
+      },
+      required: ['design'],
+    },
+  },
+  {
     name: 'challenge_check',
     category: 'read',
     description:
@@ -525,6 +549,7 @@ async function toolSchemas(settings: any = {}, ctx: any = {}) {
   let hasChallenge = false;
   let hasFindings = false;
   let isKaggle = false;
+  let isDesign = false;
   if (ctx && ctx.workspaceRoot) {
     try {
       const spec = await challenge.listSpec(ctx.workspaceRoot);
@@ -532,6 +557,7 @@ async function toolSchemas(settings: any = {}, ctx: any = {}) {
       // The Kaggle tools are only useful once the workspace is actually working a
       // Kaggle competition, so they stay out of the base schema until then.
       isKaggle = Boolean(spec && /kaggle/i.test(String(spec.track || '')));
+      isDesign = Boolean(spec && /design/i.test(String(spec.track || '')));
     } catch {}
     try {
       hasFindings = (await findingsStore.list(ctx.workspaceRoot)).length > 0;
@@ -542,6 +568,7 @@ async function toolSchemas(settings: any = {}, ctx: any = {}) {
     if (t.name === 'web_fetch') return settings.webFetch !== false;
     if (t.name === 'challenge_check' || t.name === 'challenge_pack') return hasChallenge;
     if (t.name === 'kaggle_data' || t.name === 'kaggle_submit') return isKaggle;
+    if (t.name === 'penpot_create') return isDesign;
     if (t.name === 'security_triage' || t.name === 'security_report') return hasFindings;
     return true;
   });
@@ -1727,6 +1754,17 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
       if (r.authRequired) return { text: `Kaggle needs credentials.\n\n${(r.steps || []).map((x: string) => `- ${x}`).join('\n')}` };
       if (!r.ok) return { text: `Submit failed: ${r.error}` };
       return { text: `Submitted ${rel} to ${args.ref} (via ${r.via}).\n${JSON.stringify(r.submission)}\n\nUse kaggle_submit { ref, check: true } to read the score once it is scored.` };
+    }
+    case 'penpot_create': {
+      const design = { ...(args.design || {}) };
+      if (args.out_path) design.outPath = args.out_path;
+      const r = await penpot.createDesign(workspaceRoot, design);
+      if (!r.ok) return { text: `Could not build the design: ${r.error}` };
+      return {
+        text:
+          `Wrote ${r.path}\n${r.boards} board(s), ${r.elements} element(s), ${r.bytes} bytes.\n\n` +
+          `Open it in Penpot (or self-hosted Penpot) to refine. Note: this is structure, not craft — and if the brief demands .fig, the design still has to be finished in Figma by hand.`,
+      };
     }
     case 'challenge_check': {
       const r = await challenge.setItem(workspaceRoot, args.item_id, { status: args.status, note: args.note });
