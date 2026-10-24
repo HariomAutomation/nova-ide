@@ -710,6 +710,42 @@ suite.push(
   })
 );
 
+suite.push(
+  test('drive access: a broader token is flagged for re-consent', async () => {
+    const cfgPath = gdrive.getConfigPath ? gdrive.getConfigPath() : (await gdrive.status()).configPath;
+    await fsp.mkdir(path.dirname(cfgPath), { recursive: true });
+    let prev = null;
+    try { prev = await fsp.readFile(cfgPath, 'utf8'); } catch {}
+    try {
+      // a token granted before the scope change carries no grantedScope record
+      await fsp.writeFile(cfgPath, JSON.stringify({ refreshToken: 'legacy', email: 'a@b.c' }));
+      let st = await gdrive.status();
+      assert.equal(st.needsReconsent, true, 'a legacy token must ask for re-consent');
+      assert.equal(st.isolated, false, 'it must NOT claim isolation');
+
+      // a token granted for the narrow scope is fine
+      await fsp.writeFile(cfgPath, JSON.stringify({
+        refreshToken: 'fresh',
+        grantedScope: 'openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata',
+      }));
+      st = await gdrive.status();
+      assert.equal(st.needsReconsent, false);
+      assert.equal(st.isolated, true);
+
+      // and an explicitly broad token is never treated as isolated
+      await fsp.writeFile(cfgPath, JSON.stringify({
+        refreshToken: 'full',
+        grantedScope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.appdata',
+      }));
+      st = await gdrive.status();
+      assert.equal(st.needsReconsent, true, 'drive.readonly must never count as isolated');
+    } finally {
+      if (prev === null) await fsp.rm(cfgPath, { force: true }).catch(() => {});
+      else await fsp.writeFile(cfgPath, prev, 'utf8').catch(() => {});
+    }
+  })
+);
+
 /* ---------------------------------- memory ---------------------------------- */
 
 suite.push(
