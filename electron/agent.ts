@@ -1567,10 +1567,13 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
         if (!k.competitions.length) return { text: 'No Kaggle competitions matched.' };
         const body = k.competitions
           .map((c: any) => {
-            const ends = c.deadline ? String(c.deadline).slice(0, 10) : 'no deadline';
+            const rem = challenge.timeRemaining(c.deadline);
+            const ends = c.deadline
+              ? `${rem.closed ? 'CLOSED' : `in ${rem.human}`}${rem.urgency === 'critical' ? ' \u26a0 critical' : rem.urgency === 'soon' ? ' \u26a0 soon' : ''}`
+              : 'no deadline';
             const reward = c.reward ? ` · ${c.reward}` : '';
             const mine = c.userHasEntered ? ` · entered${c.userRank ? ` (rank ${c.userRank})` : ''}` : '';
-            return `${c.ref}  [${c.category || '?'}] ${c.title}\n    ends ${ends} · ${c.teamCount} teams${reward}${mine} · ${c.url}`;
+            return `${c.ref}  [${c.category || '?'}] ${c.title}\n    closes ${ends} · ${c.teamCount} teams${reward}${mine} · ${c.url}`;
           })
           .join('\n');
         return {
@@ -1592,8 +1595,11 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
       }
       const body = r.challenges
         .map((c: any) => {
-          const ends = c.endsAt ? new Date(c.endsAt).toISOString().slice(0, 16).replace('T', ' ') + 'Z' : 'no deadline';
-          return `${c.id}  [${c.track || '?'}] ${c.name}\n    ends ${ends} · ${c.registrants} registered · ${c.submissions} submitted · ${c.url}`;
+          const rem = challenge.timeRemaining(c.endsAt);
+          const ends = c.endsAt
+            ? `${rem.closed ? 'CLOSED' : `in ${rem.human}`}${rem.urgency === 'critical' ? ' \u26a0 critical' : rem.urgency === 'soon' ? ' \u26a0 soon' : ''}`
+            : 'no deadline';
+          return `${c.id}  [${c.track || '?'}] ${c.name}\n    closes ${ends} · ${c.registrants} registered · ${c.submissions} submitted · ${c.url}`;
         })
         .join('\n');
       return {
@@ -1632,7 +1638,14 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
         return {
           text:
             `Kaggle: ${spec.name} (${hit.ref})\n` +
-            `category ${hit.category || '?'} · closes ${hit.deadline || '?'} · ${hit.teamCount} teams${hit.reward ? ` · ${hit.reward}` : ''}\n\n` +
+            `category ${hit.category || '?'} · closes ${hit.deadline || '?'} · ${hit.teamCount} teams${hit.reward ? ` · ${hit.reward}` : ''}` +
+            (() => {
+              const d = challenge.timeRemaining(hit.deadline);
+              if (!d.known) return '';
+              if (d.closed) return '\n\u23f3 this competition has closed.';
+              return `\n\u23f3 closes in ${d.human}${d.urgency === 'critical' ? ' \u2014 CRITICAL, get a baseline submitted now' : d.urgency === 'soon' ? ' \u2014 soon' : ''}`;
+            })() +
+            `\n\n` +
             `The API does not expose the evaluation metric, so fetch ${hit.url} and read the Evaluation section before modelling — the metric IS the objective.\n\n` +
             `Checklist: ${p.total} items (${p.done} done).\n\n${body}\n\n` +
             `Work through these, mark each with challenge_check, then challenge_pack.`,
@@ -1649,6 +1662,12 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
           description: f.challenge.description,
         };
         note = `Fetched from TopCoder. Track: ${f.challenge.track || '?'} · format: ${f.challenge.fileTypes || 'unspecified'} · closes ${f.challenge.submissionEndDate || '?'} · ${f.challenge.registrants} registered, ${f.challenge.submissions} submitted.`;
+        const dl = challenge.deadlineSummary(f.challenge.deadlines);
+        if (dl.next) {
+          note += `\n\u23f3 ${dl.next.phase} closes in ${dl.next.human}${dl.next.urgency === 'critical' ? ' \u2014 CRITICAL, prioritise a baseline submission now' : dl.next.urgency === 'soon' ? ' \u2014 soon' : ''}`;
+        } else if (dl.all.length && dl.all.every((d: any) => d.closed)) {
+          note += '\n\u23f3 every deadline on this challenge has passed.';
+        }
         const deliv = challenge.deliverability(f.challenge.track);
         if (!deliv.ok) note += `\n\n\u26a0\ufe0f ${deliv.note}`;
       } else if (args.text) {

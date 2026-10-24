@@ -3060,6 +3060,61 @@ suite.push(
   })
 );
 
+/* -------------------------------- deadlines -------------------------------- */
+
+suite.push(
+  test('challenge: deadlines report remaining time and urgency, and never invent one', async () => {
+    const now = new Date('2026-10-24T12:00:00Z');
+    const at = (iso) => challenge.timeRemaining(iso, now);
+
+    assert.equal(at('2026-10-24T16:00:00Z').urgency, 'critical', 'under 6h is critical');
+    assert.equal(at('2026-10-24T16:00:00Z').human, '4h 0m');
+    assert.equal(at('2026-10-24T22:00:00Z').urgency, 'soon', 'under 24h is soon');
+    assert.equal(at('2026-10-26T12:00:00Z').urgency, 'normal', '2 days out is normal');
+    assert.equal(at('2026-10-26T12:00:00Z').human, '2d 0h');
+
+    const past = at('2026-10-20T12:00:00Z');
+    assert.equal(past.closed, true);
+    assert.equal(past.urgency, 'closed');
+
+    // A missing or unparseable date must NOT read as "closed" — that would make the
+    // agent stop on a challenge that is actually open.
+    for (const bad of [null, undefined, '', 'not-a-date']) {
+      const r = at(bad);
+      assert.equal(r.known, false, `${bad} is not a known deadline`);
+      assert.equal(r.closed, false, `${bad} must not read as closed`);
+      assert.equal(r.urgency, 'unknown');
+      assert.equal(r.human, 'no deadline');
+    }
+
+    // durations stay short and never go negative
+    assert.equal(challenge.formatDuration(0), '0m');
+    assert.equal(challenge.formatDuration(-99999), '0m', 'a negative duration clamps to 0m');
+    assert.equal(challenge.formatDuration(45 * 60 * 1000), '45m');
+    assert.equal(challenge.formatDuration(3 * 86400 * 1000 + 5 * 3600 * 1000), '3d 5h');
+
+    // the summary picks the NEXT open deadline, not the first in the list
+    const sum = challenge.deadlineSummary([
+      { phase: 'Review', at: '2026-10-30T12:00:00Z' },
+      { phase: 'Submission', at: '2026-10-24T16:00:00Z' },
+      { phase: 'Past', at: '2026-10-01T12:00:00Z' },
+    ], now);
+    assert.equal(sum.next.phase, 'Submission', 'soonest open deadline wins');
+    assert.equal(sum.next.human, '4h 0m');
+    assert.equal(sum.next.urgency, 'critical');
+    assert.equal(sum.all.length, 3, 'every deadline is still reported');
+
+    // once everything has passed there is no "next"
+    const done = challenge.deadlineSummary([{ phase: 'Submission', at: '2026-10-01T12:00:00Z' }], now);
+    assert.equal(done.next, null);
+    assert.equal(done.all[0].closed, true);
+
+    // an empty or absent list is handled
+    assert.equal(challenge.deadlineSummary([], now).next, null);
+    assert.equal(challenge.deadlineSummary(null, now).next, null);
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

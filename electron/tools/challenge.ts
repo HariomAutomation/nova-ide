@@ -351,6 +351,59 @@ export function parseKaggleRef(input: string): string | null {
   return null;
 }
 
+/* ============================== deadlines ============================== */
+
+/** "3d 5h", "4h 12m", "12m" — short, and never negative. */
+export function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+/**
+ * How long is left on a deadline, and how urgent is it.
+ *
+ * The thresholds are deliberately blunt — the point is to make the agent act
+ * (or stop) rather than to be precise: under 6 hours is critical, under a day is
+ * soon. A deadline with no parseable date is reported as unknown, not as closed.
+ */
+export function timeRemaining(
+  deadlineIso: string | null | undefined,
+  now: Date = new Date()
+): { known: boolean; closed: boolean; ms: number; human: string; urgency: 'closed' | 'critical' | 'soon' | 'normal' | 'unknown' } {
+  if (!deadlineIso) return { known: false, closed: false, ms: 0, human: 'no deadline', urgency: 'unknown' };
+  const t = Date.parse(String(deadlineIso));
+  if (Number.isNaN(t)) return { known: false, closed: false, ms: 0, human: 'no deadline', urgency: 'unknown' };
+  const ms = t - now.getTime();
+  if (ms <= 0) return { known: true, closed: true, ms, human: 'closed', urgency: 'closed' };
+  const HOUR = 3600 * 1000;
+  const urgency = ms < 6 * HOUR ? 'critical' : ms < 24 * HOUR ? 'soon' : 'normal';
+  return { known: true, closed: false, ms, human: formatDuration(ms), urgency };
+}
+
+/**
+ * The next deadline that has not passed, plus every deadline with its remaining
+ * time — so a caller can say "closes in 4h" and also see the phases after it.
+ */
+export function deadlineSummary(
+  deadlines: { phase: string; at: string }[] | null | undefined,
+  now: Date = new Date()
+): { next: { phase: string; at: string; human: string; urgency: string } | null; all: { phase: string; at: string; human: string; urgency: string; closed: boolean }[] } {
+  const list = (Array.isArray(deadlines) ? deadlines : [])
+    .filter((d) => d && d.at)
+    .map((d) => {
+      const r = timeRemaining(d.at, now);
+      return { phase: String(d.phase || 'deadline'), at: String(d.at), human: r.human, urgency: r.urgency, closed: r.closed };
+    })
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const open = list.filter((d) => !d.closed);
+  return { next: open.length ? open[0] : null, all: list };
+}
+
 /* ============================ checklist store ============================ */
 
 function specPath(workspace: string): string {
@@ -583,6 +636,9 @@ export async function pack(
 
 module.exports = {
   parseChallengeId,
+  formatDuration,
+  timeRemaining,
+  deadlineSummary,
   parseKaggleRef,
   listChallenges,
   deliverability,
