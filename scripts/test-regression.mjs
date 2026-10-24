@@ -2310,7 +2310,47 @@ suite.push(
       }
     }
 
-    // --- 4. reasoning then content -> only the content is the answer
+    // --- 4. the thinking signal fires ONCE per turn, not once per chunk
+    {
+      const { srv, port } = await serve([
+        { reasoning: 'a' },
+        { reasoning: 'b' },
+        { reasoning: 'c' },
+        { content: 'done' },
+      ]);
+      try {
+        let thinkingCalls = 0;
+        const r = await callModel({
+          config: { baseUrl: `http://127.0.0.1:${port}`, apiKey: 'k', model: 'm', temperature: 0 },
+          messages: [{ role: 'user', content: 'hi' }],
+          tools: [],
+          onThinking: () => {
+            thinkingCalls += 1;
+          },
+        });
+        assert.equal(thinkingCalls, 1, 'the thinking signal must fire once per turn, not per chunk');
+        assert.equal(r.content, 'done');
+      } finally {
+        srv.close();
+      }
+    }
+
+    // --- 5. a refusal with no content must reach the user, not vanish
+    {
+      const { srv, port } = await serve([{ refusal: 'I cannot help with that.' }]);
+      try {
+        const r = await callModel({
+          config: { baseUrl: `http://127.0.0.1:${port}`, apiKey: 'k', model: 'm', temperature: 0 },
+          messages: [{ role: 'user', content: 'do something bad' }],
+          tools: [],
+        });
+        assert.match(r.content, /cannot help/, 'a refusal is the answer and must not be dropped');
+      } finally {
+        srv.close();
+      }
+    }
+
+    // --- 6. reasoning then content -> only the content is the answer
     {
       const { srv, port } = await serve([
         { reasoning: 'THINKING-ONLY' },

@@ -695,7 +695,7 @@ function buildFallbackChain(config) {
   return out;
 }
 
-async function callModel({ config, messages, tools, signal, onDelta, threadKey, onModelSwitch }) {
+async function callModel({ config, messages, tools, signal, onDelta, onThinking = null, threadKey, onModelSwitch }) {
   if (config.auth === 'gemini-web') {
     // Gemini Web "jugaad": the signed-in web app is the brain. It can't do
     // native function calling, so we ask it (in-prompt) to reply with a JSON
@@ -827,6 +827,12 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
       // chain-of-thought must never appear as the answer. If `content` ends up
       // empty we fall back to it below, so the reply is never silently lost.
       let reasoning = '';
+      let refusal = '';
+      // Reasoning models think for a while before saying anything: Sarvam streamed
+      // ~60 chunks of `reasoning` with `content: null` over ~3 seconds. The UI
+      // showed nothing for that whole time, which reads as "stuck". Tell the
+      // caller once, on the first reasoning chunk, so it can say so.
+      let thinkingNotified = false;
       // Legacy OpenAI `function_call` (a single call, no id/index). Some
       // providers still emit it; without this the tool call is dropped.
       let legacyFn = null;
@@ -884,7 +890,14 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
               : typeof delta.reasoning === 'string'
                 ? delta.reasoning
                 : '';
-          if (rChunk) reasoning += rChunk;
+          if (rChunk) {
+            reasoning += rChunk;
+            if (!thinkingNotified) {
+              thinkingNotified = true;
+              if (onThinking) onThinking();
+            }
+          }
+          if (typeof delta.refusal === 'string' && delta.refusal) refusal += delta.refusal;
           if (delta.function_call && typeof delta.function_call === 'object') {
             const lf = delta.function_call;
             legacyFn = legacyFn || { name: '', args: '' };
@@ -948,17 +961,22 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
         });
       }
 
-      // The model put its answer in `reasoning` and left `content` empty. Without
-      // this the user watches the reply arrive in the network log and sees
-      // nothing in the chat.
-      //
-      // Guarded on there being NO tool call: when the model's output for this turn
-      // is a tool call, an empty `content` is correct and its `reasoning` is its
-      // private scratchpad — promoting that to the reply would show the user the
-      // model's chain-of-thought as if it were an answer.
-      if (!content && reasoning && !toolCalls.length) {
-        content = reasoning;
-        if (onDelta) onDelta(reasoning);
+      // Both fallbacks below are guarded on there being NO tool call: when the
+      // model's output for this turn is a tool call, an empty `content` is correct
+      // and its `reasoning` is its private scratchpad — promoting that to the reply
+      // would show the user the model's chain-of-thought as if it were an answer.
+      if (!content && !toolCalls.length) {
+        // A refusal IS the model's user-facing answer, so it wins over reasoning.
+        if (refusal) {
+          content = refusal;
+          if (onDelta) onDelta(refusal);
+        } else if (reasoning) {
+          // The model put its answer in `reasoning` and left `content` empty.
+          // Without this the user watches the reply arrive in the network log and
+          // sees nothing in the chat.
+          content = reasoning;
+          if (onDelta) onDelta(reasoning);
+        }
       }
 
       return { content, toolCalls };
@@ -1861,6 +1879,7 @@ function sanitizeAssistantReply(text) {
         signal,
         threadKey: agentId,
         onDelta: (text) => emit({ type: 'assistant_delta', text }),
+        onThinking: () => emit({ type: 'status', text: 'Model is thinking\u2026' }),
         onModelSwitch,
       });
 
@@ -1890,6 +1909,7 @@ function sanitizeAssistantReply(text) {
           signal,
           threadKey: agentId,
           onDelta: (text) => emit({ type: 'assistant_delta', text }),
+          onThinking: () => emit({ type: 'status', text: 'Model is thinking\u2026' }),
           onModelSwitch: (info) => {
             emit({ type: 'model_switched', ...info });
             emit({
