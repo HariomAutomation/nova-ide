@@ -161,6 +161,7 @@ contextBridge.exposeInMainWorld('nova', {
 
   // challenge workflow (spec -> checklist -> package)
   challengeList: (payload) => ipcRenderer.invoke('challenge:list', payload),
+  challengeFind: (payload) => ipcRenderer.invoke('challenge:find', payload),
   challengeIngest: (payload) => ipcRenderer.invoke('challenge:ingest', payload),
   challengeSetItem: (payload) => ipcRenderer.invoke('challenge:set-item', payload),
   challengePack: (payload) => ipcRenderer.invoke('challenge:pack', payload),

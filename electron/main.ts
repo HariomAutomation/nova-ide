@@ -1066,6 +1066,18 @@ ipcMain.handle('checkpoint:restore', async (_e, { agentId }) => {
 
 /* ------------------------------ security ------------------------------ */
 
+ipcMain.handle('challenge:find', async (_e, payload: any = {}) => {
+  try {
+    return await challenge.listChallenges({
+      tracks: payload && payload.tracks,
+      deliverableOnly: payload && payload.all !== true,
+      limit: Math.min((payload && payload.limit) || 20, 50),
+    });
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e), challenges: [] };
+  }
+});
+
 ipcMain.handle('challenge:list', async (_e, payload: any = {}) => {
   try {
     const ws = (payload && payload.workspaceRoot) || process.cwd();
