@@ -7,6 +7,20 @@ OpenCode Zen, OpenRouter, OmniRoute, Sarvam AI, DeepSeek, Groq, Ollama,
 LM Studio, OpenAI, or anything custom — and pick the model yourself. Nova ships a **lean,
 junk-free default list** (Gemini free family + OpenCode Zen); everything else is an opt-in preset.
 
+## Contest workflows (TopCoder, Kaggle, Penpot)
+
+Nova can take a contest end to end — ingest the brief, turn it into a tracked
+checklist, produce the deliverable, and package or submit it. Three tracks:
+
+| track | live against the real service? |
+|---|---|
+| **Kaggle** | yes — submit + score read-back verified |
+| **Penpot** | yes — a generated file imports into production Penpot |
+| **TopCoder** | not yet — tested, but never run against an open contest |
+
+See **[docs/contests.md](docs/contests.md)** for the flows, the credential setup, the
+Kaggle submit sequence, and an honest account of what has and has not been proven.
+
 ## Features (v0.2)
 
 ### Agent-first UI
@@ -270,6 +284,7 @@ npm run test:agent        # End-to-end agent loop (tool execution, approvals, Pl
 - [x] Cursor `@` mentions (`@git`, `@terminal`, `@web`, `@codebase`)
 - [x] `.cursorrules` and `.cursor/rules/*.mdc` auto-loading
 - [x] Comprehensive test matrix (Sanity, Smoke, Regression, E2E)
+- [x] Contest workflows — TopCoder briefs, Kaggle submit loop, Penpot design authoring
 - [ ] Full PTY terminal (node-pty + xterm.js)
 - [ ] Cmd/Ctrl+P quick open
 - [ ] Diff review UI for agent edits (Monaco diff editor)
