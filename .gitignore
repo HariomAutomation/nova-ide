@@ -45,3 +45,6 @@ blob-report/
 # Graphify knowledge graph cache
 graphify-out/
 nova-ide-fixed*
+
+# Challenge & Competition data files
+data/
