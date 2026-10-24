@@ -12,6 +12,7 @@ const computerTool = require('./tools/computer');
 const checkpoints = require('./tools/checkpoints');
 const gitTool = require('./tools/git');
 const gdrive = require('./tools/gdrive');
+const picker = require('./tools/picker');
 const memory = require('./tools/memory');
 const ghTool = require('./tools/github');
 const cloudcode = require('./tools/cloudcode');
@@ -1006,6 +1007,7 @@ ipcMain.handle('memory:clear', async () => memory.clear());
 
 ipcMain.handle('gdrive:status', async () => gdrive.status());
 ipcMain.handle('gdrive:save', async (_e, patch) => gdrive.save(patch || {}));
+  ipcMain.handle('gdrive:pick', async (e) => picker.pickFile({ parent: BrowserWindow.fromWebContents(e.sender) }));
 ipcMain.handle('gdrive:login', async () => {
   try {
     return { ok: true, status: await gdrive.login() };

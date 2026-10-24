@@ -143,6 +143,7 @@ contextBridge.exposeInMainWorld('nova', {
   // cloud (google drive, read-only)
   gdriveStatus: () => ipcRenderer.invoke('gdrive:status'),
   gdriveSave: (patch) => ipcRenderer.invoke('gdrive:save', patch),
+  gdrivePick: () => ipcRenderer.invoke('gdrive:pick'),
   gdriveLogin: () => ipcRenderer.invoke('gdrive:login'),
   gdriveLogout: () => ipcRenderer.invoke('gdrive:logout'),
   gdriveLastUrl: () => ipcRenderer.invoke('gdrive:last-url'),

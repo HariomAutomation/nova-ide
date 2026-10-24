@@ -671,6 +671,27 @@ export const useStore = create((set, get) => ({
 
   async saveDriveClient(patch) {
     const st = await api().gdriveSave(patch || {});
+  },
+
+  /**
+   * Open the Google Picker so the user can hand Nova a file it did not create.
+   *
+   * Under `drive.file` this is the only way to reach a file the app has not
+   * already created: picking it is what grants per-file access.
+   */
+  async pickDriveFile() {
+    const r = (await api().gdrivePick()) || {};
+    if (r.ok && r.file) {
+      get().setStatus(`Opening ${r.file.name || 'file'} from Drive…`);
+      await get().openCloudFile({ id: r.file.id, name: r.file.name });
+      return r;
+    }
+    if (r.needsApiKey) {
+      get().setStatus(`Picker needs a Google API key — ${(r.steps || [])[0] || 'see Settings → Cloud'}`);
+    } else if (!r.cancelled) {
+      get().setStatus(r.error || 'Could not open the Drive picker.');
+    }
+    return r;
     set({ drive: { ...get().drive, ...st } });
     return st;
   },

@@ -13,6 +13,9 @@ import { webFetch, webSearch } from '../dist-electron/tools/web.js';
 import { parseWebToolCalls, protocolBlock, setEngineMode, getEngineMode } from '../dist-electron/gemini-web.js';
 import { describeHttpError } from '../dist-electron/tools/errors.js';
 import { gpuPlan } from '../dist-electron/tools/gpu-flags.js';
+import { scan as secScan } from '../dist-electron/tools/security.js';
+import * as findingsStore from '../dist-electron/tools/findings.js';
+import { projectNumberFromClientId, pickFile, pickerHtml, API_KEY_STEPS } from '../dist-electron/tools/picker.js';
 import {
   loadRules,
   toolSchemas,
@@ -1940,6 +1943,250 @@ suite.push(
     assert.match(flat[1].content, /"tool_calls"/);
     assert.equal(flat[2].role, 'user');
     assert.match(flat[2].content, /Tool result \(list_dir\)/);
+  })
+);
+
+/* ---------------------------- security audit ---------------------------- */
+
+/** A deliberately vulnerable mini-app, written to disk for the scanner to audit. */
+async function makeVulnApp(dir) {
+  await fsp.mkdir(path.join(dir, 'src'), { recursive: true });
+  await fsp.writeFile(
+    path.join(dir, 'src', 'config.js'),
+    'const AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE";\nconst password = "SuperSecret123!x";\nmodule.exports = { AWS_ACCESS_KEY_ID, password };\n'
+  );
+  await fsp.writeFile(
+    path.join(dir, 'src', 'app.js'),
+    [
+      "const cp = require('child_process');",
+      'function run(req, res) {',
+      '  const cmd = "ls " + req.query.dir;',
+      '  cp.exec(cmd, (e, out) => res.send(out));',
+      "  document.getElementById('x').innerHTML = req.query.name;",
+      '  const q = "SELECT * FROM users WHERE id = " + req.query.id;',
+      '  db.query(q);',
+      '  const token = Math.random().toString(36);',
+      '  const code = eval(req.query.expr);',
+      '  const agent = new https.Agent({ rejectUnauthorized: false });',
+      '  const hash = md5(password);',
+      '  return token + code + agent + hash;',
+      '}',
+    ].join('\n')
+  );
+  await fsp.writeFile(
+    path.join(dir, 'src', 'db.py'),
+    [
+      'import os, pickle, yaml, subprocess, requests, random',
+      'def load_blob(data):',
+      '    return pickle.loads(data)',
+      'def run(cmd):',
+      '    os.system(cmd)',
+      '    subprocess.run(cmd, shell=True)',
+      'def find(uid):',
+      '    return db.execute(f"SELECT * FROM users WHERE id = {uid}")',
+      'def fetch(url):',
+      '    return requests.get(url, verify=False)',
+      'def admin(user):',
+      '    assert user.is_admin',
+      'app.run(debug=True)',
+    ].join('\n')
+  );
+  await fsp.writeFile(path.join(dir, 'Dockerfile'), 'FROM node:20-alpine\nCMD ["node", "src/app.js"]\n');
+  await fsp.writeFile(path.join(dir, '.env'), 'DB_PASSWORD=prod_password_9921\n');
+  await fsp.writeFile(
+    path.join(dir, 'keys.pem'),
+    '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA1234\n-----END RSA PRIVATE KEY-----\n'
+  );
+  await fsp.writeFile(
+    path.join(dir, 'src', 'traversal.js'),
+    "const fs = require('fs');\nconst p = path.join(__dirname, 'public', req.query.file);\nfs.readFile(p, 'utf8', (e, d) => res.send(d));\n"
+  );
+  await fsp.writeFile(
+    path.join(dir, 'src', 'auth.js'),
+    "jwt.verify(token, SECRET, { algorithms: ['none'] });\nres.setHeader('Access-Control-Allow-Origin', '*');\n"
+  );
+  // two files that must produce nothing at all
+  await fsp.writeFile(
+    path.join(dir, 'src', 'clean.js'),
+    "const crypto = require('crypto');\nfunction safeLookup(db, id) { return db.query('SELECT * FROM users WHERE id = ?', [id]); }\nfunction makeToken() { return crypto.randomBytes(32).toString('hex'); }\nfunction render(el, t) { el.textContent = t; }\n"
+  );
+  await fsp.writeFile(
+    path.join(dir, 'src', 'safe.py'),
+    'import json, secrets, hashlib\ndef load(t):\n    return json.loads(t)\ndef token():\n    return secrets.token_hex(32)\ndef digest(v):\n    return hashlib.sha256(v.encode()).hexdigest()\n'
+  );
+}
+
+suite.push(
+  test('security: the scanner finds every planted vulnerability class', async () => {
+    const dir = path.join(TEST_DIR, 'sec-vuln');
+    await makeVulnApp(dir);
+
+    const r = await secScan({ dir, includeDeps: false });
+    const rules = new Set(r.findings.map((f) => f.rule));
+
+    const expected = [
+      'secret.aws-access-key',
+      'secret.generic-assignment',
+      'file.env-committed',
+      'file.key-material',
+      'secret.private-key',
+      'code.eval',
+      'code.child-process',
+      'code.html-injection',
+      'code.sql-concat',
+      'code.sql-execute-format',
+      'crypto.insecure-random',
+      'crypto.weak-hash',
+      'crypto.tls-disabled',
+      'code.deserialize',
+      'code.os-system',
+      'auth.assert-check',
+      'config.debug-on',
+      'config.docker-root',
+      'code.path-traversal',
+      'auth.jwt-none',
+      'config.cors-any',
+    ];
+    const missing = expected.filter((x) => !rules.has(x));
+    assert.deepEqual(missing, [], `scanner missed: ${missing.join(', ')}`);
+
+    // every finding must carry the evidence the agent needs to triage it
+    for (const f of r.findings) {
+      assert.ok(f.rule && f.file && typeof f.line === 'number', 'finding shape');
+      assert.ok(['critical', 'high', 'medium', 'low'].includes(f.severity), `bad severity ${f.severity}`);
+      assert.ok(/^CWE-\d+$/.test(f.cwe), `bad cwe ${f.cwe}`);
+      assert.ok(f.snippet, 'a finding without a snippet is not triageable');
+      assert.ok(f.message, 'a finding without a remediation is not actionable');
+    }
+    assert.ok(r.bySeverity.critical >= 4, `expected criticals, got ${JSON.stringify(r.bySeverity)}`);
+
+    // and the clean files must stay clean
+    const fp = r.findings.filter((f) => /clean\.js|safe\.py$/.test(f.file));
+    assert.deepEqual(fp.map((f) => `${f.rule}@${f.file}:${f.line}`), [], 'clean code must produce no findings');
+  })
+);
+
+suite.push(
+  test('security: a secret inside a comment is still reported', async () => {
+    const dir = path.join(TEST_DIR, 'sec-comment');
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(path.join(dir, 'x.js'), '// old key: AKIAIOSFODNN7EXAMPLE\n');
+    const r = await secScan({ dir, includeDeps: false });
+    assert.ok(r.findings.some((f) => f.rule === 'secret.aws-access-key'), 'a key in a comment must still be flagged');
+  })
+);
+
+suite.push(
+  test('security: findings dedupe, keep a triage verdict, and report as markdown + SARIF', async () => {
+    const dir = path.join(TEST_DIR, 'sec-store');
+    await makeVulnApp(dir);
+
+    const scan = await secScan({ dir, includeDeps: false });
+    const first = await findingsStore.save(dir, scan.findings);
+    assert.equal(first.added, scan.findings.length);
+    assert.equal(first.total, scan.findings.length);
+
+    // scanning again must not duplicate anything
+    const second = await findingsStore.save(dir, scan.findings);
+    assert.equal(second.added, 0, 'a rescan must not add duplicates');
+    assert.equal(second.total, first.total);
+
+    const list = await findingsStore.list(dir);
+    assert.equal(list.length, first.total);
+    assert.equal(list[0].severity, 'critical', 'worst-first ordering');
+
+    const target = list[0];
+    await findingsStore.triage(dir, target.id, { status: 'false-positive', analysis: 'input is a constant', severity: 'low' });
+    const after = await findingsStore.list(dir);
+    const updated = after.find((f) => f.id === target.id);
+    assert.equal(updated.status, 'false-positive');
+    assert.equal(updated.analysis, 'input is a constant');
+    assert.equal(findingsStore.counts(after).critical + findingsStore.counts(after).high + findingsStore.counts(after).medium + findingsStore.counts(after).low, first.total - 1);
+
+    // the verdict must survive another scan
+    await findingsStore.save(dir, scan.findings);
+    const persisted = (await findingsStore.list(dir)).find((f) => f.id === target.id);
+    assert.equal(persisted.status, 'false-positive', 'a triage verdict must survive a rescan');
+
+    const md = await findingsStore.report(dir, { format: 'markdown' });
+    assert.match(md, /# Security findings/);
+    assert.match(md, /CWE-/);
+    assert.match(md, /Remediation:/);
+
+    const sarif = JSON.parse(await findingsStore.report(dir, { format: 'sarif' }));
+    assert.equal(sarif.version, '2.1.0');
+    assert.ok(sarif.runs[0].tool.driver.rules.length > 5, 'SARIF must declare its rules');
+    assert.ok(sarif.runs[0].results.length > 5, 'SARIF must carry results');
+    assert.ok(sarif.runs[0].results[0].locations[0].physicalLocation.region.startLine >= 1);
+
+    const bad = await findingsStore.triage(dir, 'nope', { status: 'triaged' });
+    assert.match(bad.error, /no finding/);
+    const badStatus = await findingsStore.triage(dir, target.id, { status: 'not-a-status' });
+    assert.match(badStatus.error, /status must be/);
+  })
+);
+
+suite.push(
+  test('security: the agent exposes the three-step audit workflow', async () => {
+    const schemas = await toolSchemas({});
+    const names = schemas.map((s) => (s.function ? s.function.name : s.name));
+    for (const t of ['security_scan', 'security_triage', 'security_report']) {
+      assert.ok(names.includes(t), `${t} must be offered to the agent`);
+    }
+    // the tool schema budget guard elsewhere is 15000 chars
+    assert.ok(JSON.stringify(schemas).length < 15000, `tool schemas grew to ${JSON.stringify(schemas).length} chars`);
+  })
+);
+
+/* ------------------------------- drive picker ------------------------------- */
+
+suite.push(
+  test('picker: derives the project number and never lets a value break out of the page', async () => {
+    assert.equal(projectNumberFromClientId('695004570637-abc.apps.googleusercontent.com'), '695004570637');
+    assert.equal(projectNumberFromClientId(''), '');
+    assert.equal(projectNumberFromClientId('not-a-client-id'), '');
+
+    // A hostile token must not be able to close the script block. The HTML
+    // tokenizer only ends a <script> on a raw "</script", so escaping every "<"
+    // is what makes this safe — assert on that, not on the payload text, which
+    // is allowed to survive as an inert string.
+    const html = pickerHtml('</script><script>window.pwned=1</script>', 'key', '123');
+    assert.ok(!html.includes('</script><script>window.pwned'), 'a raw breakout must be impossible');
+    assert.ok(html.includes('\\u003c'), 'the "<" must be escaped into the literal');
+    assert.ok(!/var TOKEN = "[^"]*</.test(html), 'no raw "<" may appear inside the injected literal');
+    assert.ok(html.includes('apis.google.com'), 'the picker page must load the Picker script');
+    assert.ok(html.includes('setDeveloperKey'), 'the picker must be built with the developer key');
+  })
+);
+
+suite.push(
+  test('picker: refuses cleanly instead of opening a window it cannot use', async () => {
+    // not connected -> a clear message, no BrowserWindow involved
+    const cfgPath = path.join(process.env.NOVA_HOME || os.homedir(), 'gdrive.json');
+    let prev = null;
+    try {
+      prev = await fsp.readFile(cfgPath, 'utf8');
+    } catch {}
+    try {
+      await fsp.rm(cfgPath, { force: true }).catch(() => {});
+      const r1 = await pickFile();
+      assert.equal(r1.ok, false);
+      assert.match(r1.error, /Not connected/i);
+
+      // connected but no API key -> asks for one, with the steps to get it
+      await fsp.writeFile(cfgPath, JSON.stringify({ refreshToken: 'tok', email: 'a@b.c' }), 'utf8');
+      const saved = process.env.NOVA_GOOGLE_API_KEY;
+      delete process.env.NOVA_GOOGLE_API_KEY;
+      const r2 = await pickFile({ apiKey: '' });
+      if (saved) process.env.NOVA_GOOGLE_API_KEY = saved;
+      assert.equal(r2.ok, false);
+      assert.equal(r2.needsApiKey, true, 'a missing API key must be reported as such');
+      assert.ok(Array.isArray(r2.steps) && r2.steps.length >= 2, 'the user needs the steps to create a key');
+      assert.deepEqual(r2.steps, API_KEY_STEPS);
+    } finally {
+      if (prev === null) await fsp.rm(cfgPath, { force: true }).catch(() => {});
+      else await fsp.writeFile(cfgPath, prev, 'utf8').catch(() => {});
+    }
   })
 );
 

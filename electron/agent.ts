@@ -11,6 +11,8 @@ const checkpoints = require('./tools/checkpoints');
 const { describeHttpError } = require('./tools/errors');
 const { isWithin, configRoot } = require('./tools/paths');
 const memory = require('./tools/memory');
+const security = require('./tools/security');
+const findingsStore = require('./tools/findings');
 const mcp = require('./mcp');
 const geminiWeb = require('./gemini-web');
 const cloudcode = require('./tools/cloudcode');
@@ -284,6 +286,54 @@ const TOOL_DEFS = [
         max_results: { type: 'integer', description: 'Max matches (default 25).' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'security_scan',
+    category: 'read',
+    description:
+      'Security audit, step 1 of 3. Runs deterministic scanners over the workspace (hardcoded secrets, injection sinks, unsafe deserialisation, TLS verification disabled, weak crypto, permissive CORS, container running as root, and vulnerable dependencies) and records every candidate as a finding with a stable id. ' +
+      'These are CANDIDATES, not confirmed vulnerabilities: a regex knows what an AWS key looks like, it does not know whether an input is attacker-controlled. ' +
+      'Your job after this is to triage each one: read the surrounding code, trace whether untrusted input reaches the sink, check whether the sink is reachable, and decide real vs false positive. Use security_triage to record the verdict and security_report to produce the output.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Directory to audit (defaults to the workspace root).' },
+        include_deps: { type: 'boolean', description: 'Also run the dependency audit (npm audit). Default true.' },
+        max_findings: { type: 'integer', description: 'Cap on candidates (default 500).' },
+      },
+    },
+  },
+  {
+    name: 'security_triage',
+    category: 'read',
+    description:
+      'Security audit, step 2 of 3. Record your verdict for one finding from security_scan. ' +
+      'Only mark a finding "confirmed" when you can explain how untrusted input reaches it (name the entry point and the path); otherwise use "false-positive" and say why, or "triaged" when it is real but not reachable from outside. ' +
+      'Set severity when the rule severity is wrong for this context. Never mark something confirmed on a guess — an unverified report destroys trust in the whole audit.',
+    parameters: {
+      type: 'object',
+      properties: {
+        finding_id: { type: 'string', description: 'The id returned by security_scan.' },
+        status: { type: 'string', enum: ['triaged', 'confirmed', 'false-positive', 'fixed', 'wont-fix'], description: 'Your verdict.' },
+        analysis: { type: 'string', description: 'Why: the data flow, the entry point, reachability, and the concrete fix. Be specific about file and line.' },
+        severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'], description: 'Override the rule severity if it does not fit this context.' },
+      },
+      required: ['finding_id', 'status'],
+    },
+  },
+  {
+    name: 'security_report',
+    category: 'read',
+    description:
+      'Security audit, step 3 of 3. Produce the audit output from the stored findings: "markdown" for a human-readable report, "sarif" for CI / GitHub code scanning, "json" for raw data. ' +
+      'Dismissed findings are excluded from the report body.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Workspace the audit ran against (defaults to the workspace root).' },
+        format: { type: 'string', enum: ['markdown', 'sarif', 'json'], description: 'Output format (default markdown).' },
+      },
     },
   },
   {
@@ -1282,6 +1332,42 @@ async function executeTool(name, args = {}, ctx = {}) {
     }
     case 'code_lineage': {
       return await codeLineage(args, { workspaceRoot });
+    }
+    case 'security_scan': {
+      const target = args.path || workspaceRoot;
+      const r = await security.scan({
+        dir: target,
+        maxFindings: Math.min(args.max_findings || 500, 2000),
+        includeDeps: args.include_deps !== false,
+      });
+      await findingsStore.save(target, r.findings);
+      const stored = await findingsStore.list(target);
+      const top = stored
+        .filter((f: any) => f.status === 'open')
+        .slice(0, 40)
+        .map((f: any) => `${f.id}  [${f.severity}] ${f.rule}  ${path.relative(target, f.file)}:${f.line}  ${String(f.snippet).slice(0, 120)}`)
+        .join('\n');
+      return {
+        text:
+          `Security scan of ${target}\n` +
+          `candidates: ${r.count}  (critical ${r.bySeverity.critical}, high ${r.bySeverity.high}, medium ${r.bySeverity.medium}, low ${r.bySeverity.low})\n` +
+          (r.notes.length ? r.notes.join('\n') + '\n' : '') +
+          `\nThese are candidates, not confirmed vulnerabilities. Triage them now: read the code around each one, decide whether untrusted input reaches it, then call security_triage for each.\n\n` +
+          (top || 'No candidates found.'),
+      };
+    }
+    case 'security_triage': {
+      const r = await findingsStore.triage(args.path || workspaceRoot, args.finding_id, {
+        status: args.status,
+        analysis: args.analysis,
+        severity: args.severity,
+      });
+      if (r.error) return { text: `Error: ${r.error}` };
+      return { text: `Recorded ${args.finding_id} as ${r.finding.status}${args.severity ? ` (severity ${args.severity})` : ''}.` };
+    }
+    case 'security_report': {
+      const body = await findingsStore.report(args.path || workspaceRoot, { format: args.format || 'markdown' });
+      return { text: body };
     }
     case 'codebase_search': {
       const r = await fsTools.codebaseSearch({
