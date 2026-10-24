@@ -3326,6 +3326,78 @@ suite.push(
   })
 );
 
+/* ---------------------------- penpot text AST ---------------------------- */
+
+suite.push(
+  test('penpot: text is emitted as the v2 AST, never a bare string', async () => {
+    // A bare string is REJECTED on import. This is the bug that blocked the first
+    // real Penpot import while a board+rect-only file went through fine — so the
+    // emitted shape is pinned here rather than left to the next manual test.
+
+    // the builder itself
+    const ast = penpot.toTextContent('Nova Studio');
+    assert.equal(ast.type, 'root');
+    assert.equal(ast.children[0].type, 'paragraph-set');
+    assert.equal(ast.children[0].children[0].type, 'paragraph');
+    assert.equal(ast.children[0].children[0].children[0].type, 'text');
+    assert.equal(ast.children[0].children[0].children[0].text, 'Nova Studio');
+    assert.notEqual(typeof ast, 'string', 'it must not be a plain string');
+
+    // multi-line becomes multiple paragraphs; a blank line is an empty paragraph
+    assert.equal(penpot.toTextContent('a\nb').children[0].children.length, 2);
+    assert.deepEqual(
+      penpot.toTextContent('a\n\nb').children[0].children.map((x) => x.children.length),
+      [1, 0, 1]
+    );
+
+    // and what createDesign actually writes to disk carries it
+    const ws = path.join(TEST_DIR, 'penpot-text');
+    await fsp.mkdir(ws, { recursive: true });
+    const r = await penpot.createDesign(ws, {
+      name: 'Text Test',
+      boards: [{
+        name: 'Board',
+        width: 390,
+        height: 844,
+        elements: [
+          { kind: 'rect', name: 'BG', x: 0, y: 0, width: 390, height: 844, fill: '#0F172A' },
+          { kind: 'text', name: 'Title', x: 24, y: 48, width: 200, height: 28, content: 'Nova Studio' },
+        ],
+      }],
+    });
+    assert.equal(r.ok, true, r.error || '');
+
+    const { execFileSync } = await import('node:child_process');
+    const outDir = path.join(ws, 'unzipped');
+    await fsp.mkdir(outDir, { recursive: true });
+    execFileSync('unzip', ['-q', '-o', r.path, '-d', outDir]);
+
+    const found = [];
+    const walk = async (dir) => {
+      for (const ent of await fsp.readdir(dir, { withFileTypes: true })) {
+        const q = path.join(dir, ent.name);
+        if (ent.isDirectory()) await walk(q);
+        else if (q.endsWith('.json') && q.includes('/pages/')) {
+          try {
+            const o = JSON.parse(await fsp.readFile(q, 'utf8'));
+            if (o && o.type === 'text') found.push(o);
+          } catch {}
+        }
+      }
+    };
+    await walk(outDir);
+
+    assert.equal(found.length, 1, 'the text shape is in the file');
+    const content = found[0].content;
+    assert.equal(typeof content, 'object', 'content must be an object, not a string');
+    assert.equal(content.type, 'root');
+    assert.equal(content.children[0].type, 'paragraph-set');
+    assert.equal(content.children[0].children[0].type, 'paragraph');
+    assert.equal(content.children[0].children[0].children[0].type, 'text');
+    assert.equal(content.children[0].children[0].children[0].text, 'Nova Studio', 'the text survives the round trip');
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

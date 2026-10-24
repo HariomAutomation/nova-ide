@@ -114,7 +114,7 @@ export async function createDesign(
         } else if (e.kind === 'circle') {
           ctx.addCircle({ ...base, ...(e.fill ? { fills: [{ fillColor: e.fill, fillOpacity: 1 }] } : {}) });
         } else {
-          ctx.addText({ ...base, content: e.content });
+          ctx.addText({ ...base, content: toTextContent(e.content) });
         }
         elements += 1;
       }
@@ -133,8 +133,36 @@ export async function createDesign(
   }
 }
 
+/**
+ * Wrap plain text in the Penpot v2 rich-text AST.
+ *
+ * A bare string is REJECTED on import — this is what blocked the first real
+ * import while a minimal board+rect file went through fine. Penpot wants the
+ * full tree:
+ *
+ *   root -> paragraph-set -> paragraph -> text
+ *
+ * Found the hard way, against the real importer rather than the docs, which is
+ * why there is now a test asserting the emitted shape.
+ */
+export function toTextContent(text: string): any {
+  const lines = String(text).split('\n');
+  return {
+    type: 'root',
+    children: [
+      {
+        type: 'paragraph-set',
+        children: lines.map((line) => ({
+          type: 'paragraph',
+          children: line.length ? [{ type: 'text', text: line }] : [],
+        })),
+      },
+    ],
+  };
+}
+
 function slug(s: string): string {
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'design';
 }
 
-module.exports = { createDesign, validateDesign };
+module.exports = { createDesign, validateDesign, toTextContent };
