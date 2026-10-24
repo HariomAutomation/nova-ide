@@ -2490,6 +2490,42 @@ suite.push(
 );
 
 suite.push(
+  test('challenge: it says up front when the deliverable is one Nova cannot produce', async () => {
+    // The track decides whether the work is even possible here. A Design contest
+    // wants a .fig file — no agent can author one — so say so before the checklist
+    // implies the job is doable.
+    const design = challenge.deliverability('DESIGN');
+    assert.equal(design.ok, false, 'a design challenge must be flagged');
+    assert.match(design.note, /Figma|\.fig/, 'and must say why');
+    assert.match(design.note, /Development|QA/, 'and point at tracks that do work');
+
+    for (const t of ['DEVELOP', 'Development', 'QA', 'Data Science', 'Ideation']) {
+      assert.equal(challenge.deliverability(t).ok, true, `${t} must be considered deliverable`);
+    }
+    assert.equal(challenge.deliverability(null).ok, true, 'an unknown track is not a blocker');
+    assert.equal(challenge.deliverability(undefined).ok, true);
+
+    // and the track is carried through fetchChallenge so the caller can judge it
+    const fake = async () => ({
+      ok: true,
+      json: async () => ({
+        id: 'x',
+        name: 'A design thing',
+        description: '01) Home\n',
+        tags: [],
+        track: { id: 't', name: 'Design', track: 'DESIGN' },
+        phases: [],
+        metadata: [],
+      }),
+    });
+    const r = await challenge.fetchChallenge('x', { fetchImpl: fake });
+    assert.equal(r.ok, true);
+    assert.equal(r.challenge.track, 'DESIGN', 'the track must survive the fetch');
+    assert.equal(challenge.deliverability(r.challenge.track).ok, false);
+  })
+);
+
+suite.push(
   test('challenge: the checklist stores progress and re-ingesting a spec keeps the work', async () => {
     const ws = path.join(TEST_DIR, 'chal-1');
     await fsp.mkdir(ws, { recursive: true });

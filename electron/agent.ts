@@ -1495,7 +1495,9 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
           source: 'topcoder', id: f.challenge.id, name: f.challenge.name, url: f.challenge.url,
           tags: f.challenge.tags, deadlines: f.challenge.deadlines, description: f.challenge.description,
         };
-        note = `Fetched from TopCoder. Format: ${f.challenge.fileTypes || 'unspecified'} · closes ${f.challenge.submissionEndDate || '?'} · ${f.challenge.registrants} registered, ${f.challenge.submissions} submitted.`;
+        note = `Fetched from TopCoder. Track: ${f.challenge.track || '?'} · format: ${f.challenge.fileTypes || 'unspecified'} · closes ${f.challenge.submissionEndDate || '?'} · ${f.challenge.registrants} registered, ${f.challenge.submissions} submitted.`;
+        const deliv = challenge.deliverability(f.challenge.track);
+        if (!deliv.ok) note += `\n\n\u26a0\ufe0f ${deliv.note}`;
       } else if (args.text) {
         payload = { source: 'pasted', name: args.name || 'Pasted challenge', description: args.text };
       } else {

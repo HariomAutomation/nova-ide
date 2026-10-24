@@ -157,6 +157,9 @@ export async function fetchChallenge(
         description: String(j.description || ''),
         url: `https://www.topcoder.com/challenges/${j.id || id}`,
         tags: Array.isArray(j.tags) ? j.tags.map(String) : [],
+        // The track decides whether this is work Nova can actually deliver.
+        // A Design challenge wants a Figma file, which no agent here can author.
+        track: (j.track && (j.track.track || j.track.name)) || null,
         deadlines,
         submissionEndDate: j.submissionEndDate ? String(j.submissionEndDate) : null,
         registrants: Number(j.numOfRegistrants || 0),
@@ -169,6 +172,24 @@ export async function fetchChallenge(
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/**
+ * Can Nova actually deliver this challenge? Design contests want a Figma file
+ * (.fig) — no agent here can author one, so say so up front rather than letting
+ * the checklist imply the work is doable.
+ */
+export function deliverability(track: string | null | undefined): { ok: boolean; note: string } {
+  const t = String(track || '').toLowerCase().trim();
+  if (!t) return { ok: true, note: 'Track not stated — check the brief.' };
+  if (t.includes('design')) {
+    return {
+      ok: false,
+      note:
+        'This is a DESIGN challenge. The deliverable is a Figma (.fig) file, which Nova cannot author, and winners must hand over source files plus final fixes. Prefer a Development, QA, Data Science or Ideation challenge — Nova can deliver those end to end.',
+    };
+  }
+  return { ok: true, note: `${track} — within what Nova can deliver.` };
 }
 
 /* ============================ checklist store ============================ */
@@ -399,6 +420,7 @@ export async function pack(
 
 module.exports = {
   parseChallengeId,
+  deliverability,
   extractRequirements,
   fetchChallenge,
   saveSpec,
