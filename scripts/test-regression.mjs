@@ -3026,6 +3026,40 @@ suite.push(
   })
 );
 
+/* --------------------------- kaggle tools (lazy) --------------------------- */
+
+suite.push(
+  test('agent: the kaggle tools appear only inside a kaggle workspace', async () => {
+    // Base: no kaggle tools, and the base schema is unchanged by adding them.
+    const base = await toolSchemas({});
+    const baseNames = base.map((x) => (x.function ? x.function.name : x.name));
+    assert.ok(!baseNames.includes('kaggle_data'), 'not offered outside a kaggle workspace');
+    assert.ok(!baseNames.includes('kaggle_submit'));
+    assert.ok(JSON.stringify(base).length < 15000, `base schema is ${JSON.stringify(base).length} chars`);
+
+    // A kaggle workspace gets them, along with the challenge follow-ups.
+    const kws = path.join(TEST_DIR, 'kaggle-tools');
+    await fsp.mkdir(kws, { recursive: true });
+    await challenge.saveSpec(kws, { source: 'kaggle', id: 'titanic', name: 'Titanic', track: 'kaggle' });
+    const k = await toolSchemas({}, { workspaceRoot: kws });
+    const kNames = k.map((x) => (x.function ? x.function.name : x.name));
+    assert.ok(kNames.includes('kaggle_data'), 'a kaggle workspace gets the data tool');
+    assert.ok(kNames.includes('kaggle_submit'), 'and the submit tool');
+    assert.ok(kNames.includes('challenge_check'), 'and the challenge follow-ups');
+    // even fully loaded it must stay inside the budget
+    assert.ok(JSON.stringify(k).length < 15000, `kaggle schema is ${JSON.stringify(k).length} chars`);
+
+    // A non-kaggle workspace must NOT get them — that is the whole point of gating.
+    const tws = path.join(TEST_DIR, 'topcoder-tools');
+    await fsp.mkdir(tws, { recursive: true });
+    await challenge.saveSpec(tws, { name: 'A TopCoder thing', track: 'DEVELOP' });
+    const t = await toolSchemas({}, { workspaceRoot: tws });
+    const tNames = t.map((x) => (x.function ? x.function.name : x.name));
+    assert.ok(!tNames.includes('kaggle_data'), 'a TopCoder workspace must not carry kaggle tools');
+    assert.ok(!tNames.includes('kaggle_submit'));
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

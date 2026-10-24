@@ -1,5 +1,6 @@
 const fsp = require('node:fs/promises');
 const path = require('node:path');
+const fs = require('node:fs');
 const os = require('node:os');
 
 const fsTools = require('./tools/fsTools');
@@ -369,6 +370,37 @@ const TOOL_DEFS = [
     },
   },
   {
+    name: 'kaggle_data',
+    category: 'read',
+    description:
+      'Kaggle: list a competition\'s data files and download them into ./data. Pass `ref` (the competition slug) and optionally `file` for one file; with no `file` it lists what is available. Needs KAGGLE_API_TOKEN (or KAGGLE_USERNAME + KAGGLE_KEY) and the competition rules accepted, or Kaggle answers 401.',
+    parameters: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Competition slug, e.g. titanic.' },
+        file: { type: 'string', description: 'Download this one file instead of listing.' },
+        all: { type: 'boolean', description: 'Download every file, not just the common three.' },
+      },
+      required: ['ref'],
+    },
+  },
+  {
+    name: 'kaggle_submit',
+    category: 'read',
+    description:
+      'Kaggle: submit a prediction file and read the score back. Runs the real three-step flow (upload url -> upload -> submit). Pass `ref`, `file` (default submission.csv) and `description`. `check: true` only lists past submissions and scores instead of submitting. Submitting writes to a live competition, so confirm before using it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Competition slug.' },
+        file: { type: 'string', description: 'Submission file (default submission.csv).' },
+        description: { type: 'string', description: 'Submission description.' },
+        check: { type: 'boolean', description: 'Only list past submissions and scores.' },
+      },
+      required: ['ref'],
+    },
+  },
+  {
     name: 'challenge_check',
     category: 'read',
     description:
@@ -492,9 +524,14 @@ async function toolSchemas(settings: any = {}, ctx: any = {}) {
   //   security_triage / security_report -> once a scan has produced findings
   let hasChallenge = false;
   let hasFindings = false;
+  let isKaggle = false;
   if (ctx && ctx.workspaceRoot) {
     try {
-      hasChallenge = Boolean(await challenge.listSpec(ctx.workspaceRoot));
+      const spec = await challenge.listSpec(ctx.workspaceRoot);
+      hasChallenge = Boolean(spec);
+      // The Kaggle tools are only useful once the workspace is actually working a
+      // Kaggle competition, so they stay out of the base schema until then.
+      isKaggle = Boolean(spec && /kaggle/i.test(String(spec.track || '')));
     } catch {}
     try {
       hasFindings = (await findingsStore.list(ctx.workspaceRoot)).length > 0;
@@ -504,6 +541,7 @@ async function toolSchemas(settings: any = {}, ctx: any = {}) {
     if (t.name === 'web_search') return settings.webSearch !== false;
     if (t.name === 'web_fetch') return settings.webFetch !== false;
     if (t.name === 'challenge_check' || t.name === 'challenge_pack') return hasChallenge;
+    if (t.name === 'kaggle_data' || t.name === 'kaggle_submit') return isKaggle;
     if (t.name === 'security_triage' || t.name === 'security_report') return hasFindings;
     return true;
   });
@@ -1631,6 +1669,45 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
           `Checklist: ${p.total} items (${p.done} done).\n\n${body}\n\n` +
           `Work through these and mark each with challenge_check as you finish it, then call challenge_pack.`,
       };
+    }
+    case 'kaggle_data': {
+      if (!args.file) {
+        const l = await kaggle.listDataFiles(args.ref);
+        if (l.authRequired) return { text: `Kaggle needs credentials.\n\n${(l.steps || []).map((x: string) => `- ${x}`).join('\n')}` };
+        if (!l.ok) return { text: `Could not list files: ${l.error}` };
+        if (!l.files.length) return { text: 'That competition listed no data files.' };
+        const body = l.files.map((f: any) => `  ${f.name}  ${(f.bytes / 1048576).toFixed(2)} MB`).join('\n');
+        return { text: `${l.files.length} file(s) for ${args.ref}:\n\n${body}\n\nDownload with kaggle_data { ref, file } — start with train.csv, test.csv and sample_submission.csv.` };
+      }
+      const dest = path.join(workspaceRoot, 'data', path.basename(String(args.file)));
+      const d = await kaggle.downloadDataFile(args.ref, args.file, dest);
+      if (d.authRequired) return { text: `Kaggle needs credentials.\n\n${(d.steps || []).map((x: string) => `- ${x}`).join('\n')}` };
+      if (!d.ok) return { text: `Download failed: ${d.error}` };
+      return { text: `Downloaded ${args.file} -> ${d.path} (${d.bytes} bytes).` };
+    }
+    case 'kaggle_submit': {
+      const rel = args.file || 'submission.csv';
+      const abs = path.isAbsolute(rel) ? rel : path.join(workspaceRoot, rel);
+      if (args.check === true) {
+        const l = await kaggle.listSubmissions(args.ref);
+        if (l.authRequired) return { text: `Kaggle needs credentials.\n\n${(l.steps || []).map((x: string) => `- ${x}`).join('\n')}` };
+        if (!l.ok) return { text: `Could not list submissions: ${l.error}` };
+        if (!l.submissions.length) return { text: 'No submissions yet for this competition.' };
+        const body = l.submissions
+          .map((x: any) => `  [${x.status || '?'}] ${x.fileName || '?'} public=${x.publicScore != null ? x.publicScore : '-'} ${x.date || ''}`)
+          .join('\n');
+        return { text: `${l.submissions.length} submission(s):\n\n${body}` };
+      }
+      // Submitting writes to a live competition, so the file must exist first.
+      let exists = false;
+      try {
+        exists = (await fs.promises.stat(abs)).isFile();
+      } catch {}
+      if (!exists) return { text: `No submission file at ${abs}. Build it first, then submit.` };
+      const r = await kaggle.submitPrediction(args.ref, abs, args.description || '');
+      if (r.authRequired) return { text: `Kaggle needs credentials.\n\n${(r.steps || []).map((x: string) => `- ${x}`).join('\n')}` };
+      if (!r.ok) return { text: `Submit failed: ${r.error}` };
+      return { text: `Submitted ${rel} to ${args.ref} (via ${r.via}).\n${JSON.stringify(r.submission)}\n\nUse kaggle_submit { ref, check: true } to read the score once it is scored.` };
     }
     case 'challenge_check': {
       const r = await challenge.setItem(workspaceRoot, args.item_id, { status: args.status, note: args.note });
