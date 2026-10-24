@@ -324,9 +324,28 @@ export async function submitPrediction(
   const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
 
-  const fail = (r: any) => {
-    if (r && r.status === 401) return { ok: false as const, authRequired: true, error: 'Kaggle rejected the request (401).', steps: KAGGLE_SETUP_STEPS };
-    return { ok: false as const, error: `Kaggle API returned HTTP ${r && r.status}` };
+  /**
+   * Read Kaggle's own message out of a failed call. A bare "HTTP 400" is useless
+   * here: the most common real failure is submitting without having joined the
+   * competition, and Kaggle says so in the body ("You do not have a Team in this
+   * Competition."). Swallowing that is what sends people to curl to find out.
+   */
+  const fail = async (r: any) => {
+    if (r && r.status === 401) {
+      return { ok: false as const, authRequired: true, error: 'Kaggle rejected the request (401).', steps: KAGGLE_SETUP_STEPS };
+    }
+    let message = '';
+    try {
+      const body = await r.json();
+      message = (body && body.message) || '';
+    } catch {}
+    if (r && r.status === 400 && /no.*team|not have a team/i.test(message)) {
+      return {
+        ok: false as const,
+        error: `Kaggle refused the submission: "${message}". Accept the competition's rules (join it) before submitting.`,
+      };
+    }
+    return { ok: false as const, error: message ? `Kaggle API ${r && r.status}: ${message}` : `Kaggle API returned HTTP ${r && r.status}` };
   };
 
   try {
@@ -337,7 +356,7 @@ export async function submitPrediction(
       `${KAGGLE_API}/competitions/${encodeURIComponent(ref)}/submissions/url/${contentLength}/${lastModifiedSec}`,
       { method: 'POST', headers: authHeader, body: fd1, signal: ctrl ? ctrl.signal : undefined }
     );
-    if (!r1 || !r1.ok) return fail(r1);
+    if (!r1 || !r1.ok) return await fail(r1);
     const info = await r1.json();
     const createUrl = info && info.createUrl;
     if (!createUrl) return { ok: false, error: 'Kaggle did not return an upload url' };
@@ -358,13 +377,13 @@ export async function submitPrediction(
           `${KAGGLE_API}/competitions/submissions/upload/${parts[0]}/${parts[1]}/${parts[2]}`,
           { method: 'POST', headers: authHeader, body: fd2, signal: ctrl ? ctrl.signal : undefined }
         );
-        if (!r2 || !r2.ok) return fail(r2);
+        if (!r2 || !r2.ok) return await fail(r2);
         const up = await r2.json();
         token = (up && up.token) || token;
       }
     } else {
       const r2 = await fetchImpl(createUrl, { method: 'PUT', body: buf, signal: ctrl ? ctrl.signal : undefined });
-      if (!r2 || !r2.ok) return fail(r2);
+      if (!r2 || !r2.ok) return await fail(r2);
     }
     if (!token) return { ok: false, error: 'Kaggle did not return an upload token' };
 
@@ -378,7 +397,7 @@ export async function submitPrediction(
       body: fd3,
       signal: ctrl ? ctrl.signal : undefined,
     });
-    if (!r3 || !r3.ok) return fail(r3);
+    if (!r3 || !r3.ok) return await fail(r3);
     const out = await r3.json().catch(() => ({}));
     return { ok: true, submission: out, token: String(token), via };
   } catch (e: any) {

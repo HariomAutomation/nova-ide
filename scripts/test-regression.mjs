@@ -3069,6 +3069,31 @@ suite.push(
     const unauth = await kaggle.submitPrediction('t', csv, 'x', { fetchImpl: async () => ({ ok: false, status: 401 }), env: {} });
     assert.equal(unauth.authRequired, true);
     assert.ok(unauth.steps.length >= 3);
+
+    // A failed submit must carry Kaggle's own message. A bare "HTTP 400" is what
+    // sent us to curl during the live test: the most common real failure is
+    // submitting without joining, and Kaggle says exactly that in the body.
+    const noTeam = await kaggle.submitPrediction('t', csv, 'x', {
+      fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ code: 400, message: 'You do not have a Team in this Competition.' }) }),
+      env: {},
+    });
+    assert.equal(noTeam.ok, false);
+    assert.match(noTeam.error, /do not have a Team/, 'the API message is surfaced');
+    assert.match(noTeam.error, /join|Accept the competition/i, 'and it says what to do about it');
+
+    const other400 = await kaggle.submitPrediction('t', csv, 'x', {
+      fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ message: 'Submission must have 418 rows.' }) }),
+      env: {},
+    });
+    assert.match(other400.error, /418 rows/, 'any other API message is surfaced too');
+
+    // and a response with no readable body still fails cleanly
+    const bare = await kaggle.submitPrediction('t', csv, 'x', {
+      fetchImpl: async () => ({ ok: false, status: 500, json: async () => { throw new Error('no body'); } }),
+      env: {},
+    });
+    assert.equal(bare.ok, false);
+    assert.match(bare.error, /HTTP 500/);
   })
 );
 
