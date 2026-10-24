@@ -695,7 +695,7 @@ function buildFallbackChain(config) {
   return out;
 }
 
-async function callModel({ config, messages, tools, signal, onDelta, onThinking = null, threadKey, onModelSwitch }) {
+async function callModel({ config, messages, tools, signal, onDelta, onThinking = null, onReasoning = null, threadKey, onModelSwitch }) {
   if (config.auth === 'gemini-web') {
     // Gemini Web "jugaad": the signed-in web app is the brain. It can't do
     // native function calling, so we ask it (in-prompt) to reply with a JSON
@@ -896,6 +896,12 @@ async function callModel({ config, messages, tools, signal, onDelta, onThinking 
               thinkingNotified = true;
               if (onThinking) onThinking();
             }
+            // Reasoning goes to its OWN channel. It must never be mixed into
+            // assistant_delta, or a model's chain-of-thought would render as the
+            // answer. Models that stream reasoning in a separate field (Sarvam,
+            // DeepSeek-style) reach the collapsible thinking block this way;
+            // models that inline it as <think> tags are handled in the renderer.
+            if (onReasoning) onReasoning(rChunk);
           }
           if (typeof delta.refusal === 'string' && delta.refusal) refusal += delta.refusal;
           if (delta.function_call && typeof delta.function_call === 'object') {
@@ -1880,6 +1886,7 @@ function sanitizeAssistantReply(text) {
         threadKey: agentId,
         onDelta: (text) => emit({ type: 'assistant_delta', text }),
         onThinking: () => emit({ type: 'status', text: 'Model is thinking\u2026' }),
+        onReasoning: (text) => emit({ type: 'reasoning_delta', text }),
         onModelSwitch,
       });
 
@@ -1910,6 +1917,7 @@ function sanitizeAssistantReply(text) {
           threadKey: agentId,
           onDelta: (text) => emit({ type: 'assistant_delta', text }),
           onThinking: () => emit({ type: 'status', text: 'Model is thinking\u2026' }),
+          onReasoning: (text) => emit({ type: 'reasoning_delta', text }),
           onModelSwitch: (info) => {
             emit({ type: 'model_switched', ...info });
             emit({

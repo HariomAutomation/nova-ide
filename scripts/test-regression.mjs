@@ -2310,7 +2310,39 @@ suite.push(
       }
     }
 
-    // --- 4. the thinking signal fires ONCE per turn, not once per chunk
+    // --- 4. reasoning goes to its own channel and NEVER into the answer stream.
+    // The collapsible thinking block reads `reasoning_delta`; if reasoning were
+    // mixed into `assistant_delta` the chain-of-thought would render as the reply.
+    {
+      const { srv, port } = await serve([
+        { reasoning: 'STEP-ONE ' },
+        { reasoning_content: 'STEP-TWO ' },
+        { content: 'The answer.' },
+      ]);
+      try {
+        let reasoningText = '';
+        let answerText = '';
+        const r = await callModel({
+          config: { baseUrl: `http://127.0.0.1:${port}`, apiKey: 'k', model: 'm', temperature: 0 },
+          messages: [{ role: 'user', content: 'hi' }],
+          tools: [],
+          onReasoning: (t) => {
+            reasoningText += t;
+          },
+          onDelta: (t) => {
+            answerText += t;
+          },
+        });
+        assert.equal(reasoningText, 'STEP-ONE STEP-TWO ', 'reasoning must reach its own channel');
+        assert.equal(answerText, 'The answer.', 'reasoning must NOT be mixed into the answer stream');
+        assert.ok(!answerText.includes('STEP-ONE'), 'chain-of-thought must never appear as the reply');
+        assert.equal(r.content, 'The answer.');
+      } finally {
+        srv.close();
+      }
+    }
+
+    // --- 5. the thinking signal fires ONCE per turn, not once per chunk
     {
       const { srv, port } = await serve([
         { reasoning: 'a' },
@@ -2335,7 +2367,7 @@ suite.push(
       }
     }
 
-    // --- 5. a refusal with no content must reach the user, not vanish
+    // --- 6. a refusal with no content must reach the user, not vanish
     {
       const { srv, port } = await serve([{ refusal: 'I cannot help with that.' }]);
       try {
@@ -2350,7 +2382,7 @@ suite.push(
       }
     }
 
-    // --- 6. reasoning then content -> only the content is the answer
+    // --- 7. reasoning then content -> only the content is the answer
     {
       const { srv, port } = await serve([
         { reasoning: 'THINKING-ONLY' },
