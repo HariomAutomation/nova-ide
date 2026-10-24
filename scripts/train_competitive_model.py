@@ -131,6 +131,10 @@ def group_cv(train: pd.DataFrame, n_splits: int = 5, return_folds: bool = False)
     gkf = GroupKFold(n_splits=n_splits)
 
     preds = np.zeros(len(train), dtype=int)
+    # Did the group signal exist for this row at all? GroupKFold holds out whole
+    # groups, so for a validation row it never does — which is worth seeing, because
+    # it means this CV is measuring the RULES, not the group feature.
+    avail = np.zeros(len(train), dtype=bool)
     folds = []
 
     for fold_i, (tr_idx, va_idx) in enumerate(gkf.split(train, groups=groups)):
@@ -142,10 +146,13 @@ def group_cv(train: pd.DataFrame, n_splits: int = 5, return_folds: bool = False)
             folds.append({"train": tr, "valid": va, "lookup": lookup})
 
         for i, (_, row) in zip(va_idx, va.iterrows()):
+            avail[i] = row["GroupKey"] in lookup
             preds[i] = predict_one(row, lookup)
 
     accuracy = float((preds == train["Survived"].values).mean())
-    return (accuracy, preds, folds) if return_folds else (accuracy, preds)
+    if return_folds:
+        return accuracy, preds, folds
+    return accuracy, preds, avail
 
 
 def loo_accuracy(train: pd.DataFrame) -> float:
@@ -205,7 +212,7 @@ def selftest() -> int:
             problems.append(f"fold {f}: groups in both train and valid: {sorted(overlap)[:3]}")
 
     # 2. the gap: group CV must be lower than the naive number
-    group_acc, _ = group_cv(train, n_splits=5)
+    group_acc, _, _ = group_cv(train, n_splits=5)
     naive_acc = loo_accuracy(train)
 
     print(f"  synthetic groups: {train['GroupKey'].nunique()}")
@@ -255,12 +262,30 @@ def main() -> int:
     train = add_features(pd.read_csv(train_path))
     test = add_features(pd.read_csv(test_path))
 
-    group_acc, _ = group_cv(train, n_splits=args.splits)
+    group_acc, group_preds, avail = group_cv(train, n_splits=args.splits)
     naive_acc = loo_accuracy(train)
+
+    correct = group_preds == train["Survived"].values
 
     print(f"train rows: {len(train)}  groups: {train['GroupKey'].nunique()}")
     print(f"naive leave-one-out : {naive_acc:.4f}   (optimistic — do not trust this)")
     print(f"GroupKFold ({args.splits})     : {group_acc:.4f}   (the number to trust)")
+
+    # Where the number comes from. GroupKFold holds out whole groups, so the group
+    # signal is NEVER available to a validation row — this CV measures the hand
+    # rules alone. Test inference is different: some test passengers have group
+    # mates in train, so they DO get the signal. That is why the CV and the public
+    # leaderboard do not have to agree, and why the gap is not simply leakage.
+    n_avail = int(avail.sum())
+    print()
+    print("  breakdown (why CV and the leaderboard can differ):")
+    print(f"    rows with a group signal available : {n_avail}/{len(train)}  ({n_avail/len(train):.1%})")
+    print("    -> GroupKFold withholds the group signal by construction, so this CV")
+    print("       is the RULES alone. In test, groups split across train/test DO get it.")
+    solo = ~train["IsWomanOrBoy"].astype(bool)
+    if solo.any():
+        print(f"    accuracy on adult men   : {correct[~train['IsWomanOrBoy'].astype(bool)].mean():.4f}")
+        print(f"    accuracy on women/boys  : {correct[train['IsWomanOrBoy'].astype(bool)].mean():.4f}")
 
     # Final model uses the WHOLE training set for its lookup — that is correct for
     # inference; only the CV has to hold groups out.
