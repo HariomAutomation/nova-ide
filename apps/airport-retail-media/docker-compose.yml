@@ -12,7 +12,10 @@ services:
       - HOST=0.0.0.0
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/health"]
+      # node, not wget: on alpine wget is busybox's and --spider is not reliable
+      # there, and a failing healthcheck shows up as an unhealthy container rather
+      # than as a working demo. Same probe as the Dockerfile.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 3s
       retries: 3

@@ -10,6 +10,66 @@ servers:
   - url: http://localhost:4000
     description: Local Docker / Node server
 paths:
+  /api/state:
+    get:
+      summary: Bootstrap snapshot for the UI
+      description: |
+        Everything a role view needs on first paint, in one request: flights, zones,
+        screens, campaigns, checkpoints, queues, the current simulation time, and a
+        presence summary per screen. Sending it as one payload rather than six keeps
+        the first render from racing itself.
+      responses:
+        '200':
+          description: The current simulation state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [time, flights, zones, screens, campaigns]
+                properties:
+                  time:
+                    type: string
+                    format: date-time
+                  flights:
+                    type: array
+                    items:
+                      type: object
+                  zones:
+                    type: array
+                    items:
+                      type: object
+                  screens:
+                    type: array
+                    items:
+                      type: object
+                  campaigns:
+                    type: array
+                    items:
+                      type: object
+                  checkpoints:
+                    type: array
+                    items:
+                      type: object
+                  queues:
+                    type: array
+                    items:
+                      type: object
+                  presence:
+                    type: array
+                    description: Presence summary per screen, for the floor-plan heat overlay.
+                    items:
+                      type: object
+                      properties:
+                        screenId:
+                          type: string
+                        zoneId:
+                          type: string
+                        estimatedCount:
+                          type: integer
+                        confidence:
+                          type: number
+                          minimum: 0
+                          maximum: 1
   /api/health:
     get:
       summary: Health check
