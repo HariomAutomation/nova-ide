@@ -15,7 +15,6 @@ import { describeHttpError } from '../dist-electron/tools/errors.js';
 import { gpuPlan } from '../dist-electron/tools/gpu-flags.js';
 import { scan as secScan } from '../dist-electron/tools/security.js';
 import * as findingsStore from '../dist-electron/tools/findings.js';
-import { projectNumberFromClientId, pickFile, pickerHtml, API_KEY_STEPS } from '../dist-electron/tools/picker.js';
 import {
   loadRules,
   toolSchemas,
@@ -2135,58 +2134,6 @@ suite.push(
     }
     // the tool schema budget guard elsewhere is 15000 chars
     assert.ok(JSON.stringify(schemas).length < 15000, `tool schemas grew to ${JSON.stringify(schemas).length} chars`);
-  })
-);
-
-/* ------------------------------- drive picker ------------------------------- */
-
-suite.push(
-  test('picker: derives the project number and never lets a value break out of the page', async () => {
-    assert.equal(projectNumberFromClientId('695004570637-abc.apps.googleusercontent.com'), '695004570637');
-    assert.equal(projectNumberFromClientId(''), '');
-    assert.equal(projectNumberFromClientId('not-a-client-id'), '');
-
-    // A hostile token must not be able to close the script block. The HTML
-    // tokenizer only ends a <script> on a raw "</script", so escaping every "<"
-    // is what makes this safe — assert on that, not on the payload text, which
-    // is allowed to survive as an inert string.
-    const html = pickerHtml('</script><script>window.pwned=1</script>', 'key', '123');
-    assert.ok(!html.includes('</script><script>window.pwned'), 'a raw breakout must be impossible');
-    assert.ok(html.includes('\\u003c'), 'the "<" must be escaped into the literal');
-    assert.ok(!/var TOKEN = "[^"]*</.test(html), 'no raw "<" may appear inside the injected literal');
-    assert.ok(html.includes('apis.google.com'), 'the picker page must load the Picker script');
-    assert.ok(html.includes('setDeveloperKey'), 'the picker must be built with the developer key');
-  })
-);
-
-suite.push(
-  test('picker: refuses cleanly instead of opening a window it cannot use', async () => {
-    // not connected -> a clear message, no BrowserWindow involved
-    const cfgPath = path.join(process.env.NOVA_HOME || os.homedir(), 'gdrive.json');
-    let prev = null;
-    try {
-      prev = await fsp.readFile(cfgPath, 'utf8');
-    } catch {}
-    try {
-      await fsp.rm(cfgPath, { force: true }).catch(() => {});
-      const r1 = await pickFile();
-      assert.equal(r1.ok, false);
-      assert.match(r1.error, /Not connected/i);
-
-      // connected but no API key -> asks for one, with the steps to get it
-      await fsp.writeFile(cfgPath, JSON.stringify({ refreshToken: 'tok', email: 'a@b.c' }), 'utf8');
-      const saved = process.env.NOVA_GOOGLE_API_KEY;
-      delete process.env.NOVA_GOOGLE_API_KEY;
-      const r2 = await pickFile({ apiKey: '' });
-      if (saved) process.env.NOVA_GOOGLE_API_KEY = saved;
-      assert.equal(r2.ok, false);
-      assert.equal(r2.needsApiKey, true, 'a missing API key must be reported as such');
-      assert.ok(Array.isArray(r2.steps) && r2.steps.length >= 2, 'the user needs the steps to create a key');
-      assert.deepEqual(r2.steps, API_KEY_STEPS);
-    } finally {
-      if (prev === null) await fsp.rm(cfgPath, { force: true }).catch(() => {});
-      else await fsp.writeFile(cfgPath, prev, 'utf8').catch(() => {});
-    }
   })
 );
 

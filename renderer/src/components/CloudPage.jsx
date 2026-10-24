@@ -46,13 +46,6 @@ export default function CloudPage() {
           <button className="btn-icon" title="Refresh" onClick={() => useStore.getState().loadDriveFiles(q)}>
             {'\u21BB'}
           </button>
-          <button
-            className="btn small"
-            title="Pick a file from your Drive to open in Nova (asks Google for access to just that file)"
-            onClick={() => useStore.getState().pickDriveFile()}
-          >
-            Open from Drive…
-          </button>
           <button className="btn small danger" onClick={() => useStore.getState().driveSignOut()}>
             Sign out
           </button>
