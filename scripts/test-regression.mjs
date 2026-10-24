@@ -2455,6 +2455,19 @@ suite.push(
     );
     assert.equal(challenge.parseChallengeId('e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83'), 'e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83');
     assert.equal(challenge.parseChallengeId('30129302'), '30129302');
+    // TopCoder moved to /opportunities/challenge/<id>. The old pattern only matched
+    // /challenges/<id>, so a modern link — the kind the site actually gives you —
+    // parsed to null and the challenge could not be ingested at all.
+    assert.equal(
+      challenge.parseChallengeId('https://www.topcoder.com/opportunities/challenge/75cc9178-1789-4870-82dc-821bd5491f11'),
+      '75cc9178-1789-4870-82dc-821bd5491f11',
+      'the modern /opportunities/challenge/ url must parse'
+    );
+    assert.equal(
+      challenge.parseChallengeId('https://www.topcoder.com/challenges/e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83'),
+      'e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83',
+      'and the legacy /challenges/ url must keep working'
+    );
     assert.equal(challenge.parseChallengeId('hello world'), null);
     assert.equal(challenge.parseChallengeId(''), null);
 
