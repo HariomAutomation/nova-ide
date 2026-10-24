@@ -233,6 +233,19 @@ const SUBMISSION_PLAYBOOKS: { match: RegExp; items: string[] }[] = [
     ],
   },
   {
+    match: /kaggle/i,
+    items: [
+      'Read the Evaluation section of the competition page and write down the exact metric (RMSE, LogLoss, AUC, F1...) — the whole job is optimising that one number',
+      'Accept the competition rules on the site, or the API returns 401/404 for it',
+      'Download the data (train/test/sample_submission) into ./data and confirm the shapes',
+      'Build a local cross-validation that scores the SAME metric the leaderboard does',
+      'Baseline first: a simple model end to end, scored locally, before any tuning',
+      'submission.csv must have exactly the required columns/rows — check it against sample_submission.csv',
+      'No nulls and no index column in the submission unless the sample has one',
+      'Submit, record the public score, then improve one thing at a time',
+    ],
+  },
+  {
     match: /ideation|concept|idea/i,
     items: [
       'A single document (the brief usually caps the format — PDF/DOCX/slides)',
@@ -327,6 +340,15 @@ export async function listChallenges(
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/** Pull the competition ref out of a Kaggle URL. Returns null if it is not one. */
+export function parseKaggleRef(input: string): string | null {
+  const s = String(input || '').trim();
+  if (!s) return null;
+  const m = s.match(/kaggle\.com\/(?:competitions|c)\/([A-Za-z0-9._-]+)/);
+  if (m) return m[1];
+  return null;
 }
 
 /* ============================ checklist store ============================ */
@@ -561,6 +583,7 @@ export async function pack(
 
 module.exports = {
   parseChallengeId,
+  parseKaggleRef,
   listChallenges,
   deliverability,
   submissionRequirements,

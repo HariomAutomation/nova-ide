@@ -2884,6 +2884,36 @@ suite.push(
   })
 );
 
+/* ------------------------------ kaggle spec ------------------------------ */
+
+suite.push(
+  test('challenge: a Kaggle ref is recognised and brings the metric-first playbook', async () => {
+    assert.equal(challenge.parseKaggleRef('https://www.kaggle.com/competitions/titanic'), 'titanic');
+    assert.equal(challenge.parseKaggleRef('https://www.kaggle.com/c/house-prices-advanced-regression-techniques'), 'house-prices-advanced-regression-techniques');
+    assert.equal(challenge.parseKaggleRef('https://www.topcoder.com/challenges/e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83'), null, 'a TopCoder url is not a Kaggle ref');
+    assert.equal(challenge.parseKaggleRef(''), null);
+
+    // Kaggle is a track Nova can deliver, and it gets its own playbook
+    assert.equal(challenge.deliverability('kaggle').ok, true);
+    const pb = challenge.submissionRequirements('kaggle');
+    assert.ok(pb.length >= 6, 'kaggle has a playbook');
+    // the metric is the objective, so it must be the first thing on the list
+    assert.match(pb[0].text, /metric|evaluation/i, 'the playbook leads with the metric');
+    assert.ok(pb.some((i) => /rules/i.test(i.text)), 'and the rules/401 trap');
+    assert.ok(pb.some((i) => /submission\.csv/i.test(i.text)), 'and the submission shape');
+    assert.ok(pb.some((i) => /cross-validation/i.test(i.text)), 'and local CV on the same metric');
+    assert.ok(pb.every((i) => i.group === 'Submission requirements'));
+
+    // ingesting a Kaggle spec lands them in the checklist
+    const ws = path.join(TEST_DIR, 'chal-kaggle');
+    await fsp.mkdir(ws, { recursive: true });
+    const spec = await challenge.saveSpec(ws, { source: 'kaggle', id: 'titanic', name: 'Titanic', track: 'kaggle' });
+    assert.equal(spec.track, 'kaggle');
+    assert.ok(spec.items.length >= 6, 'the playbook joined the checklist');
+    assert.equal(challenge.progress(spec).complete, false);
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

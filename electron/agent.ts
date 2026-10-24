@@ -1566,6 +1566,40 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
       const target = workspaceRoot;
       let payload = null;
       let note = '';
+      const kRef = args.url ? challenge.parseKaggleRef(args.url) : null;
+      if (kRef) {
+        const k = await kaggle.listCompetitions({ search: kRef, limit: 20 });
+        if (k.authRequired) {
+          return { text: `Kaggle needs credentials.\n\n${(k.steps || []).map((s: string) => `- ${s}`).join('\n')}` };
+        }
+        if (!k.ok) return { text: `Could not look up that Kaggle competition: ${k.error}` };
+        const hit = k.competitions.find((c: any) => c.ref === kRef) || k.competitions[0];
+        if (!hit) return { text: `No Kaggle competition matched "${kRef}".` };
+        const spec = await challenge.saveSpec(target, {
+          source: 'kaggle',
+          id: hit.ref,
+          name: hit.title,
+          url: hit.url,
+          track: 'kaggle',
+          tags: hit.category ? [hit.category] : [],
+          deadlines: hit.deadline ? [{ phase: 'Submission', at: hit.deadline }] : [],
+          description: '',
+        });
+        const p = challenge.progress(spec);
+        const grouped: any = {};
+        for (const it of spec.items) (grouped[it.group] = grouped[it.group] || []).push(it);
+        const body = Object.entries(grouped)
+          .map(([g, items]: any) => `${g}:\n` + items.map((i: any) => `  ${i.id}  [${i.status}] ${i.text}`).join('\n'))
+          .join('\n');
+        return {
+          text:
+            `Kaggle: ${spec.name} (${hit.ref})\n` +
+            `category ${hit.category || '?'} · closes ${hit.deadline || '?'} · ${hit.teamCount} teams${hit.reward ? ` · ${hit.reward}` : ''}\n\n` +
+            `The API does not expose the evaluation metric, so fetch ${hit.url} and read the Evaluation section before modelling — the metric IS the objective.\n\n` +
+            `Checklist: ${p.total} items (${p.done} done).\n\n${body}\n\n` +
+            `Work through these, mark each with challenge_check, then challenge_pack.`,
+        };
+      }
       if (args.url) {
         const id = challenge.parseChallengeId(args.url);
         if (!id) return { text: `Could not read a challenge id out of "${args.url}". Pass a TopCoder challenge URL or id.` };
