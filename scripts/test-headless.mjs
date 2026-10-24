@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 
-import { runAgent, stopAgent, resolveApproval, detectMode, toolSchemas } from '../electron/agent.js';
+import { runAgent, stopAgent, resolveApproval, detectMode, toolSchemas } from '../dist-electron/agent.js';
 
 const MOCK_PORT = Number(process.argv[2] || 9988);
 const TEST_DIR = path.join(os.tmpdir(), `nova-headless-test-${Date.now()}`);

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { langFromPath } from './languages.js';
 import { dueAutomations, normalizeTrigger } from './automation-schedule.js';
-import { isGemini, preferredChatModel } from './model-family.js';
+import { isGemini, preferredChatModel, isChatModel, chatModels } from './model-family.js';
 
 // Automation scheduler state (module-level: not part of the render tree).
 let autoTimer = null;
@@ -989,11 +989,19 @@ export const useStore = create((set, get) => ({
     }
 
     // Auto-heal Gemini entries stuck on zero-free-quota / experimental models (e.g. gemini-4-argon)
+    // and sanitize non-chat / guard models
     const filtered = models.map((m) => {
-      if (isGemini(m) && m.auth !== 'gemini-web' && m.auth !== 'cloudcode' && /argon|pro-exp|exp-/i.test(String(m.model || ''))) {
-        return { ...m, model: preferredChatModel(m.modelIds, '') };
+      let model = m.model;
+      let modelIds = m.modelIds;
+      if (Array.isArray(modelIds) && modelIds.length) {
+        modelIds = chatModels(modelIds);
       }
-      return m;
+      if (isGemini(m) && m.auth !== 'gemini-web' && m.auth !== 'cloudcode' && /argon|pro-exp|exp-/i.test(String(model || ''))) {
+        model = preferredChatModel(modelIds, '');
+      } else if (model && !isChatModel(model) && Array.isArray(modelIds) && modelIds.length) {
+        model = modelIds[0] || model;
+      }
+      return { ...m, model, ...(modelIds ? { modelIds } : {}) };
     });
 
     const activeModelId = s.activeModelId && filtered.some((m) => m.id === s.activeModelId)

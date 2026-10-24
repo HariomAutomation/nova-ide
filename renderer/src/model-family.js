@@ -5,6 +5,7 @@
 
 export const GEMINI_FREE_MODELS = [
   'gemini-2.5-flash',
+  'gemini-3.8-flash',
   'gemini-flash-latest',
   'gemini-2.5-flash-lite',
   'gemini-2.0-flash',
@@ -63,15 +64,158 @@ export function latestOf(models) {
   return sorted[0] || null;
 }
 
+/** Check if a model is an obsolete / legacy model that users usually don't want when latest models exist. */
+export function isOldModel(id) {
+  const s = String(id || '').toLowerCase();
+  if (!s) return false;
+  return /(^|[-_/])(llama-?[12]\b|llama2|gpt-3\.5|davinci|curie|babbage|ada|gemini-1\.0|claude-[12]\b)/i.test(s);
+}
+
+/**
+ * Recency and capability score for ranking models:
+ * Latest flagship models (e.g. 3.8, 3.3, 4o, R1, Sonnet) score highest.
+ */
+export function modelScore(id) {
+  const s = String(id || '').toLowerCase();
+  if (!s) return 0;
+  if (isOldModel(s)) return -1000;
+
+  let score = 0;
+  // Explicit 'latest' tag
+  if (/(^|[-_/.])latest([-_/.]|$)/i.test(s)) score += 600;
+
+  // Major flagship & reasoning models
+  if (/(^|[-_/.])(r1|deepseek-r1|reasoner|o3-mini|o1|gpt-4o|claude-3-7|sonnet|opus|coder)([-_/.]|$)/i.test(s)) {
+    score += 150;
+  }
+
+  // Version numbers: major.minor
+  const vMatch = s.match(/(?:llama|gemini|claude|gpt|qwen|gemma|mistral|dbrx|phi)?[-_ ]?v?(\d+)[._-](\d+)/i);
+  if (vMatch) {
+    const major = Number(vMatch[1]);
+    const minor = Number(vMatch[2]);
+    score += major * 100 + Math.min(minor, 9) * 10;
+  } else {
+    const singleMatch = s.match(/(?:llama|gpt|qwen|gemma|mistral|deepseek)[-_ ]?v?(\d+)\b/i);
+    if (singleMatch) score += Number(singleMatch[1]) * 100;
+  }
+
+  // Parameter size (e.g. 70b > 32b > 27b > 14b > 8b > 7b)
+  const sizeMatch = s.match(/\b(\d+)b\b/i);
+  if (sizeMatch) {
+    score += Math.min(Number(sizeMatch[1]) * 1.5, 120);
+  }
+
+  // Date stamps (e.g. 2025* > 2024*)
+  const dateMatch = s.match(/\b(202\d)(\d{2})(\d{2})?\b/);
+  if (dateMatch) {
+    score += (Number(dateMatch[1]) - 2020) * 20 + Number(dateMatch[2]);
+  }
+
+  if (/preview|experimental|exp-/i.test(s)) score -= 15;
+  return score;
+}
+
+export function sortModelsLatestFirst(list) {
+  if (!Array.isArray(list)) return [];
+  return [...list].sort((a, b) => {
+    const idA = typeof a === 'string' ? a : (a && (a.id || a.model || a.label)) || '';
+    const idB = typeof b === 'string' ? b : (b && (b.id || b.model || b.label)) || '';
+    const diff = modelScore(idB) - modelScore(idA);
+    if (diff !== 0) return diff;
+    return idA.localeCompare(idB);
+  });
+}
+
+/** Known recommended latest models per provider family. */
+export const LATEST_RECOMMENDED_MODELS = {
+  groq: [
+    'llama-3.3-70b-versatile',
+    'deepseek-r1-distill-llama-70b',
+    'llama-3.1-8b-instant',
+    'qwen-2.5-coder-32b',
+    'mixtral-8x7b-32768',
+    'gemma2-9b-it',
+  ],
+  gemini: [
+    'gemini-3.8-flash',
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'gemini-flash-latest',
+    'gemini-2.5-flash-lite',
+  ],
+  openai: [
+    'gpt-4o',
+    'gpt-4o-mini',
+    'o3-mini',
+    'o1',
+    'o1-mini',
+  ],
+  deepseek: [
+    'deepseek-chat',
+    'deepseek-reasoner',
+  ],
+  sarvam: [
+    'sarvam-105b',
+    'sarvam-30b',
+  ],
+};
+
 /**
  * The selectable model ids inside one entry: a fetched list when we have one,
  * otherwise just the entry's own model.
  */
 export function variantsOf(m) {
   if (m && Array.isArray(m.modelIds) && m.modelIds.length) {
-    return m.modelIds.map((id) => ({ id, label: id }));
+    const raw = [...m.modelIds];
+    if (m.model && !raw.includes(m.model) && isChatModel(m.model)) {
+      raw.unshift(m.model);
+    }
+    const usable = raw.filter(isChatModel).filter((id) => !isOldModel(id));
+    const list = usable.length ? usable : raw.filter(isChatModel);
+    const finalIds = list.length ? list : raw;
+    return finalIds.map((id) => ({ id, label: id }));
   }
   return [{ id: (m && m.model) || '', label: (m && (m.label || m.model)) || 'model' }];
+}
+
+/** Sorted variants with latest models first. */
+export function sortedVariantsOf(m) {
+  const vars = variantsOf(m);
+  const fam = familyOf(m);
+  const rec = LATEST_RECOMMENDED_MODELS[fam.key];
+  if (rec && rec.length > 0) {
+    const existingIds = new Set(vars.map((v) => v.id));
+    const missing = rec.filter((r) => !existingIds.has(r) && isChatModel(r));
+    // If variants were minimal or missed flagship models, inject recommended ones
+    if (missing.length > 0 && vars.length <= 3) {
+      const augmented = [...vars, ...missing.map((id) => ({ id, label: id }))];
+      return sortModelsLatestFirst(augmented);
+    }
+  }
+  return sortModelsLatestFirst(vars);
+}
+
+/** Get badge tag info for a model id (e.g. LATEST, REASONING, FAST, FREE). */
+export function getModelBadge(id, defaultTag = '') {
+  if (defaultTag) {
+    const isFree = defaultTag.toLowerCase().includes('free');
+    return { text: defaultTag, type: isFree ? 'free' : 'default' };
+  }
+  const s = String(id || '').toLowerCase();
+  if (/(^|[-_/])(r1|deepseek-r1|reasoner|o3-mini|o1)([-_/]|$)/i.test(s)) {
+    return { text: 'REASONING', type: 'reasoning' };
+  }
+  if (/(^|[-_/])(latest|3\.8|3\.3|4o)([-_/]|$)/i.test(s)) {
+    return { text: 'LATEST', type: 'latest' };
+  }
+  if (/flash-lite|instant|mini/i.test(s)) {
+    return { text: 'FAST', type: 'fast' };
+  }
+  if (/:free\b|free/i.test(s)) {
+    return { text: 'FREE', type: 'free' };
+  }
+  return null;
 }
 
 /** How many rows a family will actually render. */
@@ -93,8 +237,6 @@ export function pickerMaxHeight(anchorTop, min = 220, max = 460) {
 /** What the composer chip should say for the active entry. */
 export function chipLabel(entry) {
   if (!entry) return 'Select Model…';
-  // With a fetched list the interesting thing is which model is chosen, not the
-  // provider label the entry was created with.
   if (Array.isArray(entry.modelIds) && entry.modelIds.length) {
     return entry.model || entry.label || 'Model';
   }
@@ -102,25 +244,35 @@ export function chipLabel(entry) {
 }
 
 /**
- * Models that cannot chat. Listing them just leads people to pick one and get a
- * confusing failure, so they are dropped from a fetched list.
+ * Models that cannot chat. Listing them leads to confusion and errors,
+ * so prompt guards, TTS, audio, speech, embeddings, and non-chat models are dropped.
  */
 export function isChatModel(id) {
   const s = String(id || '').toLowerCase();
   if (!s) return false;
-  return !/(^|[-_])(tts|embedding|embeddings|aqa|imagen|veo|whisper|dall-e|moderation)([-_]|$)/.test(s);
+  if (
+    /(^|[-_/.])(tts|embedding|embeddings|embed|aqa|imagen|veo|whisper|dall-e|moderation|prompt-guard|safeguard|guardrail|shield|orpheus|audio|speech|transcribe|diarize|rerank|reranker|realtime)([-_/.]|$)/i.test(
+      s
+    )
+  ) {
+    if (s.includes('-image') && !s.includes('imagen')) return true;
+    return false;
+  }
+  if (/prompt-guard|safeguard|guard-2-|guard-3-/i.test(s)) return false;
+  return true;
 }
 
-/** Keep only the ids that can plausibly be used for chat. */
-export function chatModels(ids) {
+/** Keep only the ids that can plausibly be used for chat, with latest models prioritized. */
+export function chatModels(ids, { includeOld = false } = {}) {
   const list = Array.isArray(ids) ? ids : [];
-  return list.filter(isChatModel);
+  const usable = list.filter(isChatModel);
+  const filtered = includeOld ? usable : usable.filter((id) => !isOldModel(id));
+  const result = filtered.length > 0 ? filtered : usable;
+  return sortModelsLatestFirst(result);
 }
 
 /**
- * Pick a reliable default free-tier chat model from a fetched list (avoiding
- * experimental/paid-only models like gemini-4-argon when a stable Flash model
- * is available).
+ * Pick a reliable default free-tier chat model from a fetched list.
  */
 export function preferredChatModel(ids, currentModel = '') {
   const usable = chatModels(ids);
@@ -129,12 +281,15 @@ export function preferredChatModel(ids, currentModel = '') {
   if (cur && !isUnreliable && (!usable.length || usable.includes(cur))) {
     return cur;
   }
+  if (!usable.length) {
+    return cur && !isUnreliable ? cur : '';
+  }
   for (const pref of GEMINI_FREE_MODELS) {
     if (usable.includes(pref)) return pref;
   }
   const flash = usable.find((id) => /flash/i.test(id) && !/argon|exp|preview/i.test(id));
   if (flash) return flash;
-  return usable[0] || (cur && !isUnreliable ? cur : GEMINI_FREE_MODELS[0]);
+  return usable[0] || (cur && !isUnreliable ? cur : '');
 }
 
 /**

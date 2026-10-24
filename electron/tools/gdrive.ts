@@ -132,6 +132,8 @@ async function logout() {
   delete cfg.picture;
   await writeConfig(cfg);
   accessCache = { token: null, exp: 0 };
+  cachedFolderId = null;
+  cachedFolderExp = 0;
   return status();
 }
 
@@ -301,6 +303,9 @@ async function apiGet(url, { raw = false } = {}) {
 
 const NOVA_FOLDER_NAME = 'Nova IDE';
 
+let cachedFolderId: string | null = null;
+let cachedFolderExp = 0;
+
 /**
  * Find the dedicated 'Nova IDE' folder ID.
  * To protect user privacy, Nova IDE NEVER queries root Drive or personal documents
@@ -308,11 +313,19 @@ const NOVA_FOLDER_NAME = 'Nova IDE';
  * within the 'Nova IDE' folder.
  */
 async function getNovaFolderId() {
+  const now = Date.now();
+  if (cachedFolderId && now < cachedFolderExp) {
+    return cachedFolderId;
+  }
   const q = `mimeType='application/vnd.google-apps.folder' and name='${NOVA_FOLDER_NAME}' and trashed=false`;
   const url = `${DRIVE_FILES}?q=${encodeURIComponent(q)}&fields=files(id,name)`;
   try {
     const j = await apiGet(url);
-    if (j?.files?.length > 0) return j.files[0].id;
+    if (j?.files?.length > 0) {
+      cachedFolderId = j.files[0].id;
+      cachedFolderExp = now + 5 * 60 * 1000; // cache for 5 minutes
+      return cachedFolderId;
+    }
   } catch {}
   return null;
 }

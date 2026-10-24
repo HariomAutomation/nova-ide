@@ -27,7 +27,11 @@ function gpuPlan({ platform, env = {} } = {}) {
 
   const wayland = /wayland/i.test(env.XDG_SESSION_TYPE || '') || !!env.WAYLAND_DISPLAY;
   const switches = [['ozone-platform-hint', 'auto']];
-  if (wayland) switches.push(['disable-features', 'Vulkan,VaapiVideoDecoder,VaapiVideoEncoder']);
+  if (wayland) {
+    switches.push(['disable-features', 'Vulkan,VulkanFromANGLE,DefaultANGLEVulkan,WebGPU,VaapiVideoDecoder,VaapiVideoEncoder,VaapiVideoDecodeLinuxGL']);
+    switches.push(['disable-accelerated-video-decode', '']);
+    switches.push(['disable-accelerated-video-encode', '']);
+  }
   return { mode: 'auto', wayland, switches };
 }
 

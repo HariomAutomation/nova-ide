@@ -114,6 +114,7 @@ const PRESETS = [
     label: 'Gemini 3.8 Flash (Free & Fast)',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     model: 'gemini-3.8-flash',
+    modelIds: ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-2.5-flash-lite'],
     hint: 'Google Gemini 3.8 Flash (Recommended free model) — ultra fast with tool calling. Model field me "Fetch" dabao to live list aayegi.',
   },
   {
@@ -121,21 +122,23 @@ const PRESETS = [
     label: 'Gemini Flash Latest',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     model: 'gemini-flash-latest',
+    modelIds: ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
     hint: 'Always points to the newest stable Gemini Flash model on your free AI Studio key.',
   },
   {
     id: 'openrouter',
     label: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
-    model: 'google/gemini-4-argon',
-    hint: 'Gemini 4 Argon through OpenRouter — Fetch to browse every model (free ones too).',
+    model: 'anthropic/claude-3.7-sonnet',
+    modelIds: ['anthropic/claude-3.7-sonnet', 'deepseek/deepseek-r1', 'google/gemini-2.5-flash', 'meta-llama/llama-3.3-70b-instruct'],
+    hint: 'OpenRouter — access Claude 3.7 Sonnet, DeepSeek R1, Llama 3.3 and hundreds of models.',
   },
   {
     id: 'opencode',
     label: 'OpenCode Zen',
     baseUrl: 'https://opencode.ai/zen/v1',
     model: 'beam-free',
-    hint: 'Apni opencode.ai console ki paid API key daalo → "Test connection" dabao → Zen ke andar ke saare models list hoke pills me dikh jayenge, ek click me pick karo. Zen ka free tier sirf OpenCode app ke andar chalta hai, isliye Nova me key zaroori hai.',
+    hint: 'Apni opencode.ai console ki paid API key daalo → "Test connection" dabao → Zen ke andar ke saare models list hoke pills me dikh jayenge, ek click me pick karo.',
   },
   {
     id: 'omniroute',
@@ -149,12 +152,34 @@ const PRESETS = [
     label: 'Sarvam AI',
     baseUrl: 'https://api.sarvam.ai/v1',
     model: 'sarvam-105b',
+    modelIds: ['sarvam-105b', 'sarvam-30b'],
     hint: 'Sarvam-105B for deep Indic-language reasoning — Bearer auth supported.',
   },
-  { id: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-  { id: 'groq', label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
-  { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-  { id: 'ollama', label: 'Ollama (local)', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5-coder:7b' },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    model: 'deepseek-chat',
+    modelIds: ['deepseek-chat', 'deepseek-reasoner'],
+    hint: 'DeepSeek V3 (chat) and R1 (reasoning) — extremely affordable and capable.',
+  },
+  {
+    id: 'groq',
+    label: 'Groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    model: 'llama-3.3-70b-versatile',
+    modelIds: ['llama-3.3-70b-versatile', 'deepseek-r1-distill-llama-70b', 'llama-3.1-8b-instant', 'qwen-2.5-coder-32b', 'mixtral-8x7b-32768'],
+    hint: 'Groq ultra-fast Llama 3.3 70B & DeepSeek R1 Distill inference.',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o',
+    modelIds: ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1', 'o1-mini'],
+    hint: 'OpenAI GPT-4o, GPT-4o-mini, and o-series reasoning models.',
+  },
+  { id: 'ollama', label: 'Ollama (local)', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5-coder:7b', modelIds: ['qwen2.5-coder:7b', 'llama3.3:latest', 'deepseek-r1:latest'] },
   { id: 'lmstudio', label: 'LM Studio (local)', baseUrl: 'http://localhost:1234/v1', model: 'local-model' },
 ];
 
@@ -241,11 +266,11 @@ function GeminiApiLine({ draft, active, setDraft, setActive, commit }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', minWidth: 0 }}>
-      <div className="input-row">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', minWidth: 0 }}>
+      <div className="input-row" style={{ flexWrap: 'wrap', gap: 8 }}>
         <input
           className="input"
-          style={{ width: 300 }}
+          style={{ width: 280, maxWidth: '100%' }}
           type="password"
           value={key}
           onChange={(e) => setKey(e.target.value)}
@@ -255,20 +280,47 @@ function GeminiApiLine({ draft, active, setDraft, setActive, commit }) {
           {busy ? 'Fetching…' : 'Fetch models'}
         </button>
       </div>
-      {list.length > 0 && (
-        <div className="preset-row" style={{ maxHeight: 150, overflowY: 'auto' }}>
-          {list.map((id) => (
-            <button
-              key={id}
-              className={'btn small' + (gEntry && gEntry.model === id ? ' primary' : '')}
-              onClick={() => pick(id)}
-            >
-              {id}
-            </button>
-          ))}
+      {list.length > 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+          <span className="muted small" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+            Selected Model:
+          </span>
+          <select
+            className="select"
+            style={{
+              flex: 1,
+              minWidth: 180,
+              maxWidth: 320,
+              padding: '5px 10px',
+              borderRadius: 6,
+              fontSize: 12.5,
+              background: 'var(--panel-2, #18181b)',
+              color: 'var(--fg)',
+              border: '1px solid var(--border)',
+              cursor: 'pointer',
+            }}
+            value={(gEntry && gEntry.model) || list[0] || ''}
+            onChange={(e) => pick(e.target.value)}
+          >
+            {list.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+          <span className="model-variant-count" style={{ whiteSpace: 'nowrap' }}>
+            ✓ {list.length} models ready
+          </span>
         </div>
+      ) : (
+        gEntry && gEntry.model && (
+          <div className="muted small" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+            <span>Active model:</span>
+            <span className="model-chip-badge">{gEntry.model}</span>
+          </div>
+        )
       )}
-      {msg && <span className="muted small">{msg}</span>}
+      {msg && <span className="muted small" style={{ color: msg.startsWith('Error') ? 'var(--danger, #ef4444)' : 'var(--muted)' }}>{msg}</span>}
     </div>
   );
 }
@@ -279,9 +331,12 @@ function ModelsTab() {
   const [draft, setDraft] = useState(() => models.map((m) => ({ ...m })));
   const [active, setActive] = useState(activeModelId);
   const [custom, setCustom] = useState({ label: 'Custom', baseUrl: '', model: '', apiKey: '' });
+  const [showAddCustom, setShowAddCustom] = useState(false);
+  const [expandedCards, setExpandedCards] = useState({});
   const [modelOpts, setModelOpts] = useState({}); // cardId -> [model ids] fetched from the endpoint
   const [tests, setTests] = useState({}); // cardId -> {state:'testing'|'ok'|'fail', msg, count}
-  const [showList, setShowList] = useState({}); // cardId -> bool (show all fetched versions)
+
+  const toggleCard = (id) => setExpandedCards((prev) => ({ ...prev, [id]: !prev[id] }));
 
   /** Test / Fetch control shown under each model card. */
   function TestLine({ id }) {
@@ -297,15 +352,44 @@ function ModelsTab() {
         return;
       }
       setTests((st) => ({ ...st, [id]: { state: 'testing' } }));
+
+      let modelToTest = String(entry.model || '').trim();
+      // Model khali ho toh pehle endpoint se models auto-fetch karke pehla model pick karo
+      if (!modelToTest) {
+        try {
+          const lr = await window.nova.listModels({
+            baseUrl,
+            apiKey: entry.apiKey || '',
+          });
+          const list = (lr && (lr.models || lr.data)) || [];
+          const ids = list.map((m) => (typeof m === 'string' ? m : m && (m.id || m.name))).filter(Boolean);
+          const usable = chatModels(ids);
+          if (usable.length > 0) {
+            modelToTest = usable[0];
+            setModelOpts((o) => ({ ...o, [id]: usable }));
+            if (id === 'custom') {
+              setCustom((c) => ({ ...c, model: modelToTest }));
+            } else {
+              update(id, { model: modelToTest, modelIds: usable.slice(0, 500) });
+            }
+          }
+        } catch {}
+      }
+
+      if (!modelToTest) {
+        setTests((st) => ({ ...st, [id]: { state: 'fail', msg: 'Pehle Model box me model name daalo (ya Fetch models dabao).' } }));
+        return;
+      }
+
       try {
         const r = await window.nova.testModel({
           baseUrl,
           apiKey: entry.apiKey || '',
-          model: entry.model || '',
+          model: modelToTest,
           auth: entry.auth,
         });
         if (r && r.chatOk) {
-          setTests((st) => ({ ...st, [id]: { state: 'ok', msg: `works \u00B7 ${r.chatModel || entry.model}` } }));
+          setTests((st) => ({ ...st, [id]: { state: 'ok', msg: `works \u00B7 ${r.chatModel || modelToTest}` } }));
         } else {
           setTests((st) => ({ ...st, [id]: { state: 'fail', msg: (r && (r.error || r.chatError)) || 'connection failed' } }));
         }
@@ -325,8 +409,18 @@ function ModelsTab() {
         const ids = list.map((m) => (typeof m === 'string' ? m : m && (m.id || m.name))).filter(Boolean);
         const usable = chatModels(ids);
         setModelOpts((o) => ({ ...o, [id]: usable }));
-        if (id !== 'custom' && usable.length) {
-          update(id, { modelIds: usable.slice(0, 500) });
+        if (id === 'custom') {
+          if (usable.length > 0) {
+            const chosen = preferredChatModel(usable, custom.model) || usable[0] || '';
+            setCustom((c) => ({ ...c, model: chosen }));
+          }
+        } else if (usable.length > 0) {
+          const curEntry = draft.find((m) => m.id === id);
+          const chosen = preferredChatModel(usable, curEntry?.model) || usable[0] || '';
+          update(id, {
+            modelIds: usable.slice(0, 500),
+            ...((!curEntry?.model || curEntry.model === 'default' || !usable.includes(curEntry.model)) ? { model: chosen } : {}),
+          });
         }
         setTests((st) => ({
           ...st,
@@ -369,8 +463,6 @@ function ModelsTab() {
 
   /**
    * Write through to the store (and, debounced, to disk) on every change.
-   * The old draft-only behaviour meant a deleted model came back if you did not
-   * press "Save models" before leaving.
    */
   function commit(nextDraft, nextActive) {
     const cleaned = nextDraft.map(cleanModel);
@@ -393,12 +485,14 @@ function ModelsTab() {
     setActive(nextActive);
     commit(next, nextActive);
   }
+
   function addPreset(preset) {
     const entry = {
       id: crypto.randomUUID(),
       label: preset.label,
       baseUrl: preset.baseUrl,
       model: preset.model,
+      ...(preset.modelIds ? { modelIds: [...preset.modelIds] } : {}),
       apiKey: '',
       ...(preset.auth ? { auth: preset.auth } : {}),
     };
@@ -406,26 +500,97 @@ function ModelsTab() {
     setDraft(next);
     const nextActive = active ?? entry.id;
     setActive(nextActive);
+    setExpandedCards((prev) => ({ ...prev, [entry.id]: true }));
     commit(next, nextActive);
   }
-  function addCustom() {
-    if (!custom.baseUrl.trim() || !custom.model.trim()) return;
+
+  async function addCustom() {
+    const baseUrl = String(custom.baseUrl || '').trim();
+    if (!baseUrl) return;
+
+    let chosenModel = String(custom.model || '').trim();
+    let fetchedIds = modelOpts['custom'] || [];
+
+    // If model name is not entered, automatically fetch models from the API endpoint!
+    if (!chosenModel) {
+      if (fetchedIds.length === 0) {
+        try {
+          const r = await window.nova.listModels({
+            baseUrl,
+            apiKey: custom.apiKey || '',
+          });
+          const list = (r && (r.models || r.data)) || [];
+          const ids = list.map((m) => (typeof m === 'string' ? m : m && (m.id || m.name))).filter(Boolean);
+          const usable = chatModels(ids);
+          if (usable.length) {
+            fetchedIds = usable;
+            chosenModel = preferredChatModel(usable) || usable[0] || '';
+          }
+        } catch {}
+      } else {
+        chosenModel = preferredChatModel(fetchedIds) || fetchedIds[0] || '';
+      }
+    }
+
+    if (!chosenModel) {
+      chosenModel = 'default';
+    }
+
+    // Auto-detect a friendly label if user left it blank or 'Custom'
+    let label = custom.label.trim();
+    if (!label || label === 'Custom') {
+      const lower = baseUrl.toLowerCase();
+      if (lower.includes('deepseek')) label = 'DeepSeek';
+      else if (lower.includes('groq')) label = 'Groq';
+      else if (lower.includes('openrouter')) label = 'OpenRouter';
+      else if (lower.includes('ollama') || lower.includes('11434')) label = 'Ollama';
+      else if (lower.includes('lmstudio') || lower.includes('1234')) label = 'LM Studio';
+      else if (chosenModel && chosenModel !== 'default') label = chosenModel;
+      else label = 'Custom';
+    }
+
     const entry = {
       id: crypto.randomUUID(),
-      label: custom.label.trim() || 'Custom',
-      baseUrl: custom.baseUrl.trim(),
-      model: custom.model.trim(),
+      label,
+      baseUrl,
+      model: chosenModel,
       apiKey: custom.apiKey || '',
+      ...(fetchedIds.length ? { modelIds: fetchedIds.slice(0, 500) } : {}),
     };
     const next = [...draft, entry];
     setDraft(next);
     const nextActive = active ?? entry.id;
     setActive(nextActive);
+    setExpandedCards((prev) => ({ ...prev, [entry.id]: true }));
     commit(next, nextActive);
     setCustom({ label: 'Custom', baseUrl: '', model: '', apiKey: '' });
+    setShowAddCustom(false);
   }
 
-  function modelInput(id, value, onChange, placeholder) {
+  function modelInput(id, value, onChange, placeholder, existingModelIds) {
+    const opts = (modelOpts[id] && modelOpts[id].length ? modelOpts[id] : existingModelIds) || [];
+    if (opts.length > 0) {
+      return (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%' }}>
+          <select
+            className="select"
+            style={{ flex: 1, minWidth: 0, padding: '5px 8px', fontSize: 12.5 }}
+            value={value}
+            onChange={onChange}
+          >
+            {!opts.includes(value) && value && <option value={value}>{value} (custom)</option>}
+            {opts.map((mid) => (
+              <option key={mid} value={mid}>
+                {mid}
+              </option>
+            ))}
+          </select>
+          <span className="model-variant-count" style={{ whiteSpace: 'nowrap' }}>
+            ✓ {opts.length}
+          </span>
+        </div>
+      );
+    }
     return (
       <div className="input-row">
         <input className="input" list={`modelopts-${id}`} value={value} onChange={onChange} placeholder={placeholder} />
@@ -455,12 +620,7 @@ function ModelsTab() {
       <Group title="Gemini — free API (recommended)">
         <Row
           label="1. Get a free key"
-          desc={
-            <>
-              AI Studio se <b>free</b> API key lo. Ye Google-supported rasta hai aur asli tool-calling deta hai, isliye
-              agent theek se files/terminal/browser chalata hai.
-            </>
-          }
+          desc="AI Studio se free API key lo. Google-supported native tool-calling agent ke liye zaroori hai."
           control={
             <button className="btn small" onClick={() => window.nova.openExternal('https://aistudio.google.com/apikey')}>
               Get AI Studio key ↗
@@ -469,129 +629,236 @@ function ModelsTab() {
         />
         <Row
           label="2. Fetch &amp; pick a model"
-          desc={
-            <>
-              Key paste karke <b>Fetch models</b> dabao — jo models aapki key pe available hain wo pills me aa jayenge, ek
-              click me pick ho jayenge.
-            </>
-          }
+          desc="Key daalkar Fetch models dabao — live available models me se aapka model clean dropdown me pick ho jayega."
           control={<GeminiApiLine draft={draft} active={active} setDraft={setDraft} setActive={setActive} commit={commit} />}
         />
       </Group>
 
-      <Group title="Add a model">
-        <Row
-          label="Label"
-          desc="A short name shown in the model picker."
-          control={
-            <input
-              className="input"
-              style={{ width: 260 }}
-              value={custom.label}
-              onChange={(e) => setCustom({ ...custom, label: e.target.value })}
-              placeholder="My model"
-            />
-          }
-        />
-        <Row
-          label="Base URL"
-          desc="Any OpenAI-compatible endpoint, e.g. https://api.deepseek.com/v1"
-          control={
-            <input
-              className="input"
-              style={{ width: 360 }}
-              value={custom.baseUrl}
-              onChange={(e) => setCustom({ ...custom, baseUrl: e.target.value })}
-              placeholder="https://api.example.com/v1"
-            />
-          }
-        />
-        <Row
-          label="Model"
-          desc="Model id. Use Test to list what the endpoint offers."
-          control={modelInput('custom', custom.model, (e) => setCustom({ ...custom, model: e.target.value }), 'model-id')}
-        />
-        <Row
-          label="API key"
-          desc="Stored locally, only ever sent to this provider."
-          control={
-            <input
-              className="input"
-              style={{ width: 300 }}
-              type="password"
-              value={custom.apiKey}
-              onChange={(e) => setCustom({ ...custom, apiKey: e.target.value })}
-              placeholder="sk-… (optional)"
-            />
-          }
-        />
-        <Row
-          label=""
-          desc=""
-          control={
-            <div className="input-row">
-              <button className="btn primary small" disabled={!custom.baseUrl.trim() || !custom.model.trim()} onClick={addCustom}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '14px 0 8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Quick-add a provider</span>
+          <button
+            className="btn small"
+            style={{ fontSize: 11.5, padding: '3px 10px' }}
+            onClick={() => setShowAddCustom(!showAddCustom)}
+          >
+            {showAddCustom ? '✕ Close Custom Form' : '+ Custom Endpoint'}
+          </button>
+        </div>
+        <div className="preset-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {PRESETS.map((p) => (
+            <button key={p.id} className="preset-chip" title={p.hint} onClick={() => addPreset(p)}>
+              + {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {showAddCustom && (
+        <div className="model-card" style={{ marginBottom: 14, background: 'var(--panel-2, #18181b)' }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Add Custom Model / Endpoint</span>
+            <button className="btn-icon" onClick={() => setShowAddCustom(false)}>✕</button>
+          </div>
+          <div className="model-grid">
+            <label>
+              Label
+              <input
+                className="input"
+                value={custom.label}
+                onChange={(e) => setCustom({ ...custom, label: e.target.value })}
+                placeholder="My model (optional)"
+              />
+            </label>
+            <label>
+              Base URL
+              <input
+                className="input"
+                value={custom.baseUrl}
+                onChange={(e) => setCustom({ ...custom, baseUrl: e.target.value })}
+                placeholder="https://api.example.com/v1"
+              />
+            </label>
+            <label>
+              Model {modelOpts['custom']?.length > 0 && <span style={{ color: '#4ade80', fontSize: 11 }}>(auto-fetched)</span>}
+              {modelInput(
+                'custom',
+                custom.model,
+                (e) => setCustom({ ...custom, model: e.target.value }),
+                'Auto-fetches from API if blank',
+                modelOpts['custom']
+              )}
+            </label>
+            <label>
+              API key
+              <input
+                className="input"
+                type="password"
+                value={custom.apiKey}
+                onChange={(e) => setCustom({ ...custom, apiKey: e.target.value })}
+                placeholder="sk-… (optional)"
+              />
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+            <TestLine id="custom" />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn small" onClick={() => setShowAddCustom(false)}>Cancel</button>
+              <button
+                className="btn primary small"
+                disabled={!custom.baseUrl.trim()}
+                onClick={addCustom}
+              >
                 Add model
               </button>
-              <TestLine id="custom" />
             </div>
-          }
-        />
-      </Group>
+          </div>
+        </div>
+      )}
 
-      <div className="quickadd-label">Or quick-add a provider</div>
-      <div className="preset-row">
-        {PRESETS.map((p) => (
-          <button key={p.id} className="btn small" title={p.hint} onClick={() => addPreset(p)}>
-            + {p.label}
-          </button>
-        ))}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '14px 0 8px' }}>
+        <span style={{ fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--muted)' }}>
+          Configured Providers ({draft.length})
+        </span>
+        <span className="muted small">
+          Active: <b>{draft.find((m) => m.id === active)?.label || 'None'}</b>
+        </span>
       </div>
 
       {draft.length === 0 && <p className="muted">No models yet — add one above, or quick-add a provider.</p>}
 
-      {draft.map((m) => (
-        <div key={m.id} className={'model-card' + (active === m.id ? ' active' : '')}>
-          <div className="model-card-head">
-            <label className="radio">
-              <input type="radio" name="activeModel" checked={active === m.id} onChange={() => setActive(m.id)} />
-              active
-            </label>
-            <input className="input" value={m.label} onChange={(e) => update(m.id, { label: e.target.value })} placeholder="Label" />
-            <button className="btn-icon" title="Remove" onClick={() => remove(m.id)}>
-              &#128465;
-            </button>
-          </div>
-          {m.auth === 'gemini-web' ? (
-            <div className="model-grid">
-              <div className="muted small" style={{ paddingTop: 2 }}>
-                🌐 Built-in provider — Nova ka <b>Gemini</b> tab (koi URL/key nahi). Pehle sidebar me “Gemini” kholke apne
-                Google account se sign in karo; chat + agent usi session se chalenge.
+      {draft.map((m) => {
+        const isExpanded = !!expandedCards[m.id];
+        const isActive = active === m.id;
+        const hasVariants = Array.isArray(m.modelIds) && m.modelIds.length > 0;
+        const t = tests[m.id];
+
+        return (
+          <div key={m.id} className={'model-card' + (isActive ? ' active' : '')} style={{ marginBottom: 8 }}>
+            <div className={'model-card-head' + (isExpanded ? ' has-body' : '')}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1, flexWrap: 'wrap' }}>
+                <label className="radio" style={{ cursor: 'pointer', margin: 0 }}>
+                  <input
+                    type="radio"
+                    name="activeModel"
+                    checked={isActive}
+                    onChange={() => {
+                      setActive(m.id);
+                      commit(draft, m.id);
+                    }}
+                  />
+                  <span style={{ fontWeight: isActive ? 700 : 500, color: isActive ? 'var(--accent, #3d7eff)' : 'inherit' }}>
+                    {m.label}
+                  </span>
+                </label>
+
+                <span className="model-chip-badge" title={m.model}>
+                  {m.model}
+                </span>
+
+                {isActive && <span className="model-active-badge">ACTIVE</span>}
+
+                {hasVariants && (
+                  <span className="model-variant-count" title={`${m.modelIds.length} models fetched from endpoint`}>
+                    ✓ {m.modelIds.length} models
+                  </span>
+                )}
+
+                {t && t.state === 'ok' && !isExpanded && (
+                  <span className="testline-ok small" style={{ fontSize: 11 }}>
+                    {t.msg}
+                  </span>
+                )}
+                {t && t.state === 'fail' && !isExpanded && (
+                  <span className="search-error small" style={{ fontSize: 11 }}>
+                    {t.msg}
+                  </span>
+                )}
               </div>
-              <div className="muted small" style={{ paddingTop: 2 }}>
-                Model: <b>gemini-web</b> — web UI automation. Agent mode me tools JSON-protocol se chalte hain (files,
-                terminal, browser, MCP sab available).
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                {!m.auth && !isExpanded && (
+                  <button
+                    className="btn small"
+                    style={{ fontSize: 11, padding: '2px 8px' }}
+                    onClick={() => toggleCard(m.id)}
+                  >
+                    Test / Config
+                  </button>
+                )}
+                <button
+                  className="btn small"
+                  style={{ fontSize: 11, padding: '2px 8px' }}
+                  onClick={() => toggleCard(m.id)}
+                  title={isExpanded ? 'Collapse settings' : 'Configure endpoint, key and model'}
+                >
+                  {isExpanded ? '▴ Close' : '⚙ Edit'}
+                </button>
+                <button className="btn-icon" title="Remove model" onClick={() => remove(m.id)}>
+                  &#128465;
+                </button>
               </div>
             </div>
-          ) : (
-          <div className="model-grid">
-            <label>
-              Base URL
-              <input className="input" value={m.baseUrl} onChange={(e) => update(m.id, { baseUrl: e.target.value })} placeholder="https://api.example.com/v1" />
-            </label>
-            <label>
-              Model
-              {modelInput(m.id, m.model, (e) => update(m.id, { model: e.target.value }), 'model-id')}
-            </label>
-            <label>
-              API Key
-              <input className="input" type="password" value={m.apiKey} onChange={(e) => update(m.id, { apiKey: e.target.value })} placeholder="sk-…" />
-            </label>
+
+            {isExpanded && (
+              <div style={{ marginTop: 10 }}>
+                {m.auth === 'gemini-web' ? (
+                  <div className="model-grid">
+                    <div className="muted small" style={{ paddingTop: 2 }}>
+                      🌐 Built-in provider — Nova ka <b>Gemini</b> tab (koi URL/key nahi). Pehle sidebar me “Gemini” kholke apne
+                      Google account se sign in karo; chat + agent usi session se chalenge.
+                    </div>
+                    <div className="muted small" style={{ paddingTop: 2 }}>
+                      Model: <b>gemini-web</b> — web UI automation. Agent mode me tools JSON-protocol se chalte hain (files,
+                      terminal, browser, MCP sab available).
+                    </div>
+                  </div>
+                ) : (
+                  <div className="model-grid">
+                    <label>
+                      Provider Label
+                      <input
+                        className="input"
+                        value={m.label}
+                        onChange={(e) => update(m.id, { label: e.target.value })}
+                        placeholder="Label"
+                      />
+                    </label>
+                    <label>
+                      Base URL
+                      <input
+                        className="input"
+                        value={m.baseUrl}
+                        onChange={(e) => update(m.id, { baseUrl: e.target.value })}
+                        placeholder="https://api.example.com/v1"
+                      />
+                    </label>
+                    <label>
+                      Model
+                      {modelInput(m.id, m.model, (e) => update(m.id, { model: e.target.value }), 'model-id', m.modelIds)}
+                    </label>
+                    <label>
+                      API Key
+                      <input
+                        className="input"
+                        type="password"
+                        value={m.apiKey}
+                        onChange={(e) => update(m.id, { apiKey: e.target.value })}
+                        placeholder="sk-…"
+                      />
+                    </label>
+                  </div>
+                )}
+                {!m.auth && (
+                  <div style={{ marginTop: 10 }}>
+                    <TestLine id={m.id} />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          )}
-          {!m.auth && <TestLine id={m.id} />}
-        </div>
-      ))}
+        );
+      })}
 
       <div className="modal-footer-inline">
         <button className="btn primary" onClick={save}>
@@ -1156,6 +1423,50 @@ function AboutTab() {
   );
 }
 
+function CloudUserAvatar({ picture, name, email }) {
+  const [imgError, setImgError] = useState(false);
+  const initials = (name || email || 'U')
+    .split(' ')
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  if (picture && !imgError) {
+    return (
+      <img
+        className="avatar sm"
+        src={picture}
+        alt={name || ''}
+        referrerPolicy="no-referrer"
+        onError={() => setImgError(true)}
+        style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover' }}
+      />
+    );
+  }
+
+  return (
+    <div
+      style={{
+        width: 34,
+        height: 34,
+        borderRadius: '50%',
+        background: 'linear-gradient(135deg, var(--accent, #3b82f6), #8b5cf6)',
+        color: '#fff',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 12,
+        fontWeight: 600,
+        boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+        flexShrink: 0,
+      }}
+    >
+      {initials}
+    </div>
+  );
+}
+
 function CloudTab() {
   const drive = useStore((s) => s.drive);
   const [clientId, setClientId] = useState('');
@@ -1183,7 +1494,6 @@ function CloudTab() {
   }
 
   async function signIn() {
-    // A built-in client means no fields are needed; only ask when there is none.
     if (drive.hasClientId === false && !clientId.trim()) {
       setMsg({
         type: 'err',
@@ -1216,130 +1526,172 @@ function CloudTab() {
 
   return (
     <div className="settings-body">
-      <p className="muted small">
-        Ye sign-in <b>cloud files aur memory</b> ke liye hai (read-only Drive). <b>AI models ke liye nahi</b> — Gemini models
-        ke liye Settings → Models → "Gemini — free API" me key daalo aur Fetch models dabao.
-      </p>
+      <Group title="Google Drive Cloud">
+        {drive.connected ? (
+          <>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                marginBottom: 12,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <CloudUserAvatar picture={drive.picture} name={drive.name} email={drive.email} />
+                <div>
+                  <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {drive.name || 'Google Account'}
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: '2px 7px',
+                        borderRadius: 10,
+                        background: 'rgba(34, 197, 94, 0.15)',
+                        color: '#16a34a',
+                        fontWeight: 600,
+                      }}
+                    >
+                      ● Connected
+                    </span>
+                  </div>
+                  <div className="muted small">{drive.email}</div>
+                </div>
+              </div>
 
-      <Group title="Google Drive">
-        <Row
-          label="Status"
-          desc={
-            drive.connected
-              ? `Connected${drive.name ? ` as ${drive.name}` : ''}${drive.email ? ` \u00B7 ${drive.email}` : ''}`
-              : 'Not connected'
-          }
-          control={
-            drive.connected && drive.picture ? (
-              <img className="avatar sm" src={drive.picture} alt="" referrerPolicy="no-referrer" />
-            ) : (
-              <span className={'cz-dot ' + (drive.connected ? 'ok' : '')} />
-            )
-          }
-        />
-        <Row
-          label="Sign in"
-          desc={
-            drive.connected
-              ? 'Signed in. Nova can list and open your cloud files, and sync your memory — read-only.'
-              : drive.builtin
-                ? 'One click — no setup needed.'
-                : 'Sign in with Google (read-only Drive). Nova can read cloud files, never change them.'
-          }
-          control={
-            <div className="input-row">
-              {drive.connected ? (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn small primary" onClick={() => useStore.getState().openCloud()}>
+                  Browse cloud files ↗
+                </button>
                 <button className="btn small danger" onClick={() => useStore.getState().driveSignOut()}>
                   Sign out
                 </button>
-              ) : (
-                <button className="btn primary" disabled={busy} onClick={signIn}>
-                  {busy ? '↻ Opening browser…' : 'Sign in with Google'}
-                </button>
-              )}
-              {url && (
+              </div>
+            </div>
+
+            <Row
+              label="Privacy & Isolation"
+              desc='Nova Drive access is read-only and strictly isolated to the "Nova IDE" folder. Personal files and documents are never touched.'
+              control={
                 <button
                   className="btn small"
                   onClick={() =>
-                    navigator.clipboard
-                      .writeText(url)
-                      .then(() => useStore.getState().setStatus('Sign-in URL copied'))
+                    window.nova?.openExternal
+                      ? window.nova.openExternal('https://drive.google.com/drive/my-drive')
+                      : window.open('https://drive.google.com/drive/my-drive', '_blank')
                   }
                 >
-                  Copy sign-in URL
+                  Open Drive ↗
                 </button>
-              )}
-            </div>
-          }
-        />
-        {!drive.connected && !drive.builtin && (
-          <Row
-            label="Advanced"
-            desc="Only if this build has no built-in Google client. Google Cloud Console → Credentials → OAuth client ID → type: Desktop app."
-            control={
-              <button className="btn small" onClick={() => setAdv((v) => !v)}>
-                {adv ? 'Hide' : 'Set up'}
-              </button>
-            }
-          />
-        )}
-        {adv && !drive.builtin && (
+              }
+            />
+            <Row
+              label="Agent Memory Sync"
+              desc="Agent's long-term memory (memory.json) automatically syncs to Google Drive hidden appData across your devices."
+              control={<span className="cz-dot ok" title="Memory Sync Active" />}
+            />
+          </>
+        ) : (
           <>
             <Row
-              label="OAuth Client ID"
-              desc="Paste your own client ID (…apps.googleusercontent.com)."
-              control={
-                <input
-                  className="input"
-                  style={{ width: 320 }}
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  placeholder="1234-abc.apps.googleusercontent.com"
-                />
-              }
+              label="Status"
+              desc="Not connected. Sign in once to read cloud files in the IDE and sync agent memory across devices."
+              control={<span className="cz-dot" />}
             />
             <Row
-              label="Client secret"
-              desc="Desktop app clients ke liye REQUIRED hai — Google ka token endpoint ise maangta hai. Yahan ek baar paste karke Save karo; Drive sign-in isi ko use karta hai."
-              control={
-                <input
-                  className="input"
-                  style={{ width: 260 }}
-                  type="password"
-                  value={clientSecret}
-                  onChange={(e) => setClientSecret(e.target.value)}
-                  placeholder="GOCSPX-…"
-                />
+              label="Sign in"
+              desc={
+                drive.builtin
+                  ? 'One click sign-in with your Google account.'
+                  : 'Sign in with Google (read-only Drive). Nova can read cloud files, never change them.'
               }
-            />
-            <Row
-              label=""
-              desc="Client ID banao → Console kholo → APIs & Services → Credentials → Create credentials → OAuth client ID → Desktop app."
               control={
                 <div className="input-row">
-                  <button className="btn small" onClick={save}>
-                    Save client ID
+                  <button className="btn primary" disabled={busy} onClick={signIn}>
+                    {busy ? '↻ Opening browser…' : 'Sign in with Google'}
                   </button>
-                  <button
-                    className="btn small"
-                    onClick={() => window.nova.openExternal('https://console.cloud.google.com/apis/credentials')}
-                  >
-                    Create credentials ↗
-                  </button>
+                  {url && (
+                    <button
+                      className="btn small"
+                      onClick={() =>
+                        navigator.clipboard
+                          .writeText(url)
+                          .then(() => useStore.getState().setStatus('Sign-in URL copied'))
+                      }
+                    >
+                      Copy sign-in URL
+                    </button>
+                  )}
                 </div>
               }
             />
+
+            {!drive.builtin && (
+              <Row
+                label="Advanced"
+                desc="Custom OAuth Client ID setup (Google Cloud Console → Credentials → OAuth client ID → Desktop app)."
+                control={
+                  <button className="btn small" onClick={() => setAdv((v) => !v)}>
+                    {adv ? 'Hide' : 'Set up'}
+                  </button>
+                }
+              />
+            )}
+            {adv && !drive.builtin && (
+              <>
+                <Row
+                  label="OAuth Client ID"
+                  desc="Paste your own client ID (…apps.googleusercontent.com)."
+                  control={
+                    <input
+                      className="input"
+                      style={{ width: 320 }}
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                      placeholder="1234-abc.apps.googleusercontent.com"
+                    />
+                  }
+                />
+                <Row
+                  label="Client secret"
+                  desc="Desktop app client secret if required by your project."
+                  control={
+                    <input
+                      className="input"
+                      style={{ width: 260 }}
+                      type="password"
+                      value={clientSecret}
+                      onChange={(e) => setClientSecret(e.target.value)}
+                      placeholder="GOCSPX-…"
+                    />
+                  }
+                />
+                <Row
+                  label=""
+                  desc="Save client credentials to local Nova config."
+                  control={
+                    <div className="input-row">
+                      <button className="btn small" onClick={save}>
+                        Save client ID
+                      </button>
+                      <button
+                        className="btn small"
+                        onClick={() => window.nova.openExternal('https://console.cloud.google.com/apis/credentials')}
+                      >
+                        Create credentials ↗
+                      </button>
+                    </div>
+                  }
+                />
+              </>
+            )}
           </>
         )}
-        <Row
-          label="Gemini models"
-          desc="Ye (Drive) sign-in models ke liye nahi hai. Gemini ke liye Settings → Models → 'Gemini — free API' me AI Studio key daal ke Fetch models dabao."
-          control={
-            <button className="btn small" onClick={() => useStore.getState().setSettingsTab('models')}>
-              Open Models
-            </button>
-          }
-        />
+
         {msg && <div className={'g-inline g-' + msg.type}>{msg.text}</div>}
         {msg && msg.type === 'err' && /access_denied|verif/i.test(msg.text || '') && (
           <Row
@@ -1357,13 +1709,31 @@ function CloudTab() {
         )}
       </Group>
 
-      {drive.connected && (
-        <div className="preset-row">
-          <button className="btn primary" onClick={() => useStore.getState().openCloud()}>
-            Browse cloud files
-          </button>
+      <div
+        style={{
+          marginTop: 16,
+          padding: '12px 16px',
+          borderRadius: 8,
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+        }}
+      >
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)', marginBottom: 2 }}>
+            💡 Looking for Gemini AI Models?
+          </div>
+          <div className="muted small">
+            Google Drive is for cloud storage & memory sync only. For Gemini 2.5 Flash / Pro AI models, add your free AI Studio API key in Models.
+          </div>
         </div>
-      )}
+        <button className="btn small" onClick={() => useStore.getState().setSettingsTab('models')}>
+          Open Models →
+        </button>
+      </div>
     </div>
   );
 }

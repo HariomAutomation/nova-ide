@@ -79,7 +79,13 @@ try {
   if (plan.mode === 'off') {
     app.disableHardwareAcceleration();
   } else {
-    for (const [name, value] of plan.switches) app.commandLine.appendSwitch(name, value);
+    for (const [name, value] of plan.switches) {
+      if (value !== undefined && value !== null && value !== '') {
+        app.commandLine.appendSwitch(name, value);
+      } else {
+        app.commandLine.appendSwitch(name);
+      }
+    }
   }
 } catch {}
 
@@ -385,8 +391,13 @@ ipcMain.handle('models:list', async (_e, payload) => {
       .map((s) => s.replace(/^models\//, '')); // Gemini-style "models/x" -> "x" (chat endpoint ka format)
     const models = [...new Set(raw)].slice(0, 400);
     return { models };
-  } catch (e) {
-    return { error: String((e && e.message) || e) };
+  } catch (e: any) {
+    const msg = String((e && e.message) || e);
+    const cause = e && e.cause ? String(e.cause.message || e.cause.code || e.cause) : '';
+    if (cause && /ECONNREFUSED/i.test(cause)) {
+      return { error: `Connection refused at ${base}. Make sure your local server is running on that port.` };
+    }
+    return { error: cause ? `${msg} (${cause})` : msg };
   }
 });
 
@@ -399,7 +410,7 @@ ipcMain.handle('models:ping', async (_e, payload) => {
   const { baseUrl, apiKey, auth, model } = payload || {};
   const base = String(baseUrl || '').trim().replace(/\/+$/, '');
   if (!/^https?:\/\//.test(base)) return { error: 'Sahi http(s) base URL daalo pehle.' };
-  const authHeaders = {};
+  const authHeaders: Record<string, string> = {};
   if (apiKey) authHeaders.Authorization = `Bearer ${apiKey}`;
 
   const chatModel = String(model || '').trim();
@@ -428,8 +439,13 @@ ipcMain.handle('models:ping', async (_e, payload) => {
       msg = 'FreeTierError — Zen free tier sirf OpenCode app ke andar chalta hai. Nova me chalne ke liye opencode.ai se paid key lo.';
     }
     return { chatOk: false, chatError: msg };
-  } catch (e) {
-    return { chatOk: false, chatError: String(e.message || e) };
+  } catch (e: any) {
+    const msg = String((e && e.message) || e);
+    const cause = e && e.cause ? String(e.cause.message || e.cause.code || e.cause) : '';
+    if (cause && /ECONNREFUSED/i.test(cause)) {
+      return { chatOk: false, chatError: `Connection refused at ${base}. Make sure your local server is running on that port.` };
+    }
+    return { chatOk: false, chatError: cause ? `${msg} (${cause})` : msg };
   }
 });
 

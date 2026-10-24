@@ -40,21 +40,48 @@ async function closeAll() {
 
 async function ensure({ headless = true } = {}) {
   if (!chromium) throw new Error('Playwright is not installed in Nova.');
-  if (state.browser && state.headless !== headless) {
+  const needsLaunch =
+    !state.browser ||
+    (state.browser && typeof state.browser.isConnected === 'function' && !state.browser.isConnected()) ||
+    state.headless !== headless ||
+    !state.context;
+
+  if (needsLaunch) {
     await closeAll();
-  }
-  if (!state.browser) {
     state.headless = headless;
     state.browser = await chromium.launch({ headless, args: ['--no-sandbox'] });
+    if (typeof state.browser.on === 'function') {
+      state.browser.on('disconnected', () => {
+        state.browser = null;
+        state.context = null;
+        state.page = null;
+      });
+    }
     state.context = await state.browser.newContext({ viewport: VIEWPORT });
+    if (typeof state.context.on === 'function') {
+      state.context.on('close', () => {
+        state.context = null;
+        state.page = null;
+      });
+    }
   }
   return state;
 }
 
 async function getPage({ headless = true } = {}) {
   await ensure({ headless });
-  if (!state.page || state.page.isClosed()) state.page = await state.context.newPage();
-  return state.page;
+  try {
+    if (!state.page || state.page.isClosed()) {
+      state.page = await state.context.newPage();
+    }
+    return state.page;
+  } catch {
+    // If context or target was closed unexpectedly, re-create and retry
+    await closeAll();
+    await ensure({ headless });
+    state.page = await state.context.newPage();
+    return state.page;
+  }
 }
 
 function status() {

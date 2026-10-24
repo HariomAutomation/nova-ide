@@ -6,7 +6,17 @@ import { basename } from '../timeAgo';
 import ToolCard from './ToolCard';
 import RepoMenu from './RepoMenu';
 import { usableModels as pickUsableModels, RETIRED_AUTHS } from '../model-filter';
-import { groupModels, variantsOf, variantCount, pickerMaxHeight, chipLabel, fallbackChoices } from '../model-family';
+import {
+  groupModels,
+  variantsOf,
+  sortedVariantsOf,
+  variantCount,
+  pickerMaxHeight,
+  chipLabel,
+  fallbackChoices,
+  getModelBadge,
+  familyOf,
+} from '../model-family';
 import { retryWindow, sizeNumbers } from '../error-text';
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -497,8 +507,9 @@ export default function AgentMain() {
   // space above it or the top of the list is clipped off-screen.
   const [modelMenuMax, setModelMenuMax] = useState(420);
   const [plusOpen, setPlusOpen] = useState(false);
-  const [plusQuery, setPlusQuery] = useState('');
   const [openFamily, setOpenFamily] = useState(null);
+  const [expandedFamilies, setExpandedFamilies] = useState(() => new Set());
+  const [modelSearch, setModelSearch] = useState('');
   const taRef = useRef(null);
   const listRef = useRef(null);
   const menuRef = useRef(null);
@@ -1179,6 +1190,10 @@ export default function AgentMain() {
               if (!modelMenuOpen) {
                 const el = modelMenuRef.current;
                 if (el) setModelMenuMax(pickerMaxHeight(el.getBoundingClientRect().top));
+                const activeFam = activeModel ? familyOf(activeModel).key : null;
+                const initialKey = activeFam || (modelFamilies[0] ? modelFamilies[0].key : null);
+                setExpandedFamilies(new Set(initialKey ? [initialKey] : []));
+                setModelSearch('');
               }
               setModelMenuOpen(!modelMenuOpen);
             }}
@@ -1190,7 +1205,7 @@ export default function AgentMain() {
 
           {modelMenuOpen && (
             <div
-              className="dropdown"
+              className="dropdown mm-popover"
               style={{
                 position: 'absolute',
                 bottom: 'calc(100% + 8px)',
@@ -1198,144 +1213,276 @@ export default function AgentMain() {
                 right: 'auto',
                 top: 'auto',
                 minWidth: 320,
-                maxWidth: 400,
+                maxWidth: 420,
                 maxHeight: modelMenuMax,
                 overflow: 'hidden',
                 display: 'flex',
                 flexDirection: 'column',
-                padding: '6px',
+                padding: '8px',
                 zIndex: 150,
+                boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--border)',
+                borderRadius: 10,
+                background: 'var(--panel, #1e1e24)',
               }}
             >
+              {/* Header */}
               <div
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '6px 8px',
+                  padding: '4px 6px 8px',
                   borderBottom: '1px solid var(--border)',
-                  marginBottom: 4,
+                  marginBottom: 6,
                 }}
               >
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: 'var(--muted)',
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  Choose Model
-                </span>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{usableModels.length} ready</span>
-              </div>
-
-              {hiddenModelCount > 0 && (
-                <div
-                  style={{ padding: '6px 10px 2px', fontSize: 11, color: 'var(--muted)' }}
-                  title={hiddenModelNames.join(', ')}
-                >
-                  {hiddenModelCount} hidden (no key): {hiddenModelNames.slice(0, 2).join(', ')}
-                  {hiddenModelCount > 2 ? ` +${hiddenModelCount - 2}` : ''} —{' '}
-                  <button
-                    className="linklike"
-                    onClick={() => {
-                      setModelMenuOpen(false);
-                      useStore.getState().setSettingsOpen(true, 'models');
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 13 }}>⚡</span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: 'var(--fg)',
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.6,
                     }}
                   >
-                    manage models
-                  </button>
+                    Select Model
+                  </span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    padding: '2px 7px',
+                    borderRadius: 10,
+                    background: 'var(--panel-2, rgba(255,255,255,0.06))',
+                    color: 'var(--muted)',
+                  }}
+                >
+                  {usableModels.length} {usableModels.length === 1 ? 'provider' : 'providers'} ready
+                </span>
+              </div>
+
+              {/* Quick Search Bar if multiple options */}
+              {(modelFamilies.length > 1 || usableModels.some((m) => Array.isArray(m.modelIds) && m.modelIds.length > 3)) && (
+                <div style={{ position: 'relative', marginBottom: 6 }}>
+                  <input
+                    type="text"
+                    className="mm-search-input"
+                    placeholder="Search models (e.g. 70b, flash, r1)…"
+                    value={modelSearch}
+                    onChange={(e) => setModelSearch(e.target.value)}
+                  />
+                  {modelSearch && (
+                    <button
+                      className="btn-icon"
+                      style={{
+                        position: 'absolute',
+                        right: 6,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        fontSize: 10,
+                        padding: 2,
+                        lineHeight: 1,
+                      }}
+                      onClick={() => setModelSearch('')}
+                      title="Clear search"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               )}
+
+              {/* Scrollable models container */}
               <div
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 2,
-                  // header + hidden-count + footer take roughly 120px
-                  maxHeight: Math.max(140, modelMenuMax - 120),
+                  gap: 3,
+                  maxHeight: Math.max(140, modelMenuMax - 140),
                   overflowY: 'auto',
                   minHeight: 0,
+                  paddingRight: 2,
                 }}
               >
                 {usableModels.length === 0 && (
-                  <div style={{ padding: '8px 10px 12px', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  <div style={{ padding: '12px 10px', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5, textAlign: 'center' }}>
                     No working model yet — Settings → Models → Gemini (free API), key daalo aur Fetch models dabao.
                   </div>
                 )}
 
                 {modelFamilies.map((f) => {
-                  const count = variantCount(f.models);
+                  const allVariants = f.models.flatMap((m) =>
+                    sortedVariantsOf(m).map((v) => ({ ...v, entry: m }))
+                  );
+
+                  // Filter variants if search query is present
+                  const query = modelSearch.trim().toLowerCase();
+                  const filteredVariants = query
+                    ? allVariants.filter(
+                        (v) =>
+                          v.id.toLowerCase().includes(query) ||
+                          (v.label && v.label.toLowerCase().includes(query)) ||
+                          f.label.toLowerCase().includes(query)
+                      )
+                    : allVariants;
+
+                  // If searching and this family has no matches, skip it
+                  if (query && filteredVariants.length === 0) return null;
+
+                  const isExpanded = query ? true : expandedFamilies.has(f.key);
+                  const count = filteredVariants.length;
+                  const hasActiveModel = f.models.some((m) => m.id === activeModelId);
+
                   return (
-                    <div key={f.key}>
-                      <div className="mm-head">
-                        <span>{f.label}</span>
-                        {count > 1 && <span className="muted small">{count} models</span>}
-                      </div>
-                      {f.models.flatMap((m) => {
-                        const variants = variantsOf(m);
-                        return variants.map((v) => {
-                          const isSel = m.id === activeModelId && String(m.model || '') === String(v.id);
-                          return (
-                            <button
-                              key={`${m.id}:${v.id}`}
-                              className="dropdown-item"
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: 8,
-                                padding: '6px 10px 6px 20px',
-                                background: isSel ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'transparent',
-                              }}
-                              onClick={() => pickVariant(m, v.id)}
-                            >
-                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                                <span style={{ color: isSel ? 'var(--accent, #3d7eff)' : 'transparent', width: 14 }}>
-                                  {'\u2713'}
+                    <div
+                      key={f.key}
+                      className={`mm-family-group ${isExpanded ? 'is-expanded' : ''}`}
+                    >
+                      {/* Collapsible Accordion Header */}
+                      <button
+                        type="button"
+                        className="mm-accordion-header"
+                        onClick={() => {
+                          setExpandedFamilies((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(f.key)) {
+                              next.delete(f.key);
+                            } else {
+                              next.add(f.key);
+                            }
+                            return next;
+                          });
+                        }}
+                        aria-expanded={isExpanded}
+                        title={isExpanded ? `Collapse ${f.label}` : `Expand ${f.label} (${count} models)`}
+                      >
+                        <span className="mm-header-left">
+                          <span className={`mm-arrow ${isExpanded ? 'expanded' : 'collapsed'}`}>
+                            {isExpanded ? '▼' : '▶'}
+                          </span>
+                          <span className="mm-family-title">{f.label}</span>
+                          {hasActiveModel && (
+                            <span className="mm-active-badge">Active</span>
+                          )}
+                        </span>
+                        <span className="mm-header-right">
+                          <span className="mm-count-badge">
+                            {count} {count === 1 ? 'model' : 'models'}
+                          </span>
+                        </span>
+                      </button>
+
+                      {/* Expanded Model Variants List */}
+                      {isExpanded && (
+                        <div className="mm-models-list">
+                          {filteredVariants.map(({ id: vId, label: vLabel, entry: m }) => {
+                            const isSel = m.id === activeModelId && String(m.model || '') === String(vId);
+                            const badge = getModelBadge(vId, m.tag);
+                            return (
+                              <button
+                                key={`${m.id}:${vId}`}
+                                type="button"
+                                className="dropdown-item mm-variant-row"
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 8,
+                                  padding: '6px 10px 6px 22px',
+                                  background: isSel ? 'var(--bg-active, rgba(61, 126, 255, 0.14))' : 'transparent',
+                                  borderRadius: 5,
+                                  cursor: 'pointer',
+                                  width: '100%',
+                                  boxSizing: 'border-box',
+                                  textAlign: 'left',
+                                }}
+                                onClick={() => pickVariant(m, vId)}
+                              >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, flex: 1 }}>
+                                  <span
+                                    style={{
+                                      color: isSel ? 'var(--accent, #3d7eff)' : 'transparent',
+                                      width: 14,
+                                      fontWeight: 700,
+                                      fontSize: 12,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {'\u2713'}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontWeight: isSel ? 600 : 400,
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                      color: isSel ? 'var(--fg-bright, #fff)' : 'var(--fg)',
+                                      fontSize: 12,
+                                    }}
+                                    title={vId}
+                                  >
+                                    {vLabel}
+                                  </span>
                                 </span>
-                                <span
-                                  style={{
-                                    fontWeight: isSel ? 600 : 400,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {v.label}
-                                </span>
-                              </span>
-                              {m.tag && (
-                                <span
-                                  style={{
-                                    fontSize: 9.5,
-                                    padding: '2px 6px',
-                                    borderRadius: 4,
-                                    background: m.tag.includes('FREE') ? '#134e2f' : '#2b303c',
-                                    color: m.tag.includes('FREE') ? '#4ade80' : '#9ca3af',
-                                    fontWeight: 600,
-                                    letterSpacing: 0.3,
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  {m.tag}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        });
-                      })}
+                                {badge && (
+                                  <span className={`mm-item-pill ${badge.type}`} style={{ flexShrink: 0 }}>
+                                    {badge.text}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
 
+              {/* Hidden Models link if any */}
+              {hiddenModelCount > 0 && (
+                <div
+                  style={{
+                    padding: '6px 8px 2px',
+                    fontSize: 11,
+                    color: 'var(--muted)',
+                    borderTop: '1px solid var(--border)',
+                    marginTop: 4,
+                  }}
+                  title={hiddenModelNames.join(', ')}
+                >
+                  {hiddenModelCount} more provider{hiddenModelCount > 1 ? 's' : ''} (no key):{' '}
+                  <button
+                    className="linklike"
+                    style={{ fontSize: 11 }}
+                    onClick={() => {
+                      setModelMenuOpen(false);
+                      useStore.getState().setSettingsOpen(true, 'models');
+                    }}
+                  >
+                    configure keys →
+                  </button>
+                </div>
+              )}
+
+              {/* Footer: Manage Models */}
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 4, marginTop: 4 }}>
                 <button
                   className="dropdown-item"
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent, #3d7eff)', fontWeight: 500 }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    color: 'var(--accent, #3d7eff)',
+                    fontWeight: 500,
+                    padding: '6px 8px',
+                    borderRadius: 5,
+                    width: '100%',
+                    boxSizing: 'border-box',
+                  }}
                   onClick={() => {
                     setModelMenuOpen(false);
                     useStore.getState().setSettingsOpen(true, 'models');

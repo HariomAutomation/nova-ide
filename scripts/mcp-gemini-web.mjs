@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { configRoot } from '../electron/tools/paths.js';
+import { configRoot } from '../dist-electron/tools/paths.js';
 
 export const SERVER_INFO = { name: 'nova-gemini-web', version: '1.0.0' };
 export const PROTOCOL_VERSION = '2024-11-05';

@@ -6,13 +6,13 @@ import path from 'node:path';
 import os from 'node:os';
 import assert from 'node:assert/strict';
 
-import fsTools from '../electron/tools/fsTools.js';
-import checkpoints from '../electron/tools/checkpoints.js';
-import { runCommand, buildUbuntuEnv, diagnoseUbuntuCommand } from '../electron/tools/terminal.js';
-import { webFetch, webSearch } from '../electron/tools/web.js';
-import { parseWebToolCalls, protocolBlock, setEngineMode, getEngineMode } from '../electron/gemini-web.js';
-import { describeHttpError } from '../electron/tools/errors.js';
-import { gpuPlan } from '../electron/tools/gpu-flags.js';
+import fsTools from '../dist-electron/tools/fsTools.js';
+import checkpoints from '../dist-electron/tools/checkpoints.js';
+import { runCommand, buildUbuntuEnv, diagnoseUbuntuCommand } from '../dist-electron/tools/terminal.js';
+import { webFetch, webSearch } from '../dist-electron/tools/web.js';
+import { parseWebToolCalls, protocolBlock, setEngineMode, getEngineMode } from '../dist-electron/gemini-web.js';
+import { describeHttpError } from '../dist-electron/tools/errors.js';
+import { gpuPlan } from '../dist-electron/tools/gpu-flags.js';
 import {
   loadRules,
   toolSchemas,
@@ -30,14 +30,14 @@ import {
   flattenMessagesForPromptProtocol,
   THOUGHT_SIGNATURE_BYPASS,
   ubuntuSystem,
-} from '../electron/agent.js';
-import { isWithin } from '../electron/tools/paths.js';
-import computer from '../electron/tools/computer.js';
-import git from '../electron/tools/git.js';
-import gdrive from '../electron/tools/gdrive.js';
-import gh from '../electron/tools/github.js';
-import cloudcode from '../electron/tools/cloudcode.js';
-import voice from '../electron/tools/voice.js';
+} from '../dist-electron/agent.js';
+import { isWithin } from '../dist-electron/tools/paths.js';
+import computer from '../dist-electron/tools/computer.js';
+import git from '../dist-electron/tools/git.js';
+import gdrive from '../dist-electron/tools/gdrive.js';
+import gh from '../dist-electron/tools/github.js';
+import cloudcode from '../dist-electron/tools/cloudcode.js';
+import voice from '../dist-electron/tools/voice.js';
 import { usableModels, isModelUsable } from '../renderer/src/model-filter.js';
 import { formatRetry, retryWindow, sizeNumbers } from '../renderer/src/error-text.js';
 import {
@@ -49,12 +49,15 @@ import {
   pickerMaxHeight,
   chipLabel,
   isChatModel,
+  isOldModel,
   chatModels,
+  sortModelsLatestFirst,
+  getModelBadge,
   preferredChatModel,
   fallbackChoices,
 } from '../renderer/src/model-family.js';
 import { handle as mcpHandle, askGemini } from './mcp-gemini-web.mjs';
-import * as geminiPw from '../electron/gemini-pw.js';
+import * as geminiPw from '../dist-electron/gemini-pw.js';
 import {
   isAutomationDue,
   dueAutomations,
@@ -710,7 +713,7 @@ suite.push(
 suite.push(
   test('memory: add / list / memoryText / remove round-trip', async () => {
     process.env.NOVA_CONFIG_DIR = path.join(TEST_DIR, 'nova-home');
-    const memory = (await import('../electron/tools/memory.js')).default;
+    const memory = (await import('../dist-electron/tools/memory.js')).default;
     await memory.clear();
 
     const a = await memory.add('User prefers TypeScript and pnpm.', 'user');
@@ -741,7 +744,7 @@ suite.push(
 
 suite.push(
   test('memory: each account gets its own namespace', async () => {
-    const memory = (await import('../electron/tools/memory.js')).default;
+    const memory = (await import('../dist-electron/tools/memory.js')).default;
     await memory.setAccount('local');
     await memory.clear();
     await memory.add('local note', 'user');
@@ -1031,9 +1034,22 @@ suite.push(
     assert.equal(isChatModel('text-embedding-004'), false);
     assert.equal(isChatModel('gemini-2.5-flash-image'), true); // '-image' is not in the blocklist by design
     assert.equal(isChatModel('veo-3'), false);
+    assert.equal(isChatModel('meta-llama/llama-prompt-guard-2-86m'), false);
+    assert.equal(isChatModel('openai/gpt-oss-safeguard-20b'), false);
+    assert.equal(isChatModel('canopylabs/orpheus-v1-english'), false);
     assert.equal(isChatModel(''), false);
+    assert.equal(isOldModel('llama-2-70b'), true);
+    assert.equal(isOldModel('gpt-3.5-turbo'), true);
+    assert.equal(isOldModel('llama-3.3-70b-versatile'), false);
     assert.deepEqual(chatModels(['gemini-2.5-flash', 'gemini-3.8-flash-tts', 'text-embedding-004']), ['gemini-2.5-flash']);
     assert.deepEqual(chatModels(null), []);
+
+    // sortModelsLatestFirst sorts newest flagship versions first
+    const groqUnsorted = ['openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
+    const sorted = sortModelsLatestFirst(groqUnsorted);
+    assert.equal(sorted[0], 'llama-3.3-70b-versatile'); // 3.3 70b flagship is first
+    assert.ok(getModelBadge('llama-3.3-70b-versatile').text === 'LATEST');
+    assert.ok(getModelBadge('deepseek-r1').text === 'REASONING');
   })
 );
 
@@ -1464,29 +1480,29 @@ suite.push(
       process.env.NOVA_HOME = isolatedDir;
       delete process.env.NOVA_CONFIG_DIR;
 
-      const { configRoot } = await import('../electron/tools/paths.js');
+      const { configRoot } = await import('../dist-electron/tools/paths.js');
       assert.equal(configRoot(), isolatedDir, 'configRoot() resolves to NOVA_HOME');
 
       // Test github
-      const gh = await import('../electron/tools/github.js');
+      const gh = await import('../dist-electron/tools/github.js');
       const ghSt = await gh.status();
       assert.ok(ghSt.configPath.startsWith(isolatedDir), `github configPath (${ghSt.configPath}) must start with NOVA_HOME`);
 
       // Test memory
-      const mem = await import('../electron/tools/memory.js');
+      const mem = await import('../dist-electron/tools/memory.js');
       const memSt = await mem.list();
       assert.ok(memSt.path.startsWith(isolatedDir), `memory path (${memSt.path}) must start with NOVA_HOME`);
 
       // Test mcp
-      const mcpMod = await import('../electron/mcp.js');
+      const mcpMod = await import('../dist-electron/mcp.js');
       assert.ok(mcpMod.getConfigPath().startsWith(isolatedDir), `mcp configPath must start with NOVA_HOME`);
 
       // Test gdrive
-      const gdriveMod = await import('../electron/tools/gdrive.js');
+      const gdriveMod = await import('../dist-electron/tools/gdrive.js');
       assert.ok(gdriveMod.getConfigPath().startsWith(isolatedDir), `gdrive configPath must start with NOVA_HOME`);
 
       // Test checkpoints
-      const cpMod = await import('../electron/tools/checkpoints.js');
+      const cpMod = await import('../dist-electron/tools/checkpoints.js');
       const cpDir = cpMod.dirFor('test-agent-iso');
       assert.ok(cpDir.startsWith(isolatedDir), `checkpoints dir (${cpDir}) must start with NOVA_HOME`);
     } finally {
@@ -1524,8 +1540,11 @@ suite.push(
 
 suite.push(
   test('sanitizer: preserves code blocks, indentation, and markdown while stripping prompt reflections', async () => {
-    const agentCode = await fsp.readFile(path.join(ROOT_DIR, 'electron/agent.js'), 'utf8');
-    assert.match(agentCode, /function sanitizeAssistantReply/, 'agent.js must define sanitizeAssistantReply');
+    const agentFile = fs.existsSync(path.join(ROOT_DIR, 'electron/agent.ts'))
+      ? path.join(ROOT_DIR, 'electron/agent.ts')
+      : path.join(ROOT_DIR, 'dist-electron/agent.js');
+    const agentCode = await fsp.readFile(agentFile, 'utf8');
+    assert.match(agentCode, /function sanitizeAssistantReply/, 'agent must define sanitizeAssistantReply');
 
     // Extract function logic to test directly
     const fnMatch = agentCode.match(/function sanitizeAssistantReply\([\s\S]*?\n\}/);
@@ -1552,7 +1571,7 @@ suite.push(
 
 suite.push(
   test('errors: describeHttpError produces informative diagnostics for HTTP 503 high demand', async () => {
-    const { describeHttpError } = await import('../electron/tools/errors.js');
+    const { describeHttpError } = await import('../dist-electron/tools/errors.js');
     const desc = describeHttpError('https://generativelanguage.googleapis.com/v1beta/openai', 503, 'Service Unavailable', 'This model is currently experiencing high demand.');
     assert.ok(desc.includes('503'), 'Must contain 503 status code');
     assert.ok(desc.includes('Google servers pe temporary high demand'), 'Must explain temporary high demand in clear Hindi');

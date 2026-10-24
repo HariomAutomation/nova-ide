@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { configRoot } from '../electron/tools/paths.js';
+import { configRoot } from '../dist-electron/tools/paths.js';
 
 const CDP_PORT = process.argv[2] ?? '9222';
 const MOCK_PORT = Number(process.argv[3] ?? 9977);
