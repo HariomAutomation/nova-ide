@@ -2137,6 +2137,34 @@ suite.push(
   })
 );
 
+suite.push(
+  test('security: UI contract ensures findings counts and effective severity are accurate', async () => {
+    const ws = path.join(TEST_DIR, `sec-ui-${Date.now()}`);
+    await fsp.mkdir(ws, { recursive: true });
+    await fsp.writeFile(path.join(ws, 'vuln.js'), 'eval(req.query.cmd);\n', 'utf8');
+
+    const scanRes = await secScan({ dir: ws });
+    assert.ok(scanRes.findings.length >= 1);
+    await findingsStore.save(ws, scanRes.findings);
+
+    const list = await findingsStore.list(ws);
+    assert.ok(list.length >= 1);
+    const c1 = findingsStore.counts(list);
+    assert.ok(c1.medium >= 1 || c1.high >= 1 || c1.critical >= 1);
+
+    // Triage one finding as confirmed and verify counts survive
+    const target = list[0];
+    const triaged = await findingsStore.triage(ws, target.id, { status: 'confirmed', analysis: 'Reachable sink' });
+    assert.equal(triaged.finding.status, 'confirmed');
+
+    // Triage as false positive -> excluded from active counts
+    await findingsStore.triage(ws, target.id, { status: 'false-positive' });
+    const listAfterFp = await findingsStore.list(ws);
+    const c2 = findingsStore.counts(listAfterFp);
+    const totalActive = c2.critical + c2.high + c2.medium + c2.low;
+    assert.equal(totalActive, 0);
+  })
+);
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

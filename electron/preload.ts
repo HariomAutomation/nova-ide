@@ -152,6 +152,13 @@ contextBridge.exposeInMainWorld('nova', {
   gdriveMemoryPull: () => ipcRenderer.invoke('gdrive:memoryPull'),
   gdriveMemoryPush: (notes) => ipcRenderer.invoke('gdrive:memoryPush', { notes }),
 
+  // security (vulnerabilities & findings)
+  securityScan: (payload) => ipcRenderer.invoke('security:scan', payload),
+  securityList: (payload) => ipcRenderer.invoke('security:list', payload),
+  securityTriage: (payload) => ipcRenderer.invoke('security:triage', payload),
+  securityReport: (payload) => ipcRenderer.invoke('security:report', payload),
+  securityClear: (payload) => ipcRenderer.invoke('security:clear', payload),
+
   // misc
   appInfo: () => ipcRenderer.invoke('app:info'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),

@@ -21,6 +21,8 @@ const { isWithin, configRoot } = require('./tools/paths');
 const mcp = require('./mcp');
 const geminiWeb = require('./gemini-web');
 const agent = require('./agent');
+const security = require('./tools/security');
+const findings = require('./tools/findings');
 
 const DIST = path.join(__dirname, '..', 'dist');
 const DEV_SERVER = process.env.NOVA_DEV_SERVER || null;
@@ -1059,6 +1061,70 @@ ipcMain.handle('checkpoint:restore', async (_e, { agentId }) => {
     if (item.action === 'restored' || item.action === 'deleted') send('fs:changed', { path: item.path });
   }
   return r;
+});
+
+/* ------------------------------ security ------------------------------ */
+
+ipcMain.handle('security:scan', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    const result = await security.scan({
+      dir: ws,
+      maxFindings: payload && payload.maxFindings,
+      includeDeps: payload && payload.includeDeps,
+    });
+    await findings.save(ws, result.findings);
+    const list = await findings.list(ws);
+    return { ok: true, findings: list, counts: findings.counts(list), scanResult: result };
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e), findings: [], counts: { critical: 0, high: 0, medium: 0, low: 0 } };
+  }
+});
+
+ipcMain.handle('security:list', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    const list = await findings.list(ws, (payload && payload.filter) || {});
+    return { ok: true, findings: list, counts: findings.counts(list) };
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e), findings: [], counts: { critical: 0, high: 0, medium: 0, low: 0 } };
+  }
+});
+
+ipcMain.handle('security:triage', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    const res = await findings.triage(ws, payload.id, {
+      status: payload.status,
+      analysis: payload.analysis,
+      severity: payload.severity,
+      cwe: payload.cwe,
+    });
+    const list = await findings.list(ws);
+    return { ...res, counts: findings.counts(list) };
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+ipcMain.handle('security:report', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    const rep = await findings.report(ws, { format: payload.format });
+    return { ok: true, report: rep };
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+ipcMain.handle('security:clear', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    await findings.clear(ws);
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
 });
 
 /* ------------------------------ user terminal ------------------------------ */

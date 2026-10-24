@@ -128,6 +128,19 @@ export const useStore = create((set, get) => ({
   /* --------------------------------- cloud --------------------------------- */
   drive: { connected: false, email: null, hasClient: false, loading: false, files: [], error: null, query: '' },
 
+  /* -------------------------------- security -------------------------------- */
+  security: {
+    findings: [],
+    counts: { critical: 0, high: 0, medium: 0, low: 0 },
+    loading: false,
+    scanning: false,
+    error: null,
+    filterStatus: 'all',
+    filterSeverity: 'all',
+    searchQuery: '',
+    lastScanned: null,
+  },
+
   /* --------------------------------- search --------------------------------- */
   searchQuery: '',
   searchResults: null,
@@ -772,6 +785,177 @@ export const useStore = create((set, get) => ({
     } catch (e) {
       get().setStatus(`Download failed: ${e.message}`);
     }
+  },
+
+  /* ------------------------------- security ------------------------------- */
+
+  openSecurity() {
+    const s = get();
+    if (s.mainView === 'security') return;
+    s.navPush();
+    set({ mainView: 'security' });
+    get().loadSecurityFindings();
+  },
+
+  setSecurityFilterStatus(filterStatus) {
+    set((s) => ({ security: { ...s.security, filterStatus } }));
+  },
+
+  setSecurityFilterSeverity(filterSeverity) {
+    set((s) => ({ security: { ...s.security, filterSeverity } }));
+  },
+
+  setSecuritySearchQuery(searchQuery) {
+    set((s) => ({ security: { ...s.security, searchQuery } }));
+  },
+
+  async loadSecurityFindings() {
+    const { rootFolder } = get();
+    set((s) => ({ security: { ...s.security, loading: true, error: null } }));
+    try {
+      const res = await api().securityList({ workspaceRoot: rootFolder });
+      if (res && res.ok) {
+        set((s) => ({
+          security: {
+            ...s.security,
+            findings: res.findings || [],
+            counts: res.counts || { critical: 0, high: 0, medium: 0, low: 0 },
+            loading: false,
+          },
+        }));
+      } else {
+        set((s) => ({
+          security: { ...s.security, loading: false, error: (res && res.error) || 'Failed to load findings' },
+        }));
+      }
+    } catch (e) {
+      set((s) => ({
+        security: { ...s.security, loading: false, error: String(e.message || e) },
+      }));
+    }
+  },
+
+  async scanSecurity() {
+    const { rootFolder } = get();
+    set((s) => ({ security: { ...s.security, scanning: true, error: null } }));
+    try {
+      const res = await api().securityScan({ workspaceRoot: rootFolder });
+      if (res && res.ok) {
+        set((s) => ({
+          security: {
+            ...s.security,
+            findings: res.findings || [],
+            counts: res.counts || { critical: 0, high: 0, medium: 0, low: 0 },
+            scanning: false,
+            lastScanned: new Date().toLocaleTimeString(),
+          },
+          status: `Security scan complete: ${res.findings?.length || 0} findings`,
+        }));
+      } else {
+        set((s) => ({
+          security: { ...s.security, scanning: false, error: (res && res.error) || 'Scan failed' },
+        }));
+      }
+    } catch (e) {
+      set((s) => ({
+        security: { ...s.security, scanning: false, error: String(e.message || e) },
+      }));
+    }
+  },
+
+  async triageSecurityFinding(id, status, analysis, severity) {
+    const { rootFolder } = get();
+    try {
+      const res = await api().securityTriage({ workspaceRoot: rootFolder, id, status, analysis, severity });
+      if (res && res.ok && res.finding) {
+        set((s) => ({
+          security: {
+            ...s.security,
+            findings: s.security.findings.map((f) => (f.id === id ? res.finding : f)),
+            counts: res.counts || s.security.counts,
+          },
+        }));
+      }
+    } catch (e) {
+      get().setStatus(`Triage failed: ${e.message}`);
+    }
+  },
+
+  async clearSecurityFindings() {
+    const { rootFolder } = get();
+    try {
+      await api().securityClear({ workspaceRoot: rootFolder });
+      set((s) => ({
+        security: {
+          ...s.security,
+          findings: [],
+          counts: { critical: 0, high: 0, medium: 0, low: 0 },
+        },
+      }));
+    } catch (e) {
+      get().setStatus(`Clear failed: ${e.message}`);
+    }
+  },
+
+  async exportSecurityReport(format = 'markdown') {
+    const { rootFolder } = get();
+    try {
+      const res = await api().securityReport({ workspaceRoot: rootFolder, format });
+      if (!res || !res.ok) {
+        get().setStatus(`Export failed: ${res?.error || 'Unknown error'}`);
+        return;
+      }
+      const defaultName = format === 'sarif' ? 'security-report.sarif' : 'security-report.md';
+      const savePath = await api().saveFileDialog(defaultName);
+      if (savePath) {
+        await api().writeFile(savePath, res.report);
+        get().setStatus(`Exported security report to ${savePath}`);
+      }
+    } catch (e) {
+      get().setStatus(`Export failed: ${e.message}`);
+    }
+  },
+
+  async fixFindingWithAgent(finding) {
+    const s = get();
+    s.navPush();
+    s.newAgentChat();
+    const prompt = `Please fix this security finding in ${finding.file}:${finding.line}:
+
+- **Rule**: ${finding.rule}
+${finding.cwe ? `- **CWE**: ${finding.cwe}\n` : ''}- **Severity**: ${finding.severityAdjusted || finding.severity}
+- **Title**: ${finding.title}
+${finding.message ? `- **Remediation**: ${finding.message}\n` : ''}
+**Offending code**:
+\`\`\`
+${finding.snippet || ''}
+\`\`\`
+
+Please inspect the code at ${finding.file}:${finding.line}, analyze the root cause, and implement a safe, clean fix.`;
+    await get().agentSend(prompt);
+  },
+
+  async verifyFindingWithAgent(finding) {
+    const s = get();
+    s.navPush();
+    s.newAgentChat();
+    const prompt = `Please verify this candidate security finding in ${finding.file}:${finding.line}:
+
+- **Rule**: ${finding.rule}
+${finding.cwe ? `- **CWE**: ${finding.cwe}\n` : ''}- **Severity**: ${finding.severityAdjusted || finding.severity}
+- **Title**: ${finding.title}
+
+**Code snippet**:
+\`\`\`
+${finding.snippet || ''}
+\`\`\`
+
+Perform a verification analysis:
+1. Is the data source attacker-controlled?
+2. Is the sink reachable?
+3. Is this a Confirmed true positive or a False Positive?
+4. If confirmed, triage it with tool \`security_triage\`.`;
+    await get().agentSend(prompt);
   },
 
   setGitMessage: (v) => set({ gitMessage: v }),
