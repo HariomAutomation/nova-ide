@@ -42,6 +42,7 @@ interface ChallengeSpec {
   name: string;
   url: string | null;
   tags: string[];
+  track: string | null;
   deadlines: { phase: string; at: string }[];
   items: ReqItem[];
   createdAt: string;
@@ -192,6 +193,65 @@ export function deliverability(track: string | null | undefined): { ok: boolean;
   return { ok: true, note: `${track} — within what Nova can deliver.` };
 }
 
+/**
+ * What a submission typically needs, per track — beyond the deliverables the brief
+ * lists. Losing on a technicality (no deployment guide, a patch without an email,
+ * no reproduction steps) is far more common than losing on the work itself.
+ *
+ * These are deliberately general: they are a starting checklist drawn from how
+ * TopCoder briefs are written, not challenge-specific facts. Mark an item skipped
+ * when it does not apply.
+ */
+const SUBMISSION_PLAYBOOKS: { match: RegExp; items: string[] }[] = [
+  {
+    match: /develop|software|backend|frontend|full[- ]?stack|api|node|react|java|python/i,
+    items: [
+      'Deliver as a git patch or a repo/branch link — most development briefs ask for one',
+      'The patch carries a user email, or the reviewer cannot apply it',
+      'A short deployment / setup guide so a reviewer can actually run it',
+      'Tests, or a note explaining why there are none',
+      'A README: what was built, the key decisions, and anything left unfinished',
+    ],
+  },
+  {
+    match: /qa|quality|bug|defect|test/i,
+    items: [
+      'Each defect as its own numbered entry — not one blob',
+      'Steps to reproduce, written the way a reviewer would follow them',
+      'Expected vs actual behaviour for each defect',
+      'Evidence: a screenshot or recording per defect',
+      'Severity and category (functional, UI, UX/usability, accessibility, content)',
+    ],
+  },
+  {
+    match: /data science|data-science|machine learning|ml\b/i,
+    items: [
+      'The notebook or script that produces the result, runnable end to end',
+      'The trained model, or the exact command that reproduces it',
+      'A written summary: approach, what was tried, what worked and what did not',
+      'The metrics the brief says it will score, measured the same way',
+    ],
+  },
+  {
+    match: /ideation|concept|idea/i,
+    items: [
+      'A single document (the brief usually caps the format — PDF/DOCX/slides)',
+      'Answer every scored question the brief lists, in its order',
+      'Justify why your approach beats the current process, if asked',
+      'Cost, timeline and skills required, if the brief asks for them',
+    ],
+  },
+];
+
+/** The playbook items for a track, shaped like extracted requirements. */
+export function submissionRequirements(track: string | null | undefined): { text: string; group: string }[] {
+  const t = String(track || '');
+  for (const pb of SUBMISSION_PLAYBOOKS) {
+    if (pb.match.test(t)) return pb.items.map((text) => ({ text, group: 'Submission requirements' }));
+  }
+  return [];
+}
+
 /* ============================ checklist store ============================ */
 
 function specPath(workspace: string): string {
@@ -221,13 +281,16 @@ async function writeSpec(spec: ChallengeSpec): Promise<ChallengeSpec> {
 /** Save (or replace) the challenge spec + its checklist for a workspace. */
 export async function saveSpec(
   workspace: string,
-  input: { source?: string; id?: string | null; name: string; url?: string | null; tags?: string[]; deadlines?: any[]; description?: string; requirements?: { text: string; group?: string }[] }
+  input: { source?: string; id?: string | null; name: string; url?: string | null; tags?: string[]; track?: string | null; deadlines?: any[]; description?: string; requirements?: { text: string; group?: string }[] }
 ): Promise<ChallengeSpec> {
   const ws = path.resolve(workspace || process.cwd());
   const prev = await readSpec(ws);
-  const reqs =
+  const extracted =
     input.requirements ||
     extractRequirements(input.description || '').map((r) => ({ text: r.text, group: r.group }));
+  // Track-aware submission requirements ride along with the brief's own items, so
+  // "add a deployment guide" is tracked exactly like "build the product page".
+  const reqs = [...extracted, ...submissionRequirements(input.track)];
 
   // Keep the status of items that already existed — re-ingesting a spec must not
   // wipe the work already done against it.
@@ -254,6 +317,7 @@ export async function saveSpec(
     name: input.name,
     url: input.url || null,
     tags: input.tags || [],
+    track: input.track || (prev ? prev.track : null) || null,
     deadlines: Array.isArray(input.deadlines) ? input.deadlines : [],
     items,
     createdAt: (prev && prev.createdAt) || new Date().toISOString(),
@@ -421,6 +485,7 @@ export async function pack(
 module.exports = {
   parseChallengeId,
   deliverability,
+  submissionRequirements,
   extractRequirements,
   fetchChallenge,
   saveSpec,

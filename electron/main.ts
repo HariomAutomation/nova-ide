@@ -1085,7 +1085,7 @@ ipcMain.handle('challenge:ingest', async (_e, payload: any = {}) => {
       if (!id) return { ok: false, error: 'not a TopCoder challenge url or id' };
       const f = await challenge.fetchChallenge(id);
       if (!f.ok) return { ok: false, error: f.error };
-      data = { source: 'topcoder', id: f.challenge.id, name: f.challenge.name, url: f.challenge.url, tags: f.challenge.tags, deadlines: f.challenge.deadlines, description: f.challenge.description };
+      data = { source: 'topcoder', id: f.challenge.id, name: f.challenge.name, url: f.challenge.url, tags: f.challenge.tags, track: f.challenge.track, deadlines: f.challenge.deadlines, description: f.challenge.description };
     } else if (payload.text) {
       data = { source: 'pasted', name: payload.name || 'Pasted challenge', description: payload.text };
     } else {

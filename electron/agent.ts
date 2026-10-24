@@ -1493,7 +1493,8 @@ async function executeTool(name: any, args: any = {}, ctx: any = {}) {
         if (!f.ok) return { text: `Could not fetch that challenge: ${f.error}` };
         payload = {
           source: 'topcoder', id: f.challenge.id, name: f.challenge.name, url: f.challenge.url,
-          tags: f.challenge.tags, deadlines: f.challenge.deadlines, description: f.challenge.description,
+          tags: f.challenge.tags, track: f.challenge.track, deadlines: f.challenge.deadlines,
+          description: f.challenge.description,
         };
         note = `Fetched from TopCoder. Track: ${f.challenge.track || '?'} · format: ${f.challenge.fileTypes || 'unspecified'} · closes ${f.challenge.submissionEndDate || '?'} · ${f.challenge.registrants} registered, ${f.challenge.submissions} submitted.`;
         const deliv = challenge.deliverability(f.challenge.track);

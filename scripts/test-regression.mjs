@@ -2526,6 +2526,49 @@ suite.push(
 );
 
 suite.push(
+  test('challenge: a track brings its submission requirements into the checklist', async () => {
+    // Most challenges are lost on a technicality — a missing deployment guide, a
+    // patch with no email — not on the work. So the track's submission playbook
+    // rides along with the brief's own deliverables.
+    const dev = challenge.submissionRequirements('DEVELOP');
+    assert.ok(dev.length >= 4, 'development has a playbook');
+    assert.ok(dev.some((d) => /deployment|setup guide/i.test(d.text)), 'it mentions a deployment guide');
+    assert.ok(dev.some((d) => /email/i.test(d.text)), 'and the patch email requirement');
+    assert.ok(dev.every((d) => d.group === 'Submission requirements'), 'grouped together');
+
+    assert.ok(challenge.submissionRequirements('QA').length >= 4, 'QA has a playbook');
+    assert.ok(challenge.submissionRequirements('QA').some((d) => /reproduce/i.test(d.text)));
+    assert.ok(challenge.submissionRequirements('Data Science').length >= 3, 'DS has a playbook');
+    assert.ok(challenge.submissionRequirements('Ideation').length >= 3, 'ideation has a playbook');
+    // a track Nova cannot deliver gets no playbook, rather than a misleading one
+    assert.deepEqual(challenge.submissionRequirements('DESIGN'), []);
+
+    const ws = path.join(TEST_DIR, 'chal-playbook');
+    await fsp.mkdir(ws, { recursive: true });
+    const spec = await challenge.saveSpec(ws, {
+      name: 'Some Dev Challenge',
+      track: 'DEVELOP',
+      description: '**DELIVERABLES**\n01) Build the API\n02) Write the UI\n',
+    });
+    const groups = new Set(spec.items.map((i) => i.group));
+    assert.ok(groups.has('DELIVERABLES'), 'the brief items are still there');
+    assert.ok(groups.has('Submission requirements'), 'and the playbook joined them');
+    assert.ok(spec.items.length > 2, 'so the checklist is bigger than the brief alone');
+    assert.equal(spec.track, 'DEVELOP', 'the track is remembered on the spec');
+
+    // re-ingesting the SAME brief must not duplicate the playbook items
+    const again = await challenge.saveSpec(ws, {
+      name: 'Some Dev Challenge',
+      track: 'DEVELOP',
+      description: '**DELIVERABLES**\n01) Build the API\n02) Write the UI\n',
+    });
+    assert.equal(again.items.length, spec.items.length, 're-ingest must not duplicate playbook items');
+    const playbookCount = again.items.filter((i) => i.group === 'Submission requirements').length;
+    assert.equal(playbookCount, dev.length, 'the playbook is added once, not once per ingest');
+  })
+);
+
+suite.push(
   test('challenge: the checklist stores progress and re-ingesting a spec keeps the work', async () => {
     const ws = path.join(TEST_DIR, 'chal-1');
     await fsp.mkdir(ws, { recursive: true });
