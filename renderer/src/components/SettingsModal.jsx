@@ -1574,6 +1574,32 @@ function CloudTab() {
             </div>
 
             <Row
+              label="Drive Access Scope"
+              desc={
+                (drive.scopeMode || 'isolated') === 'readonly'
+                  ? 'Full Drive mode: Browse and open any file across your Google Drive in read-only mode.'
+                  : 'Isolated folder mode (Default): Sandboxed strictly to the "Nova IDE" folder. Personal files remain private.'
+              }
+              control={
+                <select
+                  className="select small"
+                  value={drive.scopeMode || 'isolated'}
+                  onChange={async (e) => {
+                    const nextMode = e.target.value;
+                    await useStore.getState().saveDriveClient({ scopeMode: nextMode });
+                    await useStore.getState().loadDrive();
+                    if (useStore.getState().drive.connected) {
+                      useStore.getState().loadDriveFiles('');
+                    }
+                  }}
+                >
+                  <option value="isolated">Isolated folder only (drive.file) [Recommended]</option>
+                  <option value="readonly">Entire Google Drive (drive.readonly)</option>
+                </select>
+              }
+            />
+
+            <Row
               label="Privacy & Isolation"
               desc={
                 drive.needsReconsent
@@ -1618,6 +1644,28 @@ function CloudTab() {
               label="Status"
               desc="Not connected. Sign in once to read cloud files in the IDE and sync agent memory across devices."
               control={<span className="cz-dot" />}
+            />
+            <Row
+              label="Access Scope"
+              desc={
+                (drive.scopeMode || 'isolated') === 'readonly'
+                  ? 'Sign in will request full Google Drive read-only access (drive.readonly).'
+                  : 'Sign in will request sandboxed access strictly limited to the "Nova IDE" folder (drive.file).'
+              }
+              control={
+                <select
+                  className="select small"
+                  value={drive.scopeMode || 'isolated'}
+                  onChange={async (e) => {
+                    const nextMode = e.target.value;
+                    await useStore.getState().saveDriveClient({ scopeMode: nextMode });
+                    await useStore.getState().loadDrive();
+                  }}
+                >
+                  <option value="isolated">Isolated folder only (drive.file) [Recommended]</option>
+                  <option value="readonly">Entire Google Drive (drive.readonly)</option>
+                </select>
+              }
             />
             <Row
               label="Sign in"

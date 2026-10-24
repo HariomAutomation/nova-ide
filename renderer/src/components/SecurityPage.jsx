@@ -61,6 +61,15 @@ function FindingCard({ f, rootFolder, onJump, onTriage, onFix, onVerify }) {
           >
             {statusInfo.label}
           </span>
+          {f.analysis && f.analysis.includes('[Verification verdict:') && (
+            <span
+              className="sec-tag verification-badge"
+              style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', borderColor: 'rgba(59, 130, 246, 0.4)' }}
+              title="Analyzed by deterministic taint reachability engine"
+            >
+              {f.analysis.includes('HEURISTIC SIGNAL') ? '\u26A1 Heuristic Signal' : '\u2713 Verified'}
+            </span>
+          )}
         </div>
 
         <div className="sec-header-actions">
@@ -254,6 +263,15 @@ export default function SecurityPage() {
             ) : (
               <>{'\u26A1'} Scan Workspace</>
             )}
+          </button>
+
+          <button
+            className="btn small sec-export-btn"
+            disabled={!findings.length}
+            onClick={() => useStore.getState().verifyAllSecurityFindings()}
+            title="Run autonomous reachability & taint analysis across all open findings"
+          >
+            {'\u{1F50E}'} Verify All
           </button>
 
           <button
@@ -465,7 +483,7 @@ export default function SecurityPage() {
             onJump={(file, line) => openFile(file, line)}
             onTriage={(id, status, analysis) => useStore.getState().triageSecurityFinding(id, status, analysis)}
             onFix={(finding) => useStore.getState().fixFindingWithAgent(finding)}
-            onVerify={(finding) => useStore.getState().verifyFindingWithAgent(finding)}
+            onVerify={(finding) => useStore.getState().verifySecurityFinding(finding.id)}
           />
         ))}
       </div>

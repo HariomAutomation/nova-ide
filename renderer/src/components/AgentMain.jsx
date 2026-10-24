@@ -5,6 +5,7 @@ import { useStore } from '../store';
 import { basename } from '../timeAgo';
 import ToolCard from './ToolCard';
 import RepoMenu from './RepoMenu';
+import ThinkingBlock, { extractThinking } from './ThinkingBlock';
 import { usableModels as pickUsableModels, RETIRED_AUTHS } from '../model-filter';
 import {
   groupModels,
@@ -1730,6 +1731,10 @@ export default function AgentMain() {
                   );
                 }
                 if (item.kind === 'assistant') {
+                  const parsed = extractThinking(item.text);
+                  const thinking = item.thinking || parsed.thinking;
+                  const isLive = item.streaming && (!parsed.body || parsed.isLive);
+                  const displayBody = (item.streaming ? parsed.body : sanitizeAssistantReply(parsed.body)) + (item.streaming ? ' \u258D' : '');
                   return (
                     <div key={item.id} className="chat-msg assistant">
                       <div className="chat-role">
@@ -1740,7 +1745,10 @@ export default function AgentMain() {
                           </span>
                         )}
                       </div>
-                      <Markdown text={(item.streaming ? item.text : sanitizeAssistantReply(item.text)) + (item.streaming ? ' \u258D' : '')} />
+                      {thinking && (
+                        <ThinkingBlock text={thinking} isLive={isLive} />
+                      )}
+                      {(displayBody.trim() || item.streaming) ? <Markdown text={displayBody} /> : null}
                     </div>
                   );
                 }

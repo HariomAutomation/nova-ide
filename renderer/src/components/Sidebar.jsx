@@ -521,6 +521,13 @@ function ChatHome() {
           <span className="sb-ico">{'\u{1F6E1}\uFE0F'}</span> Security
         </button>
         <button
+          className={'sb-item' + (mainView === 'challenge' ? ' active' : '')}
+          onClick={() => useStore.getState().openChallenge()}
+          data-testid="sb-nav-challenge"
+        >
+          <span className="sb-ico">{'\u{1F3C6}'}</span> Challenges
+        </button>
+        <button
           className={'sb-item' + (mainView === 'memory' ? ' active' : '')}
           onClick={() => useStore.getState().openMemory()}
         >

@@ -11,6 +11,7 @@ import CloudPage from './components/CloudPage';
 import MemoryPage from './components/MemoryPage';
 import CustomizePage from './components/CustomizePage';
 import SecurityPage from './components/SecurityPage';
+import ChallengePage from './components/ChallengePage';
 import GeminiView from './components/GeminiView';
 import ChatPanel from './components/ChatPanel';
 import TerminalPanel from './components/TerminalPanel';
@@ -116,6 +117,7 @@ export default function App() {
           {mainView === 'memory' && <MemoryPage />}
           {mainView === 'customize' && <CustomizePage />}
           {mainView === 'security' && <SecurityPage />}
+          {mainView === 'challenge' && <ChallengePage />}
           {/* Always mounted but never shown: the Gemini web app is the driver's
               session, not a place the user works. Sign-in lives in Settings. */}
           <GeminiView active={false} />

@@ -39,8 +39,11 @@ const USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
 const DRIVE_FILES = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 const MEMORY_NAME = 'memory.json';
-const SCOPE =
+const SCOPE_ISOLATED =
   'openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata';
+const SCOPE_READONLY =
+  'openid email https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.appdata';
+const SCOPE = SCOPE_ISOLATED;
 
 const GOOGLE_DOC = 'application/vnd.google-apps.document';
 const GOOGLE_SHEET = 'application/vnd.google-apps.spreadsheet';
@@ -99,14 +102,24 @@ async function status() {
   const cfg = await readConfig();
   const eff = await effectiveConfig();
   const connected = !!cfg.refreshToken;
+  const scopeMode = cfg.scopeMode === 'readonly' ? 'readonly' : 'isolated';
 
   const grantedScope = cfg.grantedScope || null;
   const hasDriveFile = Boolean(grantedScope && grantedScope.includes('drive.file'));
   const hasDriveReadOnly = Boolean(grantedScope && grantedScope.includes('drive.readonly'));
 
-  // If connected, flag needsReconsent if token is legacy (no grantedScope or has drive.readonly instead of drive.file)
-  const needsReconsent = connected && (!grantedScope || !hasDriveFile || hasDriveReadOnly);
-  const isolated = connected && !needsReconsent && hasDriveFile;
+  let needsReconsent = false;
+  let isolated = false;
+
+  if (scopeMode === 'readonly') {
+    // In explicit readonly mode, user wants full drive access
+    needsReconsent = connected && (!grantedScope || !hasDriveReadOnly);
+    isolated = false;
+  } else {
+    // In isolated mode (default), user wants only Nova IDE folder access
+    needsReconsent = connected && (!grantedScope || !hasDriveFile || hasDriveReadOnly);
+    isolated = connected && !needsReconsent && hasDriveFile;
+  }
 
   return {
     configPath: getConfigPath(),
@@ -117,20 +130,24 @@ async function status() {
     email: cfg.email || null,
     name: cfg.name || null,
     picture: cfg.picture || null,
-    scope: SCOPE,
+    scope: scopeMode === 'readonly' ? SCOPE_READONLY : SCOPE_ISOLATED,
+    scopeMode,
     grantedScope: grantedScope || (connected ? 'https://www.googleapis.com/auth/drive.readonly (legacy)' : null),
     needsReconsent,
     isolated,
   };
 }
 
-/** Save the OAuth client id/secret (tokens are untouched). */
+/** Save the OAuth client id/secret and scope preference (tokens are untouched). */
 async function save(patch) {
   const cfg = await readConfig();
   const next = { ...cfg };
   if (patch && typeof patch.clientId === 'string') next.clientId = patch.clientId.trim();
   if (patch && typeof patch.clientSecret === 'string' && patch.clientSecret.trim()) {
     next.clientSecret = patch.clientSecret.trim();
+  }
+  if (patch && (patch.scopeMode === 'readonly' || patch.scopeMode === 'isolated')) {
+    next.scopeMode = patch.scopeMode;
   }
   await writeConfig(next);
   accessCache = { token: null, exp: 0 };
@@ -274,10 +291,11 @@ async function login() {
           }
         } catch {}
 
+        const targetScope = cfg.scopeMode === 'readonly' ? SCOPE_READONLY : SCOPE_ISOLATED;
         const next = {
           ...cfg,
           refreshToken: tokens.refresh_token || cfg.refreshToken,
-          grantedScope: tokens.scope || SCOPE,
+          grantedScope: tokens.scope || targetScope,
           email: profile.email || cfg.email || null,
           name: profile.name || cfg.name || null,
           picture: profile.picture || cfg.picture || null,
@@ -300,10 +318,11 @@ async function login() {
     server.on('error', (e) => finish(reject, e));
     server.listen(0, '127.0.0.1', () => {
       const redirectUri = `http://127.0.0.1:${server.address().port}/oauth2callback`;
+      const authScope = cfg.scopeMode === 'readonly' ? SCOPE_READONLY : SCOPE_ISOLATED;
       const authUrl =
         `${AUTH_URL}?client_id=${encodeURIComponent(cfg.clientId)}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&response_type=code&scope=${encodeURIComponent(SCOPE)}` +
+        `&response_type=code&scope=${encodeURIComponent(authScope)}` +
         `&code_challenge=${challenge}&code_challenge_method=S256` +
         `&access_type=offline&prompt=consent&state=${state}`;
       lastAuthUrl = authUrl;
@@ -362,12 +381,23 @@ async function getNovaFolderId() {
   return null;
 }
 
-/** List the user's Drive files inside the isolated Nova IDE folder ONLY. */
+/** List the user's Drive files (inside isolated Nova IDE folder by default, or entire Drive if scopeMode === 'readonly'). */
 async function listFiles(query) {
+  const cfg = await readConfig();
+  if (cfg.scopeMode === 'readonly') {
+    const cleanQ = query && String(query).trim().replace(/'/g, "\\'");
+    const q = cleanQ ? `name contains '${cleanQ}' and trashed=false` : 'trashed=false';
+    const url =
+      `${DRIVE_FILES}?pageSize=60&orderBy=modifiedTime desc&q=${encodeURIComponent(q)}` +
+      `&fields=${encodeURIComponent('files(id,name,mimeType,size,modifiedTime,webViewLink)')}`;
+    const j = await apiGet(url);
+    return { files: (j && j.files) || [], isolated: false, scopeMode: 'readonly' };
+  }
+
   const folderId = await getNovaFolderId();
   if (!folderId) {
     // Nova IDE folder does not exist yet. Keep personal files completely hidden.
-    return { files: [], isolated: true, folderMissing: true, folderName: NOVA_FOLDER_NAME };
+    return { files: [], isolated: true, folderMissing: true, folderName: NOVA_FOLDER_NAME, scopeMode: 'isolated' };
   }
 
   const q = query && String(query).trim()
@@ -377,7 +407,7 @@ async function listFiles(query) {
     `${DRIVE_FILES}?pageSize=60&orderBy=modifiedTime desc&q=${encodeURIComponent(q)}` +
     `&fields=${encodeURIComponent('files(id,name,mimeType,size,modifiedTime,webViewLink)')}`;
   const j = await apiGet(url);
-  return { files: (j && j.files) || [], isolated: true, folderId, folderName: NOVA_FOLDER_NAME };
+  return { files: (j && j.files) || [], isolated: true, folderId, folderName: NOVA_FOLDER_NAME, scopeMode: 'isolated' };
 }
 
 /** Read a Drive file's contents as text (Google Docs/Sheets/Slides are exported). */

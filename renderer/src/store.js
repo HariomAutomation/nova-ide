@@ -141,6 +141,22 @@ export const useStore = create((set, get) => ({
     lastScanned: null,
   },
 
+  /* ------------------------------- challenge ------------------------------- */
+  challenge: {
+    spec: null,
+    progress: { total: 0, done: 0, byStatus: { pending: 0, generating: 0, done: 0, verified: 0, skipped: 0 }, complete: false },
+    loading: false,
+    ingesting: false,
+    packing: false,
+    packResult: null,
+    error: null,
+    filterGroup: 'all',
+    filterStatus: 'all',
+    searchQuery: '',
+    finding: false,
+    availableChallenges: [],
+  },
+
   /* --------------------------------- search --------------------------------- */
   searchQuery: '',
   searchResults: null,
@@ -969,6 +985,199 @@ Perform a verification analysis:
     await get().agentSend(prompt);
   },
 
+  async verifySecurityFinding(id) {
+    const { rootFolder } = get();
+    if (!rootFolder) return;
+    try {
+      const res = await api().securityVerify({ workspaceRoot: rootFolder, findingId: id });
+      if (res && res.ok && res.finding) {
+        set((s) => ({
+          security: {
+            ...s.security,
+            findings: s.security.findings.map((f) => (f.id === id ? res.finding : f)),
+            counts: res.counts || s.security.counts,
+          },
+        }));
+        get().setStatus(`Verified finding: ${res.result?.verdict || 'done'}`);
+      }
+    } catch (e) {
+      get().setStatus(`Verification failed: ${e.message}`);
+    }
+  },
+
+  async verifyAllSecurityFindings() {
+    const { rootFolder } = get();
+    if (!rootFolder) return;
+    try {
+      const res = await api().securityVerifyAll({ workspaceRoot: rootFolder });
+      if (res && res.ok) {
+        set((s) => ({
+          security: {
+            ...s.security,
+            findings: res.findings || s.security.findings,
+            counts: res.counts || s.security.counts,
+          },
+        }));
+        get().setStatus(`Verified ${res.verified} findings (${res.confirmed} confirmed, ${res.falsePositives} false positives)`);
+      }
+    } catch (e) {
+      get().setStatus(`Bulk verification failed: ${e.message}`);
+    }
+  },
+
+  /* ------------------------------- challenge ------------------------------- */
+
+  openChallenge() {
+    const s = get();
+    if (s.mainView === 'challenge') return;
+    s.navPush();
+    set({ mainView: 'challenge' });
+    get().loadChallenge();
+  },
+
+  setChallengeFilterGroup(filterGroup) {
+    set((s) => ({ challenge: { ...s.challenge, filterGroup } }));
+  },
+
+  setChallengeFilterStatus(filterStatus) {
+    set((s) => ({ challenge: { ...s.challenge, filterStatus } }));
+  },
+
+  setChallengeSearchQuery(searchQuery) {
+    set((s) => ({ challenge: { ...s.challenge, searchQuery } }));
+  },
+
+  async findChallenges(opts = {}) {
+    set((s) => ({ challenge: { ...s.challenge, finding: true } }));
+    try {
+      const res = await api().challengeFind(opts);
+      const list = (res && res.challenges) || [];
+      set((s) => ({ challenge: { ...s.challenge, finding: false, availableChallenges: list } }));
+      return res;
+    } catch (e) {
+      set((s) => ({ challenge: { ...s.challenge, finding: false } }));
+      return { ok: false, error: e.message, challenges: [] };
+    }
+  },
+
+  async loadChallenge() {
+    const { rootFolder } = get();
+    if (!rootFolder) {
+      set((s) => ({
+        challenge: {
+          ...s.challenge,
+          loading: false,
+          spec: null,
+          progress: { total: 0, done: 0, byStatus: { pending: 0, generating: 0, done: 0, verified: 0, skipped: 0 }, complete: false },
+        },
+      }));
+      return;
+    }
+    set((s) => ({ challenge: { ...s.challenge, loading: true, error: null } }));
+    try {
+      const res = await api().challengeList({ workspaceRoot: rootFolder });
+      if (res && res.ok) {
+        set((s) => ({
+          challenge: {
+            ...s.challenge,
+            spec: res.spec || null,
+            progress: res.progress || { total: 0, done: 0, byStatus: { pending: 0, generating: 0, done: 0, verified: 0, skipped: 0 }, complete: false },
+            loading: false,
+          },
+        }));
+      } else {
+        set((s) => ({
+          challenge: { ...s.challenge, loading: false, error: (res && res.error) || 'Failed to load challenge spec' },
+        }));
+      }
+    } catch (e) {
+      set((s) => ({ challenge: { ...s.challenge, loading: false, error: e.message } }));
+    }
+  },
+
+  async ingestChallenge(payload) {
+    const { rootFolder } = get();
+    if (!rootFolder) return { ok: false, error: 'No workspace open' };
+    set((s) => ({ challenge: { ...s.challenge, ingesting: true, error: null } }));
+    try {
+      const res = await api().challengeIngest({ workspaceRoot: rootFolder, ...payload });
+      if (res && res.ok) {
+        set((s) => ({
+          challenge: {
+            ...s.challenge,
+            spec: res.spec,
+            progress: res.progress,
+            ingesting: false,
+          },
+        }));
+        get().setStatus(`Ingested challenge: ${res.spec?.name || 'Success'}`);
+        return res;
+      } else {
+        const error = (res && res.error) || 'Failed to ingest challenge';
+        set((s) => ({ challenge: { ...s.challenge, ingesting: false, error } }));
+        return { ok: false, error };
+      }
+    } catch (e) {
+      set((s) => ({ challenge: { ...s.challenge, ingesting: false, error: e.message } }));
+      return { ok: false, error: e.message };
+    }
+  },
+
+  async setChallengeItem(itemId, patch) {
+    const { rootFolder } = get();
+    if (!rootFolder) return { ok: false, error: 'No workspace open' };
+    try {
+      const res = await api().challengeSetItem({ workspaceRoot: rootFolder, itemId, ...patch });
+      if (res && res.ok) {
+        set((s) => {
+          const spec = s.challenge.spec
+            ? {
+                ...s.challenge.spec,
+                items: s.challenge.spec.items.map((it) => (it.id === itemId ? res.item : it)),
+              }
+            : null;
+          return {
+            challenge: {
+              ...s.challenge,
+              spec,
+              progress: res.progress || s.challenge.progress,
+            },
+          };
+        });
+        return res;
+      } else {
+        return { ok: false, error: (res && res.error) || 'Failed to update item' };
+      }
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  },
+
+  async packChallenge(opts = {}) {
+    const { rootFolder } = get();
+    if (!rootFolder) return { ok: false, error: 'No workspace open' };
+    set((s) => ({ challenge: { ...s.challenge, packing: true, packResult: null, error: null } }));
+    try {
+      const res = await api().challengePack({ workspaceRoot: rootFolder, ...opts });
+      set((s) => ({
+        challenge: {
+          ...s.challenge,
+          packing: false,
+          packResult: res,
+          error: res.ok ? null : res.error,
+        },
+      }));
+      if (res.ok) {
+        get().setStatus(`Submission packaged: ${res.files?.length || 0} files (${Math.round((res.bytes || 0) / 1024)} KB)`);
+      }
+      return res;
+    } catch (e) {
+      const error = e.message;
+      set((s) => ({ challenge: { ...s.challenge, packing: false, error } }));
+      return { ok: false, error };
+    }
+  },
+
   setGitMessage: (v) => set({ gitMessage: v }),
 
   async loadGit() {
@@ -1786,6 +1995,25 @@ Perform a verification analysis:
       case 'step':
         set({ agentStep: e.step });
         break;
+      case 'reasoning_delta': {
+        const turnMode = get().activeTurnMode || null;
+        const last = s.agentItems[s.agentItems.length - 1];
+        if (last && last.kind === 'assistant' && last.streaming) {
+          s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, {
+            thinking: (last.thinking || '') + e.text,
+            ...(turnMode ? { mode: turnMode } : {}),
+          });
+        } else {
+          s.agentAppend({
+            kind: 'assistant',
+            text: '',
+            thinking: e.text,
+            streaming: true,
+            ...(turnMode ? { mode: turnMode } : {}),
+          });
+        }
+        break;
+      }
       case 'assistant_delta': {
         const turnMode = get().activeTurnMode || null;
         if (
@@ -1807,9 +2035,11 @@ Perform a verification analysis:
         const items = get().agentItems;
         const last = items[items.length - 1];
         const hasStreaming = !!(last && last.kind === 'assistant' && last.streaming);
+        const duplicateFallback = !!(last && last.thinking && last.thinking.trim() === String(e.text || '').trim());
         if (hasStreaming) {
           s.agentPatchLast((it) => it.kind === 'assistant' && it.streaming, {
             text: e.text,
+            ...(duplicateFallback ? { thinking: null } : {}),
             streaming: false,
             ...(turnMode ? { mode: turnMode } : {}),
           });

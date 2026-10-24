@@ -80,7 +80,11 @@ export default function CloudPage() {
           Connected{drive.email ? ` as ${drive.email}` : ''} &middot;{' '}
           {drive.needsReconsent ? (
             <span style={{ color: 'var(--warning, #eab308)', fontWeight: 500 }}>
-              ⚠️ Full Drive scope (Re-consent recommended)
+              ⚠️ Scope mismatch (Re-consent recommended)
+            </span>
+          ) : drive.scopeMode === 'readonly' ? (
+            <span style={{ color: 'var(--accent)', fontWeight: 500 }}>
+              🌐 Full Drive Read-Only Mode
             </span>
           ) : (
             <span style={{ color: 'var(--accent)', fontWeight: 500 }}>
@@ -108,11 +112,12 @@ export default function CloudPage() {
             <span style={{ fontSize: '18px', lineHeight: 1 }}>⚠️</span>
             <div>
               <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>
-                Access level badla — Re-consent zaroori hai
+                Access scope update — Re-consent zaroori hai
               </div>
               <p className="muted small" style={{ margin: 0, lineHeight: 1.4 }}>
-                Aapka current token purane broad (<b>drive.readonly</b>) scope se connected hai, jisse poori Google Drive readable hai.
-                Naye privacy-safe isolated (<b>drive.file</b>) mode me aane ke liye sign out karke dobara sign in karein.
+                {drive.scopeMode === 'readonly'
+                  ? 'Aapne full Drive access chuna hai, par current token isolated mode me hai. Poori Drive browse karne ke liye re-connect karein.'
+                  : 'Aapka current token purane broad (drive.readonly) scope se connected hai. Naye privacy-safe isolated (drive.file) mode me aane ke liye re-connect karein.'}
               </p>
             </div>
           </div>

@@ -3,6 +3,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { useStore } from '../store';
 import { streamChat } from '../aiClient';
+import ThinkingBlock, { extractThinking } from './ThinkingBlock';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -167,7 +168,15 @@ export default function ChatPanel() {
           <div key={m.id} className={'chat-msg ' + m.role}>
             <div className="chat-role">{m.role === 'user' ? 'You' : 'Nova'}</div>
             {m.role === 'assistant' ? (
-              <Markdown text={m.content || (chatBusy ? '…' : '')} />
+              (() => {
+                const parsed = extractThinking(m.content);
+                return (
+                  <>
+                    {parsed.thinking && <ThinkingBlock text={parsed.thinking} isLive={parsed.isLive} />}
+                    {(parsed.body || chatBusy) ? <Markdown text={parsed.body || (chatBusy ? '\u2026' : '')} /> : null}
+                  </>
+                );
+              })()
             ) : (
               <div className="chat-plain">{m.content}</div>
             )}

@@ -16,6 +16,7 @@ import { gpuPlan } from '../dist-electron/tools/gpu-flags.js';
 import { scan as secScan } from '../dist-electron/tools/security.js';
 import * as findingsStore from '../dist-electron/tools/findings.js';
 import * as challenge from '../dist-electron/tools/challenge.js';
+import * as verifyEngine from '../dist-electron/tools/verify.js';
 import {
   loadRules,
   toolSchemas,
@@ -2682,6 +2683,116 @@ suite.push(
     const missing = await challenge.pack(ws, { files: ['nope.txt'], outPath, force: true });
     assert.equal(missing.ok, false);
     assert.match(missing.error, /cannot read/);
+  })
+);
+
+suite.push(
+  test('challenge UI: the shapes ChallengePage and store consume match the backend return shapes', async () => {
+    const ws = path.join(TEST_DIR, 'chal-ui');
+    await fsp.mkdir(ws, { recursive: true });
+
+    // 1. Ingest via saveSpec
+    const spec = await challenge.saveSpec(ws, {
+      source: 'topcoder',
+      id: 'e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83',
+      name: 'Design Storefront',
+      url: 'https://www.topcoder.com/challenges/e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83',
+      tags: ['Design', 'UI'],
+      deadlines: [{ phase: 'Submission', at: '2026-10-25T15:45:00.000Z' }],
+      description: '01) Home\n02) Product Page\n',
+    });
+
+    const prog = challenge.progress(spec);
+
+    // Verify ChallengeSpec fields consumed by ChallengePage.jsx
+    for (const f of ['name', 'source', 'id', 'url', 'tags', 'deadlines', 'items']) {
+      assert.ok(f in spec, `spec must have field "${f}"`);
+    }
+    assert.ok(Array.isArray(spec.items) && spec.items.length === 2, 'items must be an array of deliverables');
+
+    // Verify ReqItem fields consumed by ChallengePage.jsx
+    const itemFields = ['id', 'text', 'group', 'status', 'note'];
+    for (const item of spec.items) {
+      for (const f of itemFields) {
+        assert.ok(f in item, `item must have field "${f}"`);
+      }
+      assert.ok(['pending', 'generating', 'done', 'verified', 'skipped'].includes(item.status));
+    }
+
+    // Verify progress shape consumed by ChallengePage.jsx
+    assert.equal(typeof prog.total, 'number');
+    assert.equal(typeof prog.done, 'number');
+    assert.equal(typeof prog.complete, 'boolean');
+    assert.deepEqual(Object.keys(prog.byStatus).sort(), ['done', 'generating', 'pending', 'skipped', 'verified']);
+  })
+);
+
+suite.push(
+  test('security: autonomous verification distinguishes reachable taint vs benign literal without silent drops', async () => {
+    const dir = path.join(TEST_DIR, 'sec-verify');
+    await fsp.mkdir(path.join(dir, 'src'), { recursive: true });
+    await fsp.writeFile(
+      path.join(dir, 'src', 'vulns.js'),
+      [
+        '// Benign hardcoded literal argument (advisory benign-literal)',
+        'eval("2 + 2");',
+        '',
+        '// Untrusted source flowing into sink (advisory strong-signal)',
+        'function handler(req, res) {',
+        '  const userInput = req.query.cmd;',
+        '  eval(userInput);',
+        '}',
+      ].join('\n')
+    );
+
+    const scan = await secScan({ dir, includeDeps: false });
+    await findingsStore.save(dir, scan.findings);
+
+    const list = await findingsStore.list(dir);
+    assert.equal(list.length, 2, 'scan must find both eval occurrences');
+
+    // Run bulk verification
+    const bulk = await verifyEngine.verifyAllFindings(dir);
+    assert.equal(bulk.ok, true);
+    assert.equal(bulk.verified, 2);
+    assert.equal(bulk.strongSignal, 1, 'tainted input should be flagged as strong-signal');
+    assert.equal(bulk.benignLiteral, 1, 'benign literal constant should be flagged as benign-literal');
+
+    // Crucial check: verify finding is NEVER silently downgraded to false-positive (which would hide it from reports)
+    const verifiedList = await findingsStore.list(dir);
+    assert.equal(verifiedList.length, 2, 'findings must not be removed from list');
+    for (const f of verifiedList) {
+      assert.notEqual(f.status, 'false-positive', 'verifier must never auto-dismiss findings');
+    }
+    const strongFinding = verifiedList.find((f) => f.analysis && f.analysis.includes('STRONG SIGNAL'));
+    const benignFinding = verifiedList.find((f) => f.analysis && f.analysis.includes('BENIGN LITERAL'));
+    assert.ok(strongFinding, 'strong signal finding must be recorded with advisory label');
+    assert.ok(benignFinding, 'benign literal finding must be recorded with advisory label');
+  })
+);
+
+suite.push(
+  test('drive access: user can configure scopeMode: readonly for full drive browsing', async () => {
+    const cfgPath = gdrive.getConfigPath ? gdrive.getConfigPath() : (await gdrive.status()).configPath;
+    await fsp.mkdir(path.dirname(cfgPath), { recursive: true });
+    let prev = null;
+    try { prev = await fsp.readFile(cfgPath, 'utf8'); } catch {}
+
+    try {
+      // 1. Switch to readonly scopeMode
+      const stReadonly = await gdrive.save({ scopeMode: 'readonly' });
+      assert.equal(stReadonly.scopeMode, 'readonly');
+      assert.match(stReadonly.scope, /drive\.readonly/);
+      assert.equal(stReadonly.isolated, false, 'readonly mode cannot be isolated');
+
+      // 2. Switch back to isolated scopeMode (default)
+      const stIsolated = await gdrive.save({ scopeMode: 'isolated' });
+      assert.equal(stIsolated.scopeMode, 'isolated');
+      assert.match(stIsolated.scope, /drive\.file/);
+    } finally {
+      if (prev === null) await fsp.rm(cfgPath, { force: true }).catch(() => {});
+      else await fsp.writeFile(cfgPath, prev, 'utf8').catch(() => {});
+    }
   })
 );
 

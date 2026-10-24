@@ -156,6 +156,8 @@ contextBridge.exposeInMainWorld('nova', {
   securityScan: (payload) => ipcRenderer.invoke('security:scan', payload),
   securityList: (payload) => ipcRenderer.invoke('security:list', payload),
   securityTriage: (payload) => ipcRenderer.invoke('security:triage', payload),
+  securityVerify: (payload) => ipcRenderer.invoke('security:verify', payload),
+  securityVerifyAll: (payload) => ipcRenderer.invoke('security:verifyAll', payload),
   securityReport: (payload) => ipcRenderer.invoke('security:report', payload),
   securityClear: (payload) => ipcRenderer.invoke('security:clear', payload),
 

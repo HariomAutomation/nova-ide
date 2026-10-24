@@ -24,6 +24,7 @@ const agent = require('./agent');
 const security = require('./tools/security');
 const findings = require('./tools/findings');
 const challenge = require('./tools/challenge');
+const verifyEngine = require('./tools/verify');
 
 const DIST = path.join(__dirname, '..', 'dist');
 const DEV_SERVER = process.env.NOVA_DEV_SERVER || null;
@@ -1189,6 +1190,28 @@ ipcMain.handle('security:clear', async (_e, payload: any = {}) => {
     const ws = (payload && payload.workspaceRoot) || process.cwd();
     await findings.clear(ws);
     return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+ipcMain.handle('security:verify', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    const res = await verifyEngine.verifyFinding(ws, payload.findingId);
+    const list = await findings.list(ws);
+    return { ...res, counts: findings.counts(list) };
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+ipcMain.handle('security:verifyAll', async (_e, payload: any = {}) => {
+  try {
+    const ws = (payload && payload.workspaceRoot) || process.cwd();
+    const res = await verifyEngine.verifyAllFindings(ws);
+    const list = await findings.list(ws);
+    return { ...res, findings: list, counts: findings.counts(list) };
   } catch (e: any) {
     return { ok: false, error: String((e && e.message) || e) };
   }
