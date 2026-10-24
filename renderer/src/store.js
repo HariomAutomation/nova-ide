@@ -811,6 +811,13 @@ export const useStore = create((set, get) => ({
 
   async loadSecurityFindings() {
     const { rootFolder } = get();
+    // No workspace open -> there is nothing to read findings for. Without this
+    // the main process falls back to process.cwd() and shows findings for
+    // Nova's own install directory, which is just confusing.
+    if (!rootFolder) {
+      set((s) => ({ security: { ...s.security, loading: false, findings: [], error: null } }));
+      return;
+    }
     set((s) => ({ security: { ...s.security, loading: true, error: null } }));
     try {
       const res = await api().securityList({ workspaceRoot: rootFolder });
@@ -837,6 +844,10 @@ export const useStore = create((set, get) => ({
 
   async scanSecurity() {
     const { rootFolder } = get();
+    if (!rootFolder) {
+      get().setStatus('Open a folder first — the security scan runs against your workspace.');
+      return;
+    }
     set((s) => ({ security: { ...s.security, scanning: true, error: null } }));
     try {
       const res = await api().securityScan({ workspaceRoot: rootFolder });

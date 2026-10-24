@@ -2165,6 +2165,62 @@ suite.push(
     assert.equal(totalActive, 0);
   })
 );
+/* ------------------------- security UI data contract ------------------------- */
+
+suite.push(
+  test('security UI: the shapes the Security page reads are the shapes main returns', async () => {
+    // The Security page reads these fields off every finding and these keys off
+    // counts. Nothing else guards the renderer <-> main contract, so a rename
+    // would silently blank the page instead of failing a test.
+    const dir = path.join(TEST_DIR, 'sec-contract');
+    await fsp.mkdir(path.join(dir, 'src'), { recursive: true });
+    await fsp.writeFile(
+      path.join(dir, 'src', 'a.js'),
+      'const k = "AKIAIOSFODNN7EXAMPLE";\nfunction f(req) { eval(req.query.x); }\n'
+    );
+
+    const scan = await secScan({ dir, includeDeps: false });
+    await findingsStore.save(dir, scan.findings);
+
+    // --- what security:list returns: { ok, findings, counts }
+    const list = await findingsStore.list(dir, {});
+    const counts = findingsStore.counts(list);
+    assert.ok(Array.isArray(list) && list.length >= 2, 'list must return the findings');
+    assert.deepEqual(Object.keys(counts).sort(), ['critical', 'high', 'low', 'medium']);
+
+    const uiFields = ['id', 'severity', 'severityAdjusted', 'status', 'title', 'rule', 'cwe', 'file', 'line', 'snippet', 'message'];
+    for (const f of list) {
+      const missing = uiFields.filter((k) => !(k in f));
+      assert.deepEqual(missing, [], `finding is missing UI field(s): ${missing.join(', ')}`);
+      // the page calls .toLowerCase() on these while filtering
+      for (const k of ['title', 'rule', 'file', 'snippet', 'message', 'status', 'severity']) {
+        assert.equal(typeof f[k], 'string', `${k} must be a string, got ${typeof f[k]}`);
+      }
+      assert.equal(typeof f.line, 'number', 'line must be a number');
+      assert.ok(['critical', 'high', 'medium', 'low'].includes(f.severity), `bad severity ${f.severity}`);
+    }
+
+    // --- what security:triage returns. The IPC handler composes { ...res, counts };
+    // the library itself returns { ok, finding }. Mirror the handler here so the
+    // test checks the shape the renderer actually receives.
+    const target = list[0];
+    const t = await findingsStore.triage(dir, target.id, { status: 'confirmed', analysis: 'reachable from req.query' });
+    assert.equal(t.ok, true);
+    const after = await findingsStore.list(dir);
+    const triageResponse = { ...t, counts: findingsStore.counts(after) };
+    assert.deepEqual(Object.keys(triageResponse.counts).sort(), ['critical', 'high', 'low', 'medium']);
+    assert.equal(after.find((f) => f.id === target.id).status, 'confirmed');
+
+    // --- what security:report returns: { ok, report } with a string body
+    for (const format of ['markdown', 'sarif', 'json']) {
+      const rep = await findingsStore.report(dir, { format });
+      assert.equal(typeof rep, 'string', `${format} report must be a string`);
+      assert.ok(rep.length > 50, `${format} report looks empty`);
+    }
+    assert.equal(JSON.parse(await findingsStore.report(dir, { format: 'sarif' })).version, '2.1.0');
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {
