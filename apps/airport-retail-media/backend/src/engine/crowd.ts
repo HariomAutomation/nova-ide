@@ -7,7 +7,7 @@
  * list of travellers, and why every field here is a share or a count.
  */
 
-import type { Provenance, ZonePresence } from '../model/canonical';
+import type { Provenance, ZonePresence } from '../model/canonical.js';
 
 /**
  * The segment vocabulary the campaign targets are written against.

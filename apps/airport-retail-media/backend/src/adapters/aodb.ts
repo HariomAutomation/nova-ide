@@ -26,7 +26,7 @@
  * ---------------------------------------------------------------------------
  */
 
-import type { Flight, FlightStatus, Provenance } from '../model/canonical';
+import type { Flight, FlightStatus, Provenance } from '../model/canonical.js';
 
 /** Canonical field a source column feeds. */
 type CanonicalField = keyof Flight | 'ignore';

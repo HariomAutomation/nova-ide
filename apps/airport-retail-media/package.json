@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build:backend": "tsc -p backend/tsconfig.json",
-    "test:backend": "node backend/test/worked-example.mjs && node backend/test/aodb-adapter.mjs",
+    "test:backend": "node backend/test/worked-example.mjs && node backend/test/aodb-adapter.mjs && node backend/test/presence.mjs",
     "up": "docker compose up --build"
   },
   "engines": {

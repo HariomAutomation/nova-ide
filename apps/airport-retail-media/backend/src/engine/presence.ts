@@ -31,7 +31,7 @@ import type {
   QueueMeasurement,
   Zone,
   ZonePresence,
-} from '../model/canonical';
+} from '../model/canonical.js';
 
 /** How a gate maps into a zone. Supplied by the topology source, not guessed. */
 export interface GateZoneMap {

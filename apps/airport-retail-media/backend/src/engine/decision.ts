@@ -25,8 +25,8 @@
  * magic constant here.
  */
 
-import type { Provenance } from '../model/canonical';
-import { CrowdProfile, SegmentKey, share } from './crowd';
+import type { Provenance } from '../model/canonical.js';
+import { CrowdProfile, SegmentKey, share } from './crowd.js';
 
 /** How much each segment counts toward an audience match, 0..1. */
 export type SegmentWeights = Partial<Record<SegmentKey, number>>;
