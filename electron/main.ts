@@ -24,6 +24,7 @@ const agent = require('./agent');
 const security = require('./tools/security');
 const findings = require('./tools/findings');
 const challenge = require('./tools/challenge');
+const kaggle = require('./tools/kaggle');
 const verifyEngine = require('./tools/verify');
 
 const DIST = path.join(__dirname, '..', 'dist');
@@ -1069,11 +1070,27 @@ ipcMain.handle('checkpoint:restore', async (_e, { agentId }) => {
 
 ipcMain.handle('challenge:find', async (_e, payload: any = {}) => {
   try {
-    return await challenge.listChallenges({
+    const limit = Math.min((payload && payload.limit) || 20, 50);
+    // Kaggle is a different shape of result, so the caller says which it wants.
+    if (payload && payload.source === 'kaggle') {
+      const k = await kaggle.listCompetitions({ search: payload.search, limit });
+      if (!k.ok) return { ok: false, error: k.error, authRequired: k.authRequired, steps: k.steps, competitions: [] };
+      return {
+        ok: true,
+        source: 'kaggle',
+        competitions: k.competitions.map((c: any) => ({
+          ref: c.ref, id: c.ref, name: c.title, track: 'kaggle', category: c.category,
+          endsAt: c.deadline, reward: c.reward, registrants: c.teamCount,
+          userHasEntered: c.userHasEntered, userRank: c.userRank, url: c.url, deliverable: true,
+        })),
+      };
+    }
+    const r = await challenge.listChallenges({
       tracks: payload && payload.tracks,
       deliverableOnly: payload && payload.all !== true,
-      limit: Math.min((payload && payload.limit) || 20, 50),
+      limit,
     });
+    return { ...r, source: 'topcoder' };
   } catch (e: any) {
     return { ok: false, error: String((e && e.message) || e), challenges: [] };
   }
@@ -1094,8 +1111,24 @@ ipcMain.handle('challenge:ingest', async (_e, payload: any = {}) => {
     const ws = (payload && payload.workspaceRoot) || process.cwd();
     let data: any = null;
     if (payload.url) {
+      const kRef = challenge.parseKaggleRef(payload.url);
+      if (kRef) {
+        const k = await kaggle.listCompetitions({ search: kRef, limit: 20 });
+        if (k.authRequired) return { ok: false, error: 'Kaggle needs credentials', steps: k.steps };
+        if (!k.ok) return { ok: false, error: k.error };
+        const hit = k.competitions.find((c: any) => c.ref === kRef) || k.competitions[0];
+        if (!hit) return { ok: false, error: `no Kaggle competition matched ${kRef}` };
+        data = {
+          source: 'kaggle', id: hit.ref, name: hit.title, url: hit.url, track: 'kaggle',
+          tags: hit.category ? [hit.category] : [],
+          deadlines: hit.deadline ? [{ phase: 'Submission', at: hit.deadline }] : [],
+          description: '',
+        };
+        const spec = await challenge.saveSpec(ws, data);
+        return { ok: true, spec, progress: challenge.progress(spec) };
+      }
       const id = challenge.parseChallengeId(payload.url);
-      if (!id) return { ok: false, error: 'not a TopCoder challenge url or id' };
+      if (!id) return { ok: false, error: 'not a TopCoder challenge url/id or a Kaggle competition url' };
       const f = await challenge.fetchChallenge(id);
       if (!f.ok) return { ok: false, error: f.error };
       data = { source: 'topcoder', id: f.challenge.id, name: f.challenge.name, url: f.challenge.url, tags: f.challenge.tags, track: f.challenge.track, deadlines: f.challenge.deadlines, description: f.challenge.description };
