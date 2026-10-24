@@ -2865,7 +2865,8 @@ suite.push(
       return {
         ok: true,
         json: async () => [
-          { ref: 'titanic', title: 'Titanic - Machine Learning from Disaster', category: 'Getting Started', deadline: '2030-01-01T00:00:00Z', reward: 'Knowledge', teamCount: 15000, userHasEntered: true, userRank: 4021 },
+          // real Kaggle API returns ref as a full URL:
+          { ref: 'https://www.kaggle.com/competitions/titanic', title: 'Titanic - Machine Learning from Disaster', category: 'Getting Started', deadline: '2030-01-01T00:00:00Z', reward: 'Knowledge', teamCount: 15000, userHasEntered: true, userRank: 4021 },
           { ref: 'playground-s4e1', title: 'Playground S4E1', category: 'Playground', deadline: '2026-12-01T00:00:00Z', teamCount: 900, userHasEntered: false },
           { title: 'no ref here' },
         ],
@@ -2876,20 +2877,21 @@ suite.push(
     assert.equal(r.competitions.length, 2, 'a row with no ref is dropped');
 
     const t = r.competitions[0];
-    assert.equal(t.ref, 'titanic');
+    assert.equal(t.ref, 'titanic', 'ref URL is stripped to clean slug');
     assert.equal(t.category, 'Getting Started');
     assert.equal(t.teamCount, 15000);
     assert.equal(t.userHasEntered, true);
     assert.equal(t.userRank, 4021);
-    assert.match(t.url, /kaggle\.com\/competitions\/titanic$/);
+    assert.match(t.url, /^https:\/\/www\.kaggle\.com\/competitions\/titanic$/);
 
     // the row with no userRank must not invent one
     assert.equal(r.competitions[1].userRank, null);
     assert.equal(r.competitions[1].reward, null);
 
-    // search + auth actually reached the request
+    // search + auth actually reached the request, and category=all is NOT sent (Kaggle 400 bug)
     assert.match(seenUrl, /search=titanic/);
     assert.match(seenUrl, /competitions\/list/);
+    assert.ok(!seenUrl.includes('category=all'), 'category=all is omitted because Kaggle API rejects it with 400');
     assert.equal(seenHeaders.authorization, 'Bearer KGAT_x');
 
     // limit is honoured
@@ -2934,13 +2936,22 @@ suite.push(
   test('kaggle: lists the data files, downloads one to disk, and reads the score back', async () => {
     const json = (status, body) => ({ ok: status === 200, status, json: async () => body });
 
+    // real Kaggle API returns { files: [ ... ] }, not a flat array
     const files = await kaggle.listDataFiles('titanic', {
-      fetchImpl: async () => json(200, [{ name: 'train.csv', totalBytes: 61194, creationDate: '2018-01-01' }, { name: 'test.csv', totalBytes: 28629 }, { totalBytes: 1 }]),
+      fetchImpl: async () => json(200, { files: [{ name: 'train.csv', totalBytes: 61194, creationDate: '2018-01-01' }, { name: 'test.csv', totalBytes: 28629 }] }),
       env: {},
     });
     assert.equal(files.ok, true);
-    assert.deepEqual(files.files.map((f) => f.name), ['train.csv', 'test.csv'], 'a nameless row is dropped');
+    assert.deepEqual(files.files.map((f) => f.name), ['train.csv', 'test.csv']);
     assert.equal(files.files[0].bytes, 61194);
+
+    // flat array also accepted for backward compatibility
+    const flatFiles = await kaggle.listDataFiles('titanic', {
+      fetchImpl: async () => json(200, [{ name: 'train.csv', totalBytes: 61194 }, { totalBytes: 1 }]),
+      env: {},
+    });
+    assert.equal(flatFiles.ok, true);
+    assert.deepEqual(flatFiles.files.map((f) => f.name), ['train.csv']);
 
     // a download really lands on disk
     const dest = path.join(TEST_DIR, 'kaggle-dl', 'train.csv');
@@ -2952,7 +2963,15 @@ suite.push(
     assert.equal(dl.bytes, 7);
     assert.equal(await fsp.readFile(dl.path, 'utf8'), 'a,b\n1,2', 'the bytes on disk are the bytes returned');
 
-    // the score comes back from the submissions list — this is the feedback loop
+    // the score comes back from the submissions list — this is the feedback loop (supports flat array or { submissions: [...] })
+    const subsObj = await kaggle.listSubmissions('titanic', {
+      fetchImpl: async () => json(200, { submissions: [{ fileName: 'submission.csv', status: 'complete', publicScore: 0.76555, privateScore: 0.76, description: 'baseline' }] }),
+      env: {},
+    });
+    assert.equal(subsObj.ok, true);
+    assert.equal(subsObj.submissions[0].status, 'complete');
+    assert.equal(subsObj.submissions[0].publicScore, 0.76555);
+
     const subs = await kaggle.listSubmissions('titanic', {
       fetchImpl: async () => json(200, [{ fileName: 'submission.csv', status: 'complete', publicScore: 0.76555, privateScore: 0.76, description: 'baseline' }]),
       env: {},
@@ -2960,10 +2979,23 @@ suite.push(
     assert.equal(subs.ok, true);
     assert.equal(subs.submissions[0].status, 'complete');
     assert.equal(subs.submissions[0].publicScore, 0.76555);
+
     // a submission with no score yet must not invent one
     const pending = await kaggle.listSubmissions('titanic', { fetchImpl: async () => json(200, [{ fileName: 's.csv', status: 'pending' }]), env: {} });
     assert.equal(pending.submissions[0].publicScore, null);
     assert.equal(pending.submissions[0].status, 'pending');
+
+    // Kaggle returns HTTP 400 "You do not have a Team in this Competition." when user has 0 submissions
+    const noTeam = await kaggle.listSubmissions('titanic', {
+      fetchImpl: async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({ code: 400, message: 'You do not have a Team in this Competition.' }),
+      }),
+      env: {},
+    });
+    assert.equal(noTeam.ok, true);
+    assert.deepEqual(noTeam.submissions, [], 'HTTP 400 no-team is cleanly mapped to 0 submissions');
 
     // every one of these asks for credentials the same way
     for (const call of [

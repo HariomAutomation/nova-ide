@@ -90,7 +90,8 @@ export function kaggleAuth(
 
 /** Kaggle returns a compact row; shape it into the same fields the UI uses. */
 function shape(c: any): KaggleCompetition {
-  const ref = String((c && (c.ref || c.competitionName || c.slug)) || '').trim();
+  let ref = String((c && (c.ref || c.competitionName || c.slug)) || '').trim();
+  ref = ref.replace(/^https?:\/\/[^/]+\/competitions\//, '').replace(/^https?:\/\/[^/]+\/c\//, '').replace(/\/.*$/, '').trim();
   return {
     ref,
     title: String((c && (c.title || c.name)) || ref),
@@ -100,7 +101,7 @@ function shape(c: any): KaggleCompetition {
     teamCount: Number((c && (c.teamCount || c.team_count)) || 0),
     userHasEntered: Boolean(c && c.userHasEntered),
     userRank: c && c.userRank ? Number(c.userRank) : null,
-    url: `https://www.kaggle.com/competitions/${ref}`,
+    url: String((c && c.url) || `https://www.kaggle.com/competitions/${ref}`),
   };
 }
 
@@ -116,7 +117,7 @@ export async function listCompetitions(
 
   const params = new URLSearchParams();
   params.set('group', 'general');
-  params.set('category', opts.category || 'all');
+  if (opts.category && opts.category !== 'all') params.set('category', opts.category);
   params.set('sortBy', opts.sortBy || 'earliestDeadline');
   params.set('page', String(opts.page || 1));
   if (opts.search) params.set('search', String(opts.search));
@@ -171,7 +172,7 @@ export async function listDataFiles(
 ): Promise<{ ok: boolean; error?: string; authRequired?: boolean; steps?: string[]; files: any[] }> {
   const r = await kaggleJson(`competitions/data/list/${encodeURIComponent(ref)}`, opts);
   if (!r.ok) return { ok: false, error: r.error, authRequired: r.authRequired, steps: r.steps, files: [] };
-  const arr = Array.isArray(r.data) ? r.data : [];
+  const arr = Array.isArray(r.data) ? r.data : Array.isArray(r.data && r.data.files) ? r.data.files : [];
   return {
     ok: true,
     files: arr.map((f: any) => ({
@@ -227,7 +228,7 @@ export async function listSubmissions(
 ): Promise<{ ok: boolean; error?: string; authRequired?: boolean; steps?: string[]; submissions: any[] }> {
   const r = await kaggleJson(`competitions/submissions/list/${encodeURIComponent(ref)}?page=${opts.page || 1}`, opts);
   if (!r.ok) return { ok: false, error: r.error, authRequired: r.authRequired, steps: r.steps, submissions: [] };
-  const arr = Array.isArray(r.data) ? r.data : [];
+  const arr = Array.isArray(r.data) ? r.data : Array.isArray(r.data && r.data.submissions) ? r.data.submissions : [];
   return {
     ok: true,
     submissions: arr.map((s: any) => ({
@@ -257,6 +258,13 @@ async function kaggleJson(
   try {
     const res = await fetchImpl(`${KAGGLE_API}/${relPath}`, { signal: ctrl ? ctrl.signal : undefined, headers });
     if (res && res.status === 401) return { ok: false, authRequired: true, error: 'Kaggle rejected the request (401).', steps: KAGGLE_SETUP_STEPS };
+    if (res && res.status === 400) {
+      const body = await res.json().catch(() => ({}));
+      if (body && /no.*team|not have a team/i.test(body.message || '')) {
+        return { ok: true, data: [] };
+      }
+      return { ok: false, error: (body && body.message) || `Kaggle API returned HTTP ${res.status}` };
+    }
     if (!res || !res.ok) return { ok: false, error: `Kaggle API returned HTTP ${res && res.status}` };
     return { ok: true, data: await res.json() };
   } catch (e: any) {
