@@ -19,6 +19,9 @@
  * `fetchImpl` is injectable so this is tested without the network.
  */
 
+const fs = require('node:fs/promises');
+const path = require('node:path');
+
 const KAGGLE_API = 'https://www.kaggle.com/api/v1';
 
 export interface KaggleCompetition {
@@ -122,4 +125,112 @@ export async function listCompetitions(
   }
 }
 
-module.exports = { listCompetitions, kaggleAuth, KAGGLE_SETUP_STEPS };
+/* ------------------------------ data + submissions ------------------------------ */
+
+/**
+ * List the files a competition provides (train.csv, test.csv,
+ * sample_submission.csv ...).
+ * GET competitions/data/list/{ref} — the same call `kaggle competitions files` makes.
+ */
+export async function listDataFiles(
+  ref: string,
+  opts: { fetchImpl?: any; env?: any; timeoutMs?: number } = {}
+): Promise<{ ok: boolean; error?: string; authRequired?: boolean; steps?: string[]; files: any[] }> {
+  const r = await kaggleJson(`competitions/data/list/${encodeURIComponent(ref)}`, opts);
+  if (!r.ok) return { ok: false, error: r.error, authRequired: r.authRequired, steps: r.steps, files: [] };
+  const arr = Array.isArray(r.data) ? r.data : [];
+  return {
+    ok: true,
+    files: arr.map((f: any) => ({
+      name: String((f && f.name) || ''),
+      bytes: Number((f && (f.totalBytes || f.total_bytes)) || 0),
+      createdAt: (f && (f.creationDate || f.creation_date)) || null,
+    })).filter((f: any) => f.name),
+  };
+}
+
+/**
+ * Download one competition file to disk.
+ * GET competitions/data/download/{ref}/{fileName} — fails if the competition's
+ * rules have not been accepted.
+ */
+export async function downloadDataFile(
+  ref: string,
+  fileName: string,
+  destPath: string,
+  opts: { fetchImpl?: any; env?: any; timeoutMs?: number } = {}
+): Promise<{ ok: boolean; error?: string; authRequired?: boolean; steps?: string[]; path?: string; bytes?: number }> {
+  const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  if (typeof fetchImpl !== 'function') return { ok: false, error: 'no fetch available' };
+  const auth = kaggleAuth(opts.env || process.env);
+  const headers: any = { accept: '*/*' };
+  if (auth) headers.authorization = auth.header;
+  const timeoutMs = opts.timeoutMs || 180000;
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+  try {
+    const url = `${KAGGLE_API}/competitions/data/download/${encodeURIComponent(ref)}/${encodeURIComponent(fileName)}`;
+    const res = await fetchImpl(url, { signal: ctrl ? ctrl.signal : undefined, headers });
+    if (res && res.status === 401) return { ok: false, authRequired: true, error: 'Kaggle rejected the request (401).', steps: KAGGLE_SETUP_STEPS };
+    if (!res || !res.ok) return { ok: false, error: `Kaggle API returned HTTP ${res && res.status}` };
+    const buf = Buffer.from(await res.arrayBuffer());
+    await fs.mkdir(path.dirname(destPath), { recursive: true });
+    await fs.writeFile(destPath, buf);
+    return { ok: true, path: destPath, bytes: buf.length };
+  } catch (e: any) {
+    return { ok: false, error: `download failed: ${(e && e.message) || e}` };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * A competition's submissions, newest first — this is how the score is read back
+ * after submitting. GET competitions/submissions/list/{ref}?page=1
+ */
+export async function listSubmissions(
+  ref: string,
+  opts: { page?: number; fetchImpl?: any; env?: any; timeoutMs?: number } = {}
+): Promise<{ ok: boolean; error?: string; authRequired?: boolean; steps?: string[]; submissions: any[] }> {
+  const r = await kaggleJson(`competitions/submissions/list/${encodeURIComponent(ref)}?page=${opts.page || 1}`, opts);
+  if (!r.ok) return { ok: false, error: r.error, authRequired: r.authRequired, steps: r.steps, submissions: [] };
+  const arr = Array.isArray(r.data) ? r.data : [];
+  return {
+    ok: true,
+    submissions: arr.map((s: any) => ({
+      fileName: (s && (s.fileName || s.file_name)) || null,
+      date: (s && s.date) || null,
+      description: (s && s.description) || null,
+      status: (s && s.status) || null,
+      publicScore: s && s.publicScore != null ? s.publicScore : null,
+      privateScore: s && s.privateScore != null ? s.privateScore : null,
+    })),
+  };
+}
+
+/** Shared JSON GET with the Kaggle auth + 401 handling. */
+async function kaggleJson(
+  relPath: string,
+  opts: { fetchImpl?: any; env?: any; timeoutMs?: number } = {}
+): Promise<{ ok: boolean; error?: string; authRequired?: boolean; steps?: string[]; data?: any }> {
+  const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  if (typeof fetchImpl !== 'function') return { ok: false, error: 'no fetch available' };
+  const auth = kaggleAuth(opts.env || process.env);
+  const headers: any = { accept: 'application/json' };
+  if (auth) headers.authorization = auth.header;
+  const timeoutMs = opts.timeoutMs || 30000;
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+  try {
+    const res = await fetchImpl(`${KAGGLE_API}/${relPath}`, { signal: ctrl ? ctrl.signal : undefined, headers });
+    if (res && res.status === 401) return { ok: false, authRequired: true, error: 'Kaggle rejected the request (401).', steps: KAGGLE_SETUP_STEPS };
+    if (!res || !res.ok) return { ok: false, error: `Kaggle API returned HTTP ${res && res.status}` };
+    return { ok: true, data: await res.json() };
+  } catch (e: any) {
+    return { ok: false, error: `fetch failed: ${(e && e.message) || e}` };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+module.exports = { listCompetitions, kaggleAuth, KAGGLE_SETUP_STEPS, listDataFiles, downloadDataFile, listSubmissions };

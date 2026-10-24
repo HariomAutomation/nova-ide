@@ -2914,6 +2914,61 @@ suite.push(
   })
 );
 
+/* --------------------------- kaggle data + score --------------------------- */
+
+suite.push(
+  test('kaggle: lists the data files, downloads one to disk, and reads the score back', async () => {
+    const json = (status, body) => ({ ok: status === 200, status, json: async () => body });
+
+    const files = await kaggle.listDataFiles('titanic', {
+      fetchImpl: async () => json(200, [{ name: 'train.csv', totalBytes: 61194, creationDate: '2018-01-01' }, { name: 'test.csv', totalBytes: 28629 }, { totalBytes: 1 }]),
+      env: {},
+    });
+    assert.equal(files.ok, true);
+    assert.deepEqual(files.files.map((f) => f.name), ['train.csv', 'test.csv'], 'a nameless row is dropped');
+    assert.equal(files.files[0].bytes, 61194);
+
+    // a download really lands on disk
+    const dest = path.join(TEST_DIR, 'kaggle-dl', 'train.csv');
+    const dl = await kaggle.downloadDataFile('titanic', 'train.csv', dest, {
+      fetchImpl: async () => ({ ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('a,b\n1,2').buffer }),
+      env: {},
+    });
+    assert.equal(dl.ok, true);
+    assert.equal(dl.bytes, 7);
+    assert.equal(await fsp.readFile(dl.path, 'utf8'), 'a,b\n1,2', 'the bytes on disk are the bytes returned');
+
+    // the score comes back from the submissions list — this is the feedback loop
+    const subs = await kaggle.listSubmissions('titanic', {
+      fetchImpl: async () => json(200, [{ fileName: 'submission.csv', status: 'complete', publicScore: 0.76555, privateScore: 0.76, description: 'baseline' }]),
+      env: {},
+    });
+    assert.equal(subs.ok, true);
+    assert.equal(subs.submissions[0].status, 'complete');
+    assert.equal(subs.submissions[0].publicScore, 0.76555);
+    // a submission with no score yet must not invent one
+    const pending = await kaggle.listSubmissions('titanic', { fetchImpl: async () => json(200, [{ fileName: 's.csv', status: 'pending' }]), env: {} });
+    assert.equal(pending.submissions[0].publicScore, null);
+    assert.equal(pending.submissions[0].status, 'pending');
+
+    // every one of these asks for credentials the same way
+    for (const call of [
+      kaggle.listDataFiles('x', { fetchImpl: async () => json(401, {}), env: {} }),
+      kaggle.downloadDataFile('x', 'f', path.join(TEST_DIR, 'nope'), { fetchImpl: async () => ({ ok: false, status: 401 }), env: {} }),
+      kaggle.listSubmissions('x', { fetchImpl: async () => json(401, {}), env: {} }),
+    ]) {
+      const r = await call;
+      assert.equal(r.ok, false);
+      assert.equal(r.authRequired, true);
+      assert.ok(r.steps.length >= 3);
+    }
+
+    // a missing file is reported, not thrown
+    const missing = await kaggle.downloadDataFile('x', 'f', path.join(TEST_DIR, 'nope'), { fetchImpl: async () => ({ ok: false, status: 404 }), env: {} });
+    assert.match(missing.error, /HTTP 404/);
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {
