@@ -38,7 +38,7 @@
  * ---------------------------------------------------------------------------
  */
 
-import type { FlightEvent, FlightStatus, Provenance } from '../model/canonical';
+import type { FlightEvent, FlightStatus, Provenance } from '../model/canonical.js';
 
 /** Pull the text of the first `<tag>` inside a fragment, or null. */
 function tag(xml: string, name: string): string | null {
