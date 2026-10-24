@@ -3177,6 +3177,39 @@ suite.push(
   })
 );
 
+suite.push(
+  test('penpot: UI & IPC contract lists design files and returns valid metadata', async () => {
+    const ws = path.join(TEST_DIR, 'penpot-ui');
+    await fsp.mkdir(ws, { recursive: true });
+
+    // Create a sample design
+    const r = await penpot.createDesign(ws, {
+      name: 'Mobile App Wireframe',
+      boards: [
+        { name: 'Onboarding', width: 375, height: 812, elements: [
+          { kind: 'rect', name: 'Header', x: 0, y: 0, width: 375, height: 60, fill: '#1E293B' },
+          { kind: 'text', name: 'Welcome', x: 20, y: 100, width: 335, height: 32, content: 'Welcome' },
+        ] },
+      ],
+    });
+    assert.equal(r.ok, true);
+
+    // Verify file exists on disk
+    const stat = await fsp.stat(r.path);
+    assert.ok(stat.size > 0);
+
+    // Test list logic equivalent to penpot:list
+    const designDir = path.join(ws, 'design');
+    const entries = await fsp.readdir(designDir, { withFileTypes: true });
+    const penpotFiles = entries
+      .filter((e) => e.isFile() && e.name.endsWith('.penpot'))
+      .map((e) => ({ name: e.name, path: path.join(designDir, e.name) }));
+
+    assert.equal(penpotFiles.length, 1);
+    assert.equal(penpotFiles[0].name, 'mobile-app-wireframe.penpot');
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {

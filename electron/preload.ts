@@ -168,6 +168,16 @@ contextBridge.exposeInMainWorld('nova', {
   challengeSetItem: (payload) => ipcRenderer.invoke('challenge:set-item', payload),
   challengePack: (payload) => ipcRenderer.invoke('challenge:pack', payload),
 
+  // kaggle workflow (data download, submit & score tracking)
+  kaggleFiles: (payload) => ipcRenderer.invoke('kaggle:files', payload),
+  kaggleDownload: (payload) => ipcRenderer.invoke('kaggle:download', payload),
+  kaggleSubmissions: (payload) => ipcRenderer.invoke('kaggle:submissions', payload),
+  kaggleSubmit: (payload) => ipcRenderer.invoke('kaggle:submit', payload),
+
+  // penpot design workflow
+  penpotList: (payload) => ipcRenderer.invoke('penpot:list', payload),
+  penpotCreate: (payload) => ipcRenderer.invoke('penpot:create', payload),
+
   // misc
   appInfo: () => ipcRenderer.invoke('app:info'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),

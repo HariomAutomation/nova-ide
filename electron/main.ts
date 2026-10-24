@@ -25,6 +25,7 @@ const security = require('./tools/security');
 const findings = require('./tools/findings');
 const challenge = require('./tools/challenge');
 const kaggle = require('./tools/kaggle');
+const penpot = require('./tools/penpot');
 const verifyEngine = require('./tools/verify');
 
 const DIST = path.join(__dirname, '..', 'dist');
@@ -1100,6 +1101,46 @@ ipcMain.handle('kaggle:submit', async (_e, payload: any = {}) => {
     const ws = (payload && payload.workspaceRoot) || process.cwd();
     const file = payload.filePath || path.join(ws, 'submission.csv');
     return await kaggle.submitPrediction(payload.ref, file, payload.description || '', {});
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+/* ------------------------------ penpot ------------------------------ */
+
+ipcMain.handle('penpot:list', async (_e, payload: any = {}) => {
+  try {
+    const ws = payload && payload.workspaceRoot;
+    if (!ws || typeof ws !== 'string') return { ok: false, error: 'No workspace open', files: [] };
+    const designDir = path.resolve(ws, 'design');
+    if (!isWithin(ws, designDir)) return { ok: false, error: 'Invalid workspace path', files: [] };
+    const entries = await fs.readdir(designDir, { withFileTypes: true }).catch(() => []);
+    const files: any[] = [];
+    for (const ent of entries) {
+      if (ent.isFile() && ent.name.endsWith('.penpot')) {
+        const fullPath = path.join(designDir, ent.name);
+        const st = await fs.stat(fullPath).catch(() => null);
+        if (st) {
+          files.push({
+            name: ent.name,
+            path: fullPath,
+            size: st.size,
+            mtime: st.mtime.toISOString(),
+          });
+        }
+      }
+    }
+    return { ok: true, files };
+  } catch (e: any) {
+    return { ok: false, error: String((e && e.message) || e), files: [] };
+  }
+});
+
+ipcMain.handle('penpot:create', async (_e, payload: any = {}) => {
+  try {
+    const ws = payload && payload.workspaceRoot;
+    if (!ws || typeof ws !== 'string') return { ok: false, error: 'No workspace open' };
+    return await penpot.createDesign(ws, payload.design || { boards: [] });
   } catch (e: any) {
     return { ok: false, error: String((e && e.message) || e) };
   }

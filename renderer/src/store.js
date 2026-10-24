@@ -155,6 +155,16 @@ export const useStore = create((set, get) => ({
     searchQuery: '',
     finding: false,
     availableChallenges: [],
+    findError: null,
+    authRequired: false,
+    authSteps: [],
+    kaggleSubmissions: [],
+    kaggleSubmissionsLoading: false,
+    kaggleDownloading: false,
+    kaggleSubmitting: false,
+    penpotDesigns: [],
+    penpotLoading: false,
+    penpotCreating: false,
   },
 
   /* --------------------------------- search --------------------------------- */
@@ -1048,14 +1058,23 @@ Perform a verification analysis:
   },
 
   async findChallenges(opts = {}) {
-    set((s) => ({ challenge: { ...s.challenge, finding: true } }));
+    set((s) => ({ challenge: { ...s.challenge, finding: true, findError: null } }));
     try {
       const res = await api().challengeFind(opts);
-      const list = (res && res.challenges) || [];
-      set((s) => ({ challenge: { ...s.challenge, finding: false, availableChallenges: list } }));
+      const list = (res && (res.challenges || res.competitions)) || [];
+      set((s) => ({
+        challenge: {
+          ...s.challenge,
+          finding: false,
+          availableChallenges: list,
+          findError: res && !res.ok ? res.error : null,
+          authRequired: Boolean(res && res.authRequired),
+          authSteps: (res && res.steps) || [],
+        },
+      }));
       return res;
     } catch (e) {
-      set((s) => ({ challenge: { ...s.challenge, finding: false } }));
+      set((s) => ({ challenge: { ...s.challenge, finding: false, findError: e.message } }));
       return { ok: false, error: e.message, challenges: [] };
     }
   },
@@ -1175,6 +1194,98 @@ Perform a verification analysis:
       const error = e.message;
       set((s) => ({ challenge: { ...s.challenge, packing: false, error } }));
       return { ok: false, error };
+    }
+  },
+
+  async loadKaggleSubmissions(ref) {
+    if (!ref) return;
+    set((s) => ({ challenge: { ...s.challenge, kaggleSubmissionsLoading: true } }));
+    try {
+      const res = await api().kaggleSubmissions({ ref });
+      set((s) => ({
+        challenge: {
+          ...s.challenge,
+          kaggleSubmissionsLoading: false,
+          kaggleSubmissions: (res && res.submissions) || [],
+        },
+      }));
+      return res;
+    } catch (e) {
+      set((s) => ({ challenge: { ...s.challenge, kaggleSubmissionsLoading: false } }));
+      return { ok: false, error: e.message, submissions: [] };
+    }
+  },
+
+  async downloadKaggleData(ref, fileName, destPath) {
+    const { rootFolder } = get();
+    if (!rootFolder) return { ok: false, error: 'No workspace open' };
+    set((s) => ({ challenge: { ...s.challenge, kaggleDownloading: true } }));
+    try {
+      const res = await api().kaggleDownload({ ref, fileName, destPath, workspaceRoot: rootFolder });
+      set((s) => ({ challenge: { ...s.challenge, kaggleDownloading: false } }));
+      if (res && res.ok) {
+        get().setStatus(`Downloaded ${fileName || 'dataset'} to ./data/`);
+      }
+      return res;
+    } catch (e) {
+      set((s) => ({ challenge: { ...s.challenge, kaggleDownloading: false } }));
+      return { ok: false, error: e.message };
+    }
+  },
+
+  async submitKagglePrediction(ref, opts = {}) {
+    const { rootFolder } = get();
+    if (!rootFolder) return { ok: false, error: 'No workspace open' };
+    set((s) => ({ challenge: { ...s.challenge, kaggleSubmitting: true } }));
+    try {
+      const res = await api().kaggleSubmit({ ref, workspaceRoot: rootFolder, ...opts });
+      set((s) => ({ challenge: { ...s.challenge, kaggleSubmitting: false } }));
+      if (res && res.ok) {
+        get().setStatus(`Submitted prediction for ${ref}`);
+        get().loadKaggleSubmissions(ref);
+      }
+      return res;
+    } catch (e) {
+      set((s) => ({ challenge: { ...s.challenge, kaggleSubmitting: false } }));
+      return { ok: false, error: e.message };
+    }
+  },
+
+  async loadPenpotDesigns() {
+    const { rootFolder } = get();
+    if (!rootFolder) return { ok: false, files: [] };
+    set((s) => ({ challenge: { ...s.challenge, penpotLoading: true } }));
+    try {
+      const res = await api().penpotList({ workspaceRoot: rootFolder });
+      set((s) => ({
+        challenge: {
+          ...s.challenge,
+          penpotLoading: false,
+          penpotDesigns: (res && res.files) || [],
+        },
+      }));
+      return res;
+    } catch (e) {
+      set((s) => ({ challenge: { ...s.challenge, penpotLoading: false } }));
+      return { ok: false, error: e.message, files: [] };
+    }
+  },
+
+  async createPenpotDesign(designInput) {
+    const { rootFolder } = get();
+    if (!rootFolder) return { ok: false, error: 'No workspace open' };
+    set((s) => ({ challenge: { ...s.challenge, penpotCreating: true } }));
+    try {
+      const res = await api().penpotCreate({ workspaceRoot: rootFolder, design: designInput });
+      set((s) => ({ challenge: { ...s.challenge, penpotCreating: false } }));
+      if (res && res.ok) {
+        get().setStatus(`Created design: ${res.path}`);
+        get().loadPenpotDesigns();
+      }
+      return res;
+    } catch (e) {
+      set((s) => ({ challenge: { ...s.challenge, penpotCreating: false } }));
+      return { ok: false, error: e.message };
     }
   },
 

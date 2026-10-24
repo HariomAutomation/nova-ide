@@ -9,10 +9,25 @@ const STATUS_CONFIG = {
   skipped: { label: 'Skipped', icon: '⏭️', bg: 'rgba(139, 141, 145, 0.1)', border: 'rgba(139, 141, 145, 0.25)', color: 'var(--muted)' },
 };
 
+function getDeadlineUrgency(iso) {
+  if (!iso) return { text: 'no deadline', urgency: 'unknown' };
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return { text: 'no deadline', urgency: 'unknown' };
+  const ms = t - Date.now();
+  if (ms <= 0) return { text: 'closed', urgency: 'closed' };
+  const totalSec = Math.floor(ms / 1000);
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const human = d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+  const urgency = ms < 6 * 3600 * 1000 ? 'critical' : ms < 24 * 3600 * 1000 ? 'soon' : 'normal';
+  return { text: human, urgency };
+}
+
 export default function ChallengePage() {
   const rootFolder = useStore((s) => s.rootFolder);
   const challenge = useStore((s) => s.challenge);
-  const { spec, progress, loading, ingesting, packing, packResult, error, filterGroup, filterStatus, searchQuery, finding, availableChallenges } = challenge;
+  const { spec, progress, loading, ingesting, packing, packResult, error, filterGroup, filterStatus, searchQuery, finding, availableChallenges, authRequired, authSteps, findError } = challenge;
 
   const setFilterGroup = useStore((s) => s.setChallengeFilterGroup);
   const setFilterStatus = useStore((s) => s.setChallengeFilterStatus);
@@ -26,19 +41,43 @@ export default function ChallengePage() {
   const sendAgentMessage = useStore((s) => s.sendAgentMessage);
   const setMainView = useStore((s) => s.setMainView);
 
+  const kaggleSubmissions = useStore((s) => s.challenge.kaggleSubmissions);
+  const kaggleSubmissionsLoading = useStore((s) => s.challenge.kaggleSubmissionsLoading);
+  const kaggleDownloading = useStore((s) => s.challenge.kaggleDownloading);
+  const kaggleSubmitting = useStore((s) => s.challenge.kaggleSubmitting);
+  const loadKaggleSubmissions = useStore((s) => s.loadKaggleSubmissions);
+  const downloadKaggleData = useStore((s) => s.downloadKaggleData);
+  const submitKagglePrediction = useStore((s) => s.submitKagglePrediction);
+
+  const penpotDesigns = useStore((s) => s.challenge.penpotDesigns);
+  const penpotLoading = useStore((s) => s.challenge.penpotLoading);
+  const penpotCreating = useStore((s) => s.challenge.penpotCreating);
+  const loadPenpotDesigns = useStore((s) => s.loadPenpotDesigns);
+  const createPenpotDesign = useStore((s) => s.createPenpotDesign);
+
   const [showIngestModal, setShowIngestModal] = useState(false);
   const [ingestMode, setIngestMode] = useState('live'); // 'live' | 'url' | 'paste'
   const [ingestUrl, setIngestUrl] = useState('');
   const [ingestName, setIngestName] = useState('');
   const [ingestText, setIngestText] = useState('');
   const [ingestError, setIngestError] = useState('');
+  const [liveSource, setLiveSource] = useState('topcoder'); // 'topcoder' | 'kaggle'
   const [liveTrackFilter, setLiveTrackFilter] = useState('all');
+  const [liveKaggleCategory, setLiveKaggleCategory] = useState('all');
   const [liveDeliverableOnly, setLiveDeliverableOnly] = useState(true);
   const [liveSearch, setLiveSearch] = useState('');
 
   const [showPackModal, setShowPackModal] = useState(false);
   const [packFiles, setPackFiles] = useState('README.md, dist/');
   const [forcePack, setForcePack] = useState(false);
+  const [showKaggleSubmitModal, setShowKaggleSubmitModal] = useState(false);
+  const [kaggleSubmitFile, setKaggleSubmitFile] = useState('submission.csv');
+  const [kaggleSubmitDesc, setKaggleSubmitDesc] = useState('');
+  const [kaggleSubmitError, setKaggleSubmitError] = useState('');
+  const [showPenpotModal, setShowPenpotModal] = useState(false);
+  const [penpotDesignName, setPenpotDesignName] = useState('Storefront Wireframe');
+  const [penpotScreens, setPenpotScreens] = useState('Home Screen, Dashboard, Product Detail');
+  const [penpotError, setPenpotError] = useState('');
   const [expandedNotes, setExpandedNotes] = useState({});
   const [editingNote, setEditingNote] = useState({});
 
@@ -47,8 +86,21 @@ export default function ChallengePage() {
   }, [rootFolder]);
 
   useEffect(() => {
+    if (spec && (spec.source === 'kaggle' || spec.track === 'kaggle') && spec.id) {
+      loadKaggleSubmissions(spec.id);
+    }
+    if (spec && spec.track && spec.track.toLowerCase().includes('design')) {
+      loadPenpotDesigns();
+    }
+  }, [spec?.id, spec?.track]);
+
+  useEffect(() => {
     if (showIngestModal && ingestMode === 'live' && (!availableChallenges || availableChallenges.length === 0)) {
-      findChallenges({ deliverableOnly: liveDeliverableOnly });
+      if (liveSource === 'kaggle') {
+        findChallenges({ source: 'kaggle', search: liveSearch.trim() || undefined });
+      } else {
+        findChallenges({ source: 'topcoder', deliverableOnly: liveDeliverableOnly });
+      }
     }
   }, [showIngestModal, ingestMode]);
 
@@ -61,6 +113,18 @@ export default function ChallengePage() {
   const displayedChallenges = useMemo(() => {
     if (!availableChallenges || !Array.isArray(availableChallenges)) return [];
     return availableChallenges.filter((c) => {
+      if (liveSource === 'kaggle') {
+        if (liveKaggleCategory !== 'all' && String(c.category || '').toLowerCase() !== liveKaggleCategory.toLowerCase()) {
+          return false;
+        }
+        if (liveSearch.trim()) {
+          const q = liveSearch.toLowerCase();
+          const matchName = String(c.name || '').toLowerCase().includes(q);
+          const matchRef = String(c.ref || c.id || '').toLowerCase().includes(q);
+          if (!matchName && !matchRef) return false;
+        }
+        return true;
+      }
       if (liveTrackFilter !== 'all' && !String(c.track || '').toLowerCase().includes(liveTrackFilter)) return false;
       if (liveSearch.trim()) {
         const q = liveSearch.toLowerCase();
@@ -68,7 +132,7 @@ export default function ChallengePage() {
       }
       return true;
     });
-  }, [availableChallenges, liveTrackFilter, liveSearch]);
+  }, [availableChallenges, liveSource, liveKaggleCategory, liveTrackFilter, liveSearch]);
 
   // Filter items
   const filteredItems = useMemo(() => {
@@ -167,11 +231,13 @@ export default function ChallengePage() {
       <div className="challenge-header">
         <div className="challenge-title-area">
           <div className="challenge-title-row">
-            <span className="challenge-trophy">🏆</span>
-            <h1 className="challenge-title">{spec ? spec.name : 'TopCoder Challenge Studio'}</h1>
+            <span className="challenge-trophy">
+              {spec && (spec.source === 'kaggle' || spec.track === 'kaggle') ? '📊' : '🏆'}
+            </span>
+            <h1 className="challenge-title">{spec ? spec.name : 'Contest & Challenge Studio'}</h1>
             {spec && spec.source && (
               <span className="challenge-source-badge">
-                {spec.source === 'topcoder' ? 'TopCoder Contest' : 'Pasted Spec'}
+                {spec.source === 'kaggle' ? 'Kaggle Competition' : spec.source === 'topcoder' ? 'TopCoder Contest' : 'Pasted Spec'}
               </span>
             )}
             {spec && spec.track && (
@@ -194,7 +260,7 @@ export default function ChallengePage() {
                     window.nova.openExternal(spec.url);
                   }}
                 >
-                  View on TopCoder ↗
+                  {spec.source === 'kaggle' || spec.track === 'kaggle' ? 'View on Kaggle ↗' : 'View on TopCoder ↗'}
                 </a>
               )}
               {spec.tags && spec.tags.length > 0 && (
@@ -208,11 +274,19 @@ export default function ChallengePage() {
               )}
               {spec.deadlines && spec.deadlines.length > 0 && (
                 <div className="challenge-deadlines">
-                  {spec.deadlines.map((d, idx) => (
-                    <span key={idx} className="challenge-deadline-badge" title={d.at}>
-                      📅 {d.phase}: {new Date(d.at).toLocaleDateString()}
-                    </span>
-                  ))}
+                  {spec.deadlines.map((d, idx) => {
+                    const u = getDeadlineUrgency(d.at);
+                    const icon = u.urgency === 'critical' ? '🔥' : u.urgency === 'soon' ? '⏳' : u.urgency === 'closed' ? '🔒' : '📅';
+                    return (
+                      <span
+                        key={idx}
+                        className={`challenge-deadline-badge ${u.urgency}`}
+                        title={`${d.at} (${u.text})`}
+                      >
+                        {icon} {d.phase}: {u.text}
+                      </span>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -250,13 +324,63 @@ export default function ChallengePage() {
           >
             📥 Ingest Challenge
           </button>
-          <button
-            className="challenge-btn pack-btn"
-            onClick={() => setShowPackModal(true)}
-            disabled={!spec || packing}
-          >
-            📦 Package Submission (.zip)
-          </button>
+          {spec && (spec.source === 'kaggle' || spec.track === 'kaggle') ? (
+            <>
+              <button
+                className="challenge-btn secondary"
+                onClick={async () => {
+                  if (!spec.id) return;
+                  const res = await downloadKaggleData(spec.id);
+                  if (res && res.error) setIngestError(res.error);
+                }}
+                disabled={kaggleDownloading}
+                title="Download competition files into ./data"
+              >
+                {kaggleDownloading ? '📥 Downloading...' : '📥 Download Data'}
+              </button>
+              <button
+                className="challenge-btn primary"
+                onClick={() => {
+                  setKaggleSubmitError('');
+                  setKaggleSubmitDesc(`Nova baseline submission - ${new Date().toLocaleTimeString()}`);
+                  setShowKaggleSubmitModal(true);
+                }}
+                disabled={kaggleSubmitting}
+                title="Submit submission.csv to Kaggle Leaderboard"
+              >
+                {kaggleSubmitting ? '🚀 Submitting...' : '🚀 Submit Prediction'}
+              </button>
+            </>
+          ) : spec && spec.track && spec.track.toLowerCase().includes('design') ? (
+            <>
+              <button
+                className="challenge-btn secondary"
+                onClick={() => {
+                  setPenpotError('');
+                  setShowPenpotModal(true);
+                }}
+                disabled={penpotCreating}
+                title="Author layout structure with Penpot"
+              >
+                {penpotCreating ? '🎨 Authoring...' : '🎨 Author Wireframe'}
+              </button>
+              <button
+                className="challenge-btn pack-btn"
+                onClick={() => setShowPackModal(true)}
+                disabled={!spec || packing}
+              >
+                📦 Package Submission (.zip)
+              </button>
+            </>
+          ) : (
+            <button
+              className="challenge-btn pack-btn"
+              onClick={() => setShowPackModal(true)}
+              disabled={!spec || packing}
+            >
+              📦 Package Submission (.zip)
+            </button>
+          )}
         </div>
       </div>
 
@@ -269,6 +393,139 @@ export default function ChallengePage() {
           </div>
         </div>
       )}
+
+      {/* Penpot Vector Design Studio for DESIGN Track */}
+      {spec && spec.track && spec.track.toLowerCase().includes('design') && (
+        <div className="penpot-studio-card">
+          <div className="penpot-studio-header">
+            <div className="penpot-title-area">
+              <span className="penpot-badge-icon">🎨</span>
+              <div>
+                <div className="penpot-card-title">
+                  Penpot Vector Design Engine
+                  <span className="penpot-active-tag">Open Vector Authoring</span>
+                </div>
+                <div className="penpot-card-subtitle">
+                  Nova authors open <code>.penpot</code> ZIP vector designs with multi-board responsive layouts, coordinates, and typography hierarchy.
+                </div>
+              </div>
+            </div>
+            <div className="penpot-header-actions">
+              <button
+                type="button"
+                className="challenge-btn secondary"
+                onClick={() => {
+                  window.nova.openExternal('https://design.penpot.app/');
+                }}
+                title="Launch Penpot Web Application (open-source vector editor)"
+              >
+                Penpot Web ↗
+              </button>
+              <button
+                type="button"
+                className="challenge-btn primary"
+                onClick={() => {
+                  setPenpotError('');
+                  setShowPenpotModal(true);
+                }}
+                disabled={penpotCreating}
+              >
+                {penpotCreating ? 'Creating...' : '🎨 Author Wireframe'}
+              </button>
+            </div>
+          </div>
+
+          <div className="penpot-workflow-callout">
+            <div className="penpot-step-item">
+              <span className="step-num">1</span>
+              <div>
+                <strong>Author Structure</strong>
+                <p>Nova builds screens, navbar bounds, cards and typography coordinates into <code>./design/*.penpot</code>.</p>
+              </div>
+            </div>
+            <div className="penpot-step-arrow">→</div>
+            <div className="penpot-step-item">
+              <span className="step-num">2</span>
+              <div>
+                <strong>Open in Penpot</strong>
+                <p>Import into Penpot to inspect vector boards or export SVG/PNG for reviews.</p>
+              </div>
+            </div>
+            <div className="penpot-step-arrow">→</div>
+            <div className="penpot-step-item">
+              <span className="step-num">3</span>
+              <div>
+                <strong>TopCoder Deliverable (.fig)</strong>
+                <p>Import SVG/vector layout into Figma for high-fidelity hand craft &amp; final <code>.fig</code> export.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Generated Penpot Designs List */}
+          <div className="penpot-files-section">
+            <div className="penpot-files-header">
+              <span className="penpot-files-title">Generated Design Files ({penpotDesigns?.length || 0})</span>
+              {penpotLoading && <span className="penpot-loading-indicator">Scanning ./design/...</span>}
+            </div>
+            {penpotDesigns && penpotDesigns.length > 0 ? (
+              <div className="penpot-files-list">
+                {penpotDesigns.map((f, i) => (
+                  <div key={f.name || i} className="penpot-file-row">
+                    <div className="penpot-file-info">
+                      <span className="penpot-file-icon">📐</span>
+                      <div className="penpot-file-details">
+                        <span className="penpot-file-name">{f.name}</span>
+                        <span className="penpot-file-meta">
+                          {(f.size / 1024).toFixed(1)} KB · Modified {new Date(f.mtime).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="penpot-file-actions">
+                      <button
+                        className="penpot-action-btn"
+                        onClick={() => {
+                          if (window.nova.openPath) window.nova.openPath(f.path);
+                          else window.nova.openExternal('file://' + f.path);
+                        }}
+                        title="Show file on disk"
+                      >
+                        📁 Show File
+                      </button>
+                      <button
+                        className="penpot-action-btn primary"
+                        onClick={() => {
+                          window.nova.openExternal('https://design.penpot.app/');
+                        }}
+                        title="Open Penpot to import this file"
+                      >
+                        Import to Penpot ↗
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="penpot-empty-state">
+                No <code>.penpot</code> designs in <code>./design/</code> yet. Click <strong>"🎨 Author Wireframe"</strong> or prompt Nova Agent: <em>"Design the UI structure for this challenge with Penpot"</em>.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Metric-First Objective Banner for Kaggle */}
+      {spec && (spec.track === 'kaggle' || spec.source === 'kaggle') && (
+        <div className="kaggle-metric-banner">
+          <span className="kaggle-metric-icon">🎯</span>
+          <div className="kaggle-metric-content">
+            <strong>Objective: Metric Optimization</strong>
+            <p>
+              The Kaggle API does not expose the evaluation metric directly. Fetch the competition overview ({spec.url}) and confirm the exact metric (e.g. <code>RMSE</code>, <code>LogLoss</code>, <code>ROC-AUC</code>, <code>F1</code>). All local cross-validation and <code>submission.csv</code> outputs must align to this metric.
+            </p>
+          </div>
+        </div>
+      )}
+
 
       {/* Progress & KPI Metrics Bar */}
       {spec ? (
@@ -317,6 +574,66 @@ export default function ChallengePage() {
           </div>
         </div>
       ) : null}
+
+      {/* Kaggle Submissions Tracker */}
+      {spec && (spec.source === 'kaggle' || spec.track === 'kaggle') && (
+        <div className="kaggle-submissions-card">
+          <div className="submissions-card-header">
+            <div className="submissions-header-title">
+              <span>📊 Leaderboard & Submissions</span>
+              {kaggleSubmissionsLoading && <span className="submissions-loading-dot">Refreshing...</span>}
+            </div>
+            <button
+              className="challenge-btn small secondary"
+              onClick={() => loadKaggleSubmissions(spec.id)}
+              disabled={kaggleSubmissionsLoading}
+            >
+              🔄 Refresh Scores
+            </button>
+          </div>
+          {kaggleSubmissions && kaggleSubmissions.length > 0 ? (
+            <div className="submissions-table-container">
+              <table className="submissions-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>File</th>
+                    <th>Status</th>
+                    <th>Public Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {kaggleSubmissions.map((sub, idx) => (
+                    <tr key={idx} className={idx === 0 ? 'latest-submission' : ''}>
+                      <td>{sub.date ? new Date(sub.date).toLocaleDateString() : 'Recent'}</td>
+                      <td className="sub-desc">{sub.description || '—'}</td>
+                      <td><code>{sub.fileName || 'submission.csv'}</code></td>
+                      <td>
+                        <span className={`sub-status-pill ${String(sub.status || '').toLowerCase()}`}>
+                          {sub.status || 'complete'}
+                        </span>
+                      </td>
+                      <td className="sub-score">
+                        {sub.publicScore != null ? (
+                          <strong className="score-val">{sub.publicScore}</strong>
+                        ) : (
+                          <span className="score-pending">Processing</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="submissions-empty">
+              No submissions yet for this competition. Generate <code>submission.csv</code> and click <strong>🚀 Submit Prediction</strong> to record your first public score!
+            </div>
+          )}
+        </div>
+      )}
+
 
       {/* Packaging Status Feedback Banner */}
       {packResult && (
@@ -574,7 +891,11 @@ export default function ChallengePage() {
                   className={`ingest-tab-btn ${ingestMode === 'live' ? 'active' : ''}`}
                   onClick={() => {
                     setIngestMode('live');
-                    findChallenges({ deliverableOnly: liveDeliverableOnly });
+                    if (liveSource === 'kaggle') {
+                      findChallenges({ source: 'kaggle', search: liveSearch.trim() || undefined });
+                    } else {
+                      findChallenges({ source: 'topcoder', deliverableOnly: liveDeliverableOnly });
+                    }
                   }}
                 >
                   🌐 Live Open Contests
@@ -584,7 +905,7 @@ export default function ChallengePage() {
                   className={`ingest-tab-btn ${ingestMode === 'url' ? 'active' : ''}`}
                   onClick={() => setIngestMode('url')}
                 >
-                  🔗 TopCoder URL or ID
+                  🔗 TopCoder or Kaggle URL
                 </button>
                 <button
                   type="button"
@@ -597,42 +918,109 @@ export default function ChallengePage() {
 
               {ingestMode === 'live' ? (
                 <div className="live-contests-container">
+                  <div className="source-platform-toggle">
+                    <button
+                      type="button"
+                      className={`platform-toggle-btn ${liveSource === 'topcoder' ? 'active' : ''}`}
+                      onClick={() => {
+                        setLiveSource('topcoder');
+                        findChallenges({ source: 'topcoder', deliverableOnly: liveDeliverableOnly });
+                      }}
+                    >
+                      🏆 TopCoder Contests
+                    </button>
+                    <button
+                      type="button"
+                      className={`platform-toggle-btn ${liveSource === 'kaggle' ? 'active' : ''}`}
+                      onClick={() => {
+                        setLiveSource('kaggle');
+                        findChallenges({ source: 'kaggle', search: liveSearch.trim() || undefined });
+                      }}
+                    >
+                      📊 Kaggle Competitions
+                    </button>
+                  </div>
+
+                  {authRequired && (
+                    <div className="challenge-auth-banner">
+                      <div className="auth-banner-title">🔑 Kaggle API Credentials Required</div>
+                      <div>Kaggle API requires authentication for full competition access:</div>
+                      <ol className="auth-banner-steps">
+                        {(authSteps && authSteps.length > 0 ? authSteps : [
+                          'kaggle.com -> your account -> Settings -> API -> Create New Token',
+                          'Set KAGGLE_API_TOKEN environment variable (or KAGGLE_USERNAME and KAGGLE_KEY)',
+                        ]).map((step, idx) => (
+                          <li key={idx}>{step}</li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+
                   <div className="live-contests-filters">
                     <input
                       type="text"
                       className="challenge-input small"
-                      placeholder="Filter contests..."
+                      placeholder={liveSource === 'kaggle' ? 'Search Kaggle (e.g. titanic, house prices)...' : 'Filter contests...'}
                       value={liveSearch}
                       onChange={(e) => setLiveSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          if (liveSource === 'kaggle') {
+                            findChallenges({ source: 'kaggle', search: liveSearch.trim() || undefined });
+                          }
+                        }
+                      }}
                     />
-                    <select
-                      className="challenge-select"
-                      value={liveTrackFilter}
-                      onChange={(e) => setLiveTrackFilter(e.target.value)}
-                    >
-                      <option value="all">All Tracks</option>
-                      <option value="develop">Development</option>
-                      <option value="qa">QA / Bug Hunt</option>
-                      <option value="data science">Data Science</option>
-                      <option value="ideation">Ideation</option>
-                      <option value="design">Design</option>
-                    </select>
-                    <label className="force-checkbox-label" style={{ margin: 0 }}>
-                      <input
-                        type="checkbox"
-                        checked={liveDeliverableOnly}
-                        onChange={(e) => {
-                          const next = e.target.checked;
-                          setLiveDeliverableOnly(next);
-                          findChallenges({ deliverableOnly: next });
-                        }}
-                      />
-                      Deliverable only
-                    </label>
+                    {liveSource === 'kaggle' ? (
+                      <select
+                        className="challenge-select"
+                        value={liveKaggleCategory}
+                        onChange={(e) => setLiveKaggleCategory(e.target.value)}
+                      >
+                        <option value="all">All Categories</option>
+                        <option value="featured">Featured</option>
+                        <option value="getting started">Getting Started</option>
+                        <option value="research">Research</option>
+                        <option value="community">Community</option>
+                      </select>
+                    ) : (
+                      <>
+                        <select
+                          className="challenge-select"
+                          value={liveTrackFilter}
+                          onChange={(e) => setLiveTrackFilter(e.target.value)}
+                        >
+                          <option value="all">All Tracks</option>
+                          <option value="develop">Development</option>
+                          <option value="qa">QA / Bug Hunt</option>
+                          <option value="data science">Data Science</option>
+                          <option value="ideation">Ideation</option>
+                          <option value="design">Design</option>
+                        </select>
+                        <label className="force-checkbox-label" style={{ margin: 0 }}>
+                          <input
+                            type="checkbox"
+                            checked={liveDeliverableOnly}
+                            onChange={(e) => {
+                              const next = e.target.checked;
+                              setLiveDeliverableOnly(next);
+                              findChallenges({ source: 'topcoder', deliverableOnly: next });
+                            }}
+                          />
+                          Deliverable only
+                        </label>
+                      </>
+                    )}
                     <button
                       type="button"
                       className="challenge-btn small secondary"
-                      onClick={() => findChallenges({ deliverableOnly: liveDeliverableOnly })}
+                      onClick={() => {
+                        if (liveSource === 'kaggle') {
+                          findChallenges({ source: 'kaggle', search: liveSearch.trim() || undefined });
+                        } else {
+                          findChallenges({ source: 'topcoder', deliverableOnly: liveDeliverableOnly });
+                        }
+                      }}
                       disabled={finding}
                       title="Refresh contest list"
                     >
@@ -641,30 +1029,45 @@ export default function ChallengePage() {
                   </div>
 
                   {finding ? (
-                    <div className="live-loading">Fetching open TopCoder contests...</div>
+                    <div className="live-loading">
+                      Fetching open {liveSource === 'kaggle' ? 'Kaggle competitions' : 'TopCoder contests'}...
+                    </div>
                   ) : displayedChallenges.length === 0 ? (
-                    <div className="live-empty">No matching open contests found.</div>
+                    <div className="live-empty">
+                      No matching {liveSource === 'kaggle' ? 'Kaggle competitions' : 'open contests'} found.
+                    </div>
                   ) : (
                     <div className="live-contests-list">
                       {displayedChallenges.map((c) => (
-                        <div key={c.id} className="live-contest-card">
+                        <div key={c.id || c.ref} className="live-contest-card">
                           <div className="live-contest-info">
                             <div className="live-contest-title-row">
                               <span className="live-contest-title">{c.name}</span>
                               <span className={`challenge-track-badge ${c.deliverable ? 'deliverable' : 'warning'}`}>
-                                {c.track || 'Track'}
+                                {c.category || c.track || (liveSource === 'kaggle' ? 'Kaggle ML' : 'Track')}
                               </span>
+                              {c.reward && <span className="badge-reward">💰 {c.reward}</span>}
                               {!c.deliverable && <span className="figma-note">Requires Figma</span>}
                             </div>
                             <div className="live-contest-meta">
-                              {c.endsAt && (
-                                <span className="live-meta-item">
-                                  📅 Closes: {new Date(c.endsAt).toLocaleDateString()}
+                              {c.endsAt && (() => {
+                                const u = getDeadlineUrgency(c.endsAt);
+                                const icon = u.urgency === 'critical' ? '🔥' : u.urgency === 'soon' ? '⏳' : u.urgency === 'closed' ? '🔒' : '📅';
+                                return (
+                                  <span className={`live-meta-item deadline-pill ${u.urgency}`}>
+                                    {icon} Closes: {u.text}
+                                  </span>
+                                );
+                              })()}
+                              <span className="live-meta-item">
+                                👥 {c.registrants || c.teams || 0} {liveSource === 'kaggle' ? 'teams' : 'reg'}
+                                {c.submissions ? ` · 📄 ${c.submissions} subs` : ''}
+                              </span>
+                              {c.userHasEntered && (
+                                <span className="live-meta-item" style={{ color: '#7ad18a', fontWeight: 600 }}>
+                                  ✓ Entered {c.userRank ? `(Rank #${c.userRank})` : ''}
                                 </span>
                               )}
-                              <span className="live-meta-item">
-                                👥 {c.registrants} reg · 📄 {c.submissions} subs
-                              </span>
                               <a
                                 href={c.url}
                                 className="challenge-link"
@@ -673,7 +1076,7 @@ export default function ChallengePage() {
                                   window.nova.openExternal(c.url);
                                 }}
                               >
-                                TopCoder ↗
+                                {liveSource === 'kaggle' || c.track === 'kaggle' ? 'Kaggle ↗' : 'TopCoder ↗'}
                               </a>
                             </div>
                           </div>
@@ -699,17 +1102,17 @@ export default function ChallengePage() {
                 <form onSubmit={handleIngestSubmit}>
                   {ingestMode === 'url' ? (
                     <div className="ingest-form-group">
-                      <label>TopCoder Challenge URL or UUID:</label>
+                      <label>TopCoder or Kaggle Challenge URL / ID:</label>
                       <input
                         type="text"
                         className="challenge-input"
-                        placeholder="https://www.topcoder.com/challenges/e68b8eaf-48d9-4f9a-86a2-1f7f3fab9e83"
+                        placeholder="https://www.kaggle.com/competitions/titanic or TopCoder URL"
                         value={ingestUrl}
                         onChange={(e) => setIngestUrl(e.target.value)}
                         autoFocus
                       />
                       <p className="ingest-help-text">
-                        Nova will automatically query the TopCoder v6 API to extract all rolling and final submission requirements into a structured checklist.
+                        Nova will extract requirements and submission guidelines into a structured checklist with the track submission playbook. Both TopCoder and Kaggle are supported.
                       </p>
                     </div>
                   ) : (
@@ -845,6 +1248,183 @@ export default function ChallengePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Kaggle Submit Modal */}
+      {showKaggleSubmitModal && (
+        <div className="challenge-modal-backdrop" onClick={() => setShowKaggleSubmitModal(false)}>
+          <div className="challenge-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="challenge-modal-header">
+              <h2>🚀 Submit Prediction to Kaggle</h2>
+              <button className="modal-close-btn" onClick={() => setShowKaggleSubmitModal(false)}>✕</button>
+            </div>
+
+            <div className="kaggle-submit-modal-body" style={{ padding: '16px 0 0 0' }}>
+              <p className="modal-note" style={{ marginBottom: 14, color: 'var(--text)' }}>
+                Target Competition: <strong>{spec?.name}</strong> (<code>{spec?.id}</code>).
+              </p>
+
+              {kaggleSubmitError && (
+                <div className="modal-error-box" style={{ marginBottom: 12, padding: 10, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: 6, color: '#fca5a5', fontSize: 12 }}>
+                  {kaggleSubmitError}
+                </div>
+              )}
+
+              <div className="ingest-form-group">
+                <label>Prediction CSV File:</label>
+                <input
+                  type="text"
+                  className="challenge-input"
+                  value={kaggleSubmitFile}
+                  onChange={(e) => setKaggleSubmitFile(e.target.value)}
+                  placeholder="submission.csv"
+                />
+                <p className="ingest-help-text">
+                  Default is <code>submission.csv</code> in the workspace root. Must match the column format and row count of <code>sample_submission.csv</code>.
+                </p>
+              </div>
+
+              <div className="ingest-form-group" style={{ marginTop: 12 }}>
+                <label>Submission Description:</label>
+                <input
+                  type="text"
+                  className="challenge-input"
+                  value={kaggleSubmitDesc}
+                  onChange={(e) => setKaggleSubmitDesc(e.target.value)}
+                  placeholder="e.g. LightGBM 5-fold CV baseline"
+                />
+              </div>
+
+              <div className="modal-buttons" style={{ justifyContent: 'flex-end', marginTop: 20 }}>
+                <button
+                  type="button"
+                  className="challenge-btn secondary"
+                  onClick={() => setShowKaggleSubmitModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="challenge-btn primary"
+                  onClick={async () => {
+                    setKaggleSubmitError('');
+                    const res = await submitKagglePrediction(spec.id, {
+                      filePath: kaggleSubmitFile.trim() || undefined,
+                      description: kaggleSubmitDesc.trim(),
+                    });
+                    if (res && res.ok) {
+                      setShowKaggleSubmitModal(false);
+                    } else {
+                      setKaggleSubmitError((res && res.error) || 'Submission failed');
+                    }
+                  }}
+                  disabled={kaggleSubmitting}
+                >
+                  {kaggleSubmitting ? 'Uploading...' : '🚀 Submit Now'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Penpot Author Wireframe Modal */}
+      {showPenpotModal && (
+        <div className="challenge-modal-backdrop" onClick={() => setShowPenpotModal(false)}>
+          <div className="challenge-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="challenge-modal-header">
+              <h2>🎨 Author Penpot Vector Wireframe</h2>
+              <button className="modal-close-btn" onClick={() => setShowPenpotModal(false)}>✕</button>
+            </div>
+
+            <div className="penpot-modal-body" style={{ padding: '16px 0 0 0' }}>
+              <p className="modal-note" style={{ marginBottom: 14, color: 'var(--text)' }}>
+                Nova will build an open vector <code>.penpot</code> file containing responsive screen boards, top navbars, and container layouts.
+              </p>
+
+              {penpotError && (
+                <div className="modal-error-box" style={{ marginBottom: 12, padding: 10, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: 6, color: '#fca5a5', fontSize: 12 }}>
+                  {penpotError}
+                </div>
+              )}
+
+              <div className="ingest-form-group">
+                <label>Design Name:</label>
+                <input
+                  type="text"
+                  className="challenge-input"
+                  value={penpotDesignName}
+                  onChange={(e) => setPenpotDesignName(e.target.value)}
+                  placeholder="e.g. Storefront Layout"
+                />
+              </div>
+
+              <div className="ingest-form-group" style={{ marginTop: 12 }}>
+                <label>Screens to Generate (comma-separated):</label>
+                <input
+                  type="text"
+                  className="challenge-input"
+                  value={penpotScreens}
+                  onChange={(e) => setPenpotScreens(e.target.value)}
+                  placeholder="e.g. Home, Dashboard, Product Detail, Checkout"
+                />
+                <p className="ingest-help-text">
+                  Each screen creates an isolated 1440×900 vector board with responsive navigation, typography hierarchy, and UI cards.
+                </p>
+              </div>
+
+              <div className="modal-buttons" style={{ justifyContent: 'flex-end', marginTop: 20 }}>
+                <button
+                  type="button"
+                  className="challenge-btn secondary"
+                  onClick={() => setShowPenpotModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="challenge-btn primary"
+                  onClick={async () => {
+                    setPenpotError('');
+                    const screenNames = penpotScreens
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    if (!screenNames.length) {
+                      setPenpotError('Please specify at least one screen name');
+                      return;
+                    }
+                    const boards = screenNames.map((name) => ({
+                      name,
+                      width: 1440,
+                      height: 900,
+                      elements: [
+                        { kind: 'rect', name: 'Navbar', x: 0, y: 0, width: 1440, height: 72, fill: '#0F172A' },
+                        { kind: 'text', name: 'Brand', x: 40, y: 26, width: 220, height: 24, content: (spec?.name ? spec.name.slice(0, 24) : 'Nova Design') },
+                        { kind: 'text', name: 'Screen Title', x: 80, y: 130, width: 800, height: 48, content: name },
+                        { kind: 'rect', name: 'Card 1', x: 80, y: 210, width: 400, height: 260, fill: '#1E293B', radius: 8 },
+                        { kind: 'rect', name: 'Card 2', x: 510, y: 210, width: 400, height: 260, fill: '#1E293B', radius: 8 },
+                        { kind: 'rect', name: 'Card 3', x: 940, y: 210, width: 420, height: 260, fill: '#1E293B', radius: 8 },
+                      ],
+                    }));
+                    const res = await createPenpotDesign({
+                      name: penpotDesignName.trim() || 'Design Wireframe',
+                      boards,
+                    });
+                    if (res && res.ok) {
+                      setShowPenpotModal(false);
+                    } else {
+                      setPenpotError((res && res.error) || 'Failed to create Penpot design');
+                    }
+                  }}
+                  disabled={penpotCreating}
+                >
+                  {penpotCreating ? 'Building .penpot...' : '🎨 Generate Design'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
