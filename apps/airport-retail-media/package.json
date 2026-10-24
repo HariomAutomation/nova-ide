@@ -14,6 +14,7 @@
     "build": "npm run build:backend && npm run build:frontend",
     "test:backend": "node backend/test/worked-example.mjs && node backend/test/aodb-adapter.mjs && node backend/test/presence.mjs && node backend/test/aidx-adapter.mjs && node backend/test/acris-adapter.mjs && node backend/test/loop.mjs && node backend/test/server.mjs",
     "start": "node backend/dist/server/main.js",
+    "bundle:zip": "npm run build && zip -r airport-retail-media-submission.zip . -x 'node_modules/*' '*/node_modules/*' '.git/*' '*.log' 'data/*'",
     "up": "docker compose up --build"
   },
   "engines": {
