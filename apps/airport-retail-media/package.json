@@ -2,7 +2,7 @@
   "name": "airport-retail-media",
   "private": true,
   "version": "0.1.0",
-  "description": "Airport retail media platform \u2014 TopCoder Development challenge deliverable. Self-contained: nothing here imports from the host repository.",
+  "description": "Airport retail media platform — TopCoder Development challenge deliverable. Self-contained: nothing here imports from the host repository.",
   "type": "module",
   "workspaces": [
     "backend",
@@ -15,5 +15,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }
