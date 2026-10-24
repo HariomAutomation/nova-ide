@@ -821,6 +821,12 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
       const decoder = new TextDecoder();
       let buf = '';
       let content = '';
+      // Some providers stream the whole reply in `reasoning` / `reasoning_content`
+      // and leave `content` empty (DeepSeek-style reasoning models, and some
+      // hosted endpoints). We read it but do NOT emit it live: a normal model's
+      // chain-of-thought must never appear as the answer. If `content` ends up
+      // empty we fall back to it below, so the reply is never silently lost.
+      let reasoning = '';
       let streamThoughtSig = null;
       const toolAcc = new Map();
 
@@ -869,6 +875,13 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
             content += delta.content;
             if (onDelta) onDelta(delta.content);
           }
+          const rChunk =
+            typeof delta.reasoning_content === 'string'
+              ? delta.reasoning_content
+              : typeof delta.reasoning === 'string'
+                ? delta.reasoning
+                : '';
+          if (rChunk) reasoning += rChunk;
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               const i = tc.index ?? 0;
@@ -916,6 +929,14 @@ async function callModel({ config, messages, tools, signal, onDelta, threadKey, 
           ...(sig ? { thoughtSignature: sig } : {}),
         };
       });
+
+      // The model put its answer in `reasoning` and left `content` empty. Without
+      // this the user watches the reply arrive in the network log and sees
+      // nothing in the chat.
+      if (!content && reasoning) {
+        content = reasoning;
+        if (onDelta) onDelta(reasoning);
+      }
 
       return { content, toolCalls };
     }

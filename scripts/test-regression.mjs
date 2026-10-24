@@ -2221,6 +2221,73 @@ suite.push(
   })
 );
 
+/* --------------------------- reasoning-only replies --------------------------- */
+
+suite.push(
+  test('model: a reply streamed in `reasoning` is not lost, and never leaks over `content`', async () => {
+    // Some providers stream the whole answer in `reasoning` / `reasoning_content`
+    // and leave `content` empty. Nova read only `content`, so the reply vanished:
+    // the user saw it in the network log and nothing arrived in the chat.
+    const http = await import('node:http');
+    const sse = (delta) =>
+      `data: ${JSON.stringify({ id: 'x', object: 'chat.completion.chunk', choices: [{ index: 0, delta }] })}\n\n`;
+
+    const serve = (chunks) =>
+      new Promise((resolve) => {
+        const srv = http.createServer((req, res) => {
+          res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+          for (const c of chunks) res.write(sse(c));
+          res.write('data: [DONE]\n\n');
+          res.end();
+        });
+        srv.listen(0, '127.0.0.1', () => resolve({ srv, port: srv.address().port }));
+      });
+
+    // --- 1. reasoning only -> it must become the reply
+    {
+      const { srv, port } = await serve([
+        { reasoning: 'Namaste' },
+        { reasoning_content: ', kaise hain?' },
+      ]);
+      try {
+        let streamed = '';
+        const r = await callModel({
+          config: { baseUrl: `http://127.0.0.1:${port}`, apiKey: 'k', model: 'm', temperature: 0 },
+          messages: [{ role: 'user', content: 'hi' }],
+          tools: [],
+          onDelta: (c) => {
+            streamed += c;
+          },
+        });
+        assert.match(r.content, /Namaste/, 'reasoning must come through as the reply');
+        assert.match(r.content, /kaise hain/, 'reasoning_content must be read too');
+        assert.equal(streamed, r.content, 'and it must reach the UI, not just the return value');
+      } finally {
+        srv.close();
+      }
+    }
+
+    // --- 2. reasoning then content -> only the content is the answer
+    {
+      const { srv, port } = await serve([
+        { reasoning: 'THINKING-ONLY' },
+        { content: 'The answer.' },
+      ]);
+      try {
+        const r = await callModel({
+          config: { baseUrl: `http://127.0.0.1:${port}`, apiKey: 'k', model: 'm', temperature: 0 },
+          messages: [{ role: 'user', content: 'hi' }],
+          tools: [],
+        });
+        assert.equal(r.content, 'The answer.', 'chain-of-thought must not leak into the answer');
+        assert.ok(!r.content.includes('THINKING-ONLY'), 'reasoning must stay out when content arrives');
+      } finally {
+        srv.close();
+      }
+    }
+  })
+);
+
 /* --------------------------------- runner --------------------------------- */
 console.log('\n--- Running Nova IDE Regression Test Suite ---\n');
 for (const t of suite) {
