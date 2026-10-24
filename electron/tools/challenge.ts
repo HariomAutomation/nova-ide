@@ -57,7 +57,7 @@ const TOPCODER_API = 'https://api.topcoder.com/v6/challenges';
 export function parseChallengeId(input: string): string | null {
   const s = String(input || '').trim();
   if (!s) return null;
-  const url = s.match(/topcoder\.com\/challenges\/([0-9a-fA-F-]{8,})/);
+  const url = s.match(/topcoder\.com\/(?:opportunities\/)?challenges?\/([0-9a-fA-F-]{8,})/i);
   if (url) return url[1];
   // a bare uuid
   if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(s)) return s;
